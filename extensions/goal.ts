@@ -3284,7 +3284,24 @@ promptGuidelines: [
 		},
 	}));
 
-	syncGoalTools();
+	pi.on("session_start", async (event, ctx) => {
+		syncGoalTools();
+		loadState(ctx);
+		syncTerminalInputPause(ctx);
+		if (event.reason === "resume" && !state.goal && openGoals().length > 1 && ctx.hasUI) {
+			await focusGoalCommand(ctx);
+		}
+		// Codex behavior: prompt before reactivating a paused goal on resume.
+		if (event.reason === "resume" && state.goal?.status === "paused" && ctx.hasUI) {
+			const current = state.goal;
+			const shouldResume = await ctx.ui.confirm("Resume paused goal?", `Goal: ${current.objective}`);
+			if (shouldResume) {
+				setGoal({ ...current, status: "active", autoContinue: true, stopReason: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
+			}
+		}
+		beginAccounting();
+		queueContinuation(ctx, true);
+	});
 
 	pi.on("context", async (event): Promise<{ messages: typeof event.messages } | undefined> => {
 		let changed = false;
@@ -3423,24 +3440,6 @@ promptGuidelines: [
 		if (raw?.role === "custom" && raw.customType === GOAL_EVENT_ENTRY && raw.display !== false) {
 			return { message: { ...event.message, display: false } as typeof event.message };
 		}
-	});
-
-	pi.on("session_start", async (event, ctx) => {
-		loadState(ctx);
-		syncTerminalInputPause(ctx);
-		if (event.reason === "resume" && !state.goal && openGoals().length > 1 && ctx.hasUI) {
-			await focusGoalCommand(ctx);
-		}
-		// Codex behavior: prompt before reactivating a paused goal on resume.
-		if (event.reason === "resume" && state.goal?.status === "paused" && ctx.hasUI) {
-			const current = state.goal;
-			const shouldResume = await ctx.ui.confirm("Resume paused goal?", `Goal: ${current.objective}`);
-			if (shouldResume) {
-				setGoal({ ...current, status: "active", autoContinue: true, stopReason: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
-			}
-		}
-		beginAccounting();
-		queueContinuation(ctx, true);
 	});
 
 	pi.on("session_before_compact", async (_event, ctx) => {
