@@ -48,6 +48,10 @@ export const GOAL_PROGRESS_TOOL_NAMES = [
 	"grep",
 	"find",
 	"ls",
+	"subagent",
+	"Agent",
+	"get_subagent_result",
+	"steer_subagent",
 ] as const;
 
 export const POST_STOP_ALLOWED_TOOLS = ["get_goal"] as const;

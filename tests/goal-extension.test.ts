@@ -343,9 +343,11 @@ test("paused checkpoint reconciles from disk and aborts before work starts", asy
 		const blockedQuestion = await emit(harness, "tool_call", { toolName: "goal_question", args: { question: "Should I keep going?" } }, harness.ctx) as { block?: boolean; reason?: string } | undefined;
 		assert.equal(blockedQuestion?.block, true);
 		assert.match(blockedQuestion?.reason ?? "", /goal was already stopped earlier in this turn/);
-		const blockedSubagent = await emit(harness, "tool_call", { toolName: "subagent", args: { task: "delegate stale work" } }, harness.ctx) as { block?: boolean; reason?: string } | undefined;
-		assert.equal(blockedSubagent?.block, true);
-		assert.match(blockedSubagent?.reason ?? "", /goal was already stopped earlier in this turn/);
+		for (const toolName of ["subagent", "Agent", "get_subagent_result", "steer_subagent"] as const) {
+			const blockedDelegation = await emit(harness, "tool_call", { toolName, args: { task: "delegate stale work", id: "agent-1" } }, harness.ctx) as { block?: boolean; reason?: string } | undefined;
+			assert.equal(blockedDelegation?.block, true, `${toolName} should block`);
+			assert.match(blockedDelegation?.reason ?? "", /goal was already stopped earlier in this turn/);
+		}
 		const blockedUnknown = await emit(harness, "tool_call", { toolName: "unknown_extension_tool", args: { payload: "delegate stale work" } }, harness.ctx) as { block?: boolean; reason?: string } | undefined;
 		assert.equal(blockedUnknown?.block, true);
 		assert.match(blockedUnknown?.reason ?? "", /goal was already stopped earlier in this turn/);
@@ -416,6 +418,62 @@ test("active checkpoint prep tools do not poison same turn", async () => {
 		assert.equal(recall, undefined);
 		const grep = await emit(harness, "tool_call", { toolName: "fff_multi_grep", args: { pattern: "turnStoppedFor" } }, harness.ctx) as { block?: boolean } | undefined;
 		assert.equal(grep, undefined);
+		const read = await emit(harness, "tool_call", { toolName: "read", args: { path: "README.md" } }, harness.ctx) as { block?: boolean } | undefined;
+		assert.equal(read, undefined);
+	} finally {
+		harness.cleanup();
+	}
+});
+
+test("active checkpoint delegation counts as progress and queues continuation at turn_end", async () => {
+	const harness = makeHarness({ idle: true, pendingMessages: false });
+	try {
+		const goal = await createGoal(harness, "Delegation tools must count as progress", "sisyphus");
+		const checkpoint = checkpointMessage(goal.id, goal.objective);
+		harness.messages.splice(0);
+
+		const before = await emit(harness, "before_agent_start", {
+			prompt: checkpoint.content,
+			systemPrompt: "BASE",
+		}, harness.ctx) as { systemPrompt?: string } | undefined;
+		assert.equal(typeof before?.systemPrompt, "string");
+		assert.ok(before?.systemPrompt?.includes(`[PI GOAL ACTIVE goalId=${goal.id}]`));
+
+		await emit(harness, "turn_start", "", harness.ctx);
+		const delegated = await emit(harness, "tool_call", { toolName: "subagent", args: { task: "implement goal slice" } }, harness.ctx) as { block?: boolean } | undefined;
+		assert.equal(delegated, undefined);
+		await emit(harness, "turn_end", { message: { role: "assistant", stopReason: "endTurn" } }, harness.ctx);
+		await sleep(80);
+
+		assert.equal(harness.messages.length, 1);
+		const queued = harness.messages[0];
+		assert.equal(queued.message.customType, GOAL_EVENT_ENTRY);
+		assert.equal(queued.options.triggerTurn, true);
+		assert.equal(queued.options.deliverAs, "followUp");
+		assert.match(String(queued.message.content ?? ""), new RegExp(`^<pi_goal_continuation goal_id="${goal.id}"`));
+	} finally {
+		harness.cleanup();
+	}
+});
+
+test("active checkpoint legacy delegation controls do not poison same turn", async () => {
+	const harness = makeHarness({ idle: true, pendingMessages: false });
+	try {
+		const goal = await createGoal(harness, "Legacy delegation controls stay active", "sisyphus");
+		const checkpoint = checkpointMessage(goal.id, goal.objective);
+
+		const before = await emit(harness, "before_agent_start", {
+			prompt: checkpoint.content,
+			systemPrompt: "BASE",
+		}, harness.ctx) as { systemPrompt?: string } | undefined;
+		assert.equal(typeof before?.systemPrompt, "string");
+		assert.ok(before?.systemPrompt?.includes(`[PI GOAL ACTIVE goalId=${goal.id}]`));
+
+		await emit(harness, "turn_start", "", harness.ctx);
+		for (const toolName of ["Agent", "get_subagent_result", "steer_subagent"] as const) {
+			const result = await emit(harness, "tool_call", { toolName, args: { task: "monitor delegated work", id: "agent-1" } }, harness.ctx) as { block?: boolean } | undefined;
+			assert.equal(result, undefined, `${toolName} should stay allowed`);
+		}
 		const read = await emit(harness, "tool_call", { toolName: "read", args: { path: "README.md" } }, harness.ctx) as { block?: boolean } | undefined;
 		assert.equal(read, undefined);
 	} finally {
