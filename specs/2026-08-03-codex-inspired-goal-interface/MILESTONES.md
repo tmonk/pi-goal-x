@@ -198,3 +198,53 @@ token-budget support. All 443 prior tests stayed green; 16 new tests added.
 
 Validation: `npm run test:serial` 459 pass / 0 fail; `npm run check` (tsc) 0
 errors; `git diff --check` clean.
+
+### 2026-08-04 01:10:00 - Stage 3: the three core tools installed statically
+
+The model surface moved to the stable three-tool core; all 460 prior tests were
+updated to the new advertised sets and 9 new core-tool tests added (469 total).
+
+- `create_goal` is now REAL (was a hidden rejected shim): objective 1-4000
+  chars, `mode: "regular" | "sisyphus"`, optional `token_budget` (accepted only
+  when the user supplies one). It creates + focuses through GoalService,
+  reports other-open-goal count, and clears any pending drafting intent.
+  Prompt guidelines require an explicit user request — no inference from
+  ordinary tasks.
+- `get_goal` returns the complete stable snapshot (objective, status, mode,
+  usage, budget + remaining, task summary, verification contract,
+  pause/blocker details, paths, other-open count, lifecycle hint) and the
+  get_goal nudge map is removed.
+- `update_goal` accepts only `status: "complete" | "blocked"`:
+  - `complete` runs the shared `runGoalCompletionFlow` (extracted from
+    complete_goal) with NO verification-summary paperwork — the independent
+    auditor derives requirements from the objective/contract and inspects
+    actual state. The tool-level contract gate now only applies when the model
+    supplied a summary. Approval archives; rejection stays open with feedback.
+  - `blocked` records a distinct `blocked` status (stopReason agent) through
+    GoalService with the `goal_blocked` ledger event (source agent) and stops
+    continuation; accepted only from an ACTIVE goal (validateGoalBlock). The
+    three-consecutive-turn blocker rule is prompt policy (tool description,
+    get_goal hint), no attempt counter.
+- Old lifecycle tools (complete_goal, pause_goal, abort_goal,
+  propose_goal_tweak, propose_goal_draft, step_complete) stay REGISTERED as
+  non-advertised compatibility shims; the stable core is installed with no
+  phase-dependent synchronization. `syncGoalTools` now always advertises
+  get_goal + create_goal, adds update_goal when a non-complete goal is
+  focused, and gates the legacy task tools on `disableTasks` (decided once at
+  session start) and status (active → all three; paused → propose_task_list).
+- Record/ledger/policy additions: `blocked` status + normalization, statusLabel
+  "blocked", `goal_blocked` ledger event, `validateGoalBlock` policy,
+  GoalToolStatus widened. GoalService/goal-record unchanged otherwise.
+- Tests updated to the Stage 3 surface: goal-tool-names, goal-surface-baseline
+  (14 tools now: update_goal added), goal-tool-visibility, goal-propose-tweak
+  (tweak tool is a shim, not in lifecycle sets), goal-update-objective (error
+  message now lives in the shared completion flow). New
+  `tests/goal-core-tools.test.ts` (9 tests: three-tool surface with tasks
+  disabled, create_goal create/focus/budget/sisyphus/oversize-reject, get_goal
+  full snapshot, update_goal(complete) audit-without-paperwork approval
+  archives + rejection stays open, update_goal(blocked) from active records
+  blocked + ledger, blocked rejected from paused).
+
+Validation: `npm run test:serial` 469 pass / 0 fail; `npm run check` (tsc) 0
+errors; `git diff --check` clean (one pre-existing trailing-space line in the
+extracted completion flow cleaned).

@@ -1,4 +1,4 @@
-export type GoalStatus = "active" | "paused" | "budget_limited" | "complete";
+export type GoalStatus = "active" | "paused" | "blocked" | "budget_limited" | "complete";
 export type StopReason = "user" | "agent";
 export type GoalEventKind = "checkpoint" | "stale" | "drafting";
 export type DraftingFocus = "goal" | "sisyphus";
@@ -227,7 +227,7 @@ export function normalizeGoalRecord(value: unknown): GoalRecord | null {
 
 	const timestamp = nowIso();
 	const rawStatus = raw.status;
-	let status: GoalStatus = rawStatus === "complete" ? "complete" : rawStatus === "paused" ? "paused" : rawStatus === "budget_limited" ? "budget_limited" : "active";
+	let status: GoalStatus = rawStatus === "complete" ? "complete" : rawStatus === "paused" ? "paused" : rawStatus === "budget_limited" ? "budget_limited" : rawStatus === "blocked" ? "blocked" : "active";
 	const autoContinue = typeof raw.autoContinue === "boolean" ? raw.autoContinue : true;
 	const usage = normalizeUsage(raw.usage);
 	const sisyphus = raw.sisyphus === true;

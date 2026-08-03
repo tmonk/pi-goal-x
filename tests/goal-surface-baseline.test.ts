@@ -56,10 +56,11 @@ function createRecordingPi() {
 // ── The pinned baseline ──────────────────────────────────────────────────────
 
 /**
- * The 13 goal tools registered today (registration order, which is also the
+ * The 14 goal tools registered today (registration order, which is also the
  * order pi exposes them in the model tool list):
  * goal_question, goal_questionnaire (from goal-questionnaire.ts), then the
- * eleven tools registered in goal.ts.
+ * twelve tools registered in goal.ts (Stage 3 added update_goal and made
+ * create_goal real).
  */
 const EXPECTED_REGISTERED_TOOLS = [
 	"goal_question",
@@ -69,6 +70,7 @@ const EXPECTED_REGISTERED_TOOLS = [
 	"propose_goal_draft",
 	"propose_goal_tweak",
 	"complete_goal",
+	"update_goal",
 	"pause_goal",
 	"abort_goal",
 	"step_complete",
@@ -101,7 +103,7 @@ const EXPECTED_REGISTERED_COMMANDS = [
 	"goal-resume",
 ] as const;
 
-test("baseline: exactly 13 goal tools are registered, in pinned order", () => {
+test("baseline: exactly 14 goal tools are registered, in pinned order", () => {
 	const { pi, registeredTools } = createRecordingPi();
 	piGoalExtension(pi as never);
 
@@ -123,37 +125,37 @@ test("baseline: no duplicate tool or command registrations", () => {
 	assert.equal(new Set(registeredCommands).size, registeredCommands.length);
 });
 
-test("baseline: phase-dependent advertised tool sets are the pre-simplification sets", () => {
-	// Advertised sets come from goal-tool-names.ts. These are the values the
-	// dynamic syncGoalTools() installs today; Stage 3 replaces the mechanism
-	// with a static five-tool (or three-tool) install.
+test("baseline: advertised tool sets are the Stage 3 three-core surface (+ legacy task shims)", () => {
+	// Stage 3 installs the stable three-tool core (create_goal, get_goal,
+	// update_goal) without phase-dependent synchronization. The legacy task
+	// tools remain advertised until Stage 4 replaces them.
 	assert.deepEqual(ACTIVE_GOAL_TOOL_NAMES, [
-		"get_goal", "complete_goal", "pause_goal", "abort_goal",
-		"propose_goal_tweak", "propose_task_list", "complete_task", "skip_task",
+		"create_goal", "get_goal", "update_goal",
+		"propose_task_list", "complete_task", "skip_task",
 	]);
 	assert.deepEqual(PAUSED_GOAL_TOOL_NAMES, [
-		"get_goal", "complete_goal", "abort_goal",
-		"propose_goal_tweak", "propose_task_list",
+		"create_goal", "get_goal", "update_goal", "propose_task_list",
 	]);
-	assert.deepEqual(NO_FOCUSED_GOAL_TOOL_NAMES, ["get_goal"]);
+	assert.deepEqual(NO_FOCUSED_GOAL_TOOL_NAMES, ["get_goal", "create_goal"]);
 });
 
 test("baseline: every registered tool name is referenced by goal-tool-names constants", () => {
 	const { pi, registeredTools } = createRecordingPi();
 	piGoalExtension(pi as never);
 
-	// All 13 registered tools must be named by goal-tool-names.ts so the
-	// surface stays centralized. (create_goal is currently registered but
-	// hidden from the active set; apply_goal_tweak is a legacy name that is no
-	// longer registered.)
+	// All 14 registered tools must be named by goal-tool-names.ts so the
+	// surface stays centralized.
 	const knownNames = new Set([
 		...ACTIVE_GOAL_TOOL_NAMES,
 		...PAUSED_GOAL_TOOL_NAMES,
 		...NO_FOCUSED_GOAL_TOOL_NAMES,
 		"goal_question",
 		"goal_questionnaire",
-		"create_goal",
 		"propose_goal_draft",
+		"propose_goal_tweak",
+		"complete_goal",
+		"pause_goal",
+		"abort_goal",
 		"step_complete",
 	]);
 	for (const tool of registeredTools) {

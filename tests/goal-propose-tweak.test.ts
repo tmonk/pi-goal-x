@@ -144,14 +144,19 @@ describe("propose_goal_tweak", () => {
 			"changeSummary must be required");
 	});
 
-	it("is in the lifecycle tool set for active and paused goals", async () => {
+	it("is NOT in the lifecycle tool set for active and paused goals (Stage 3 shim)", async () => {
 		const { lifecycleToolNamesForGoalStatus } = await import("../extensions/goal-tool-names.ts");
+		// Stage 3 demoted propose_goal_tweak to a non-advertised compatibility
+		// shim; it only appears during the /goal-tweak drafting phase.
 		const activeTools = lifecycleToolNamesForGoalStatus("active", "normal");
-		assert.equal(activeTools.includes("propose_goal_tweak"), true,
-			"propose_goal_tweak must appear in active lifecycle tools");
+		assert.equal(activeTools.includes("propose_goal_tweak"), false,
+			"propose_goal_tweak must NOT appear in active lifecycle tools");
 		const pausedTools = lifecycleToolNamesForGoalStatus("paused", "normal");
-		assert.equal(pausedTools.includes("propose_goal_tweak"), true,
-			"propose_goal_tweak must appear in paused lifecycle tools");
+		assert.equal(pausedTools.includes("propose_goal_tweak"), false,
+			"propose_goal_tweak must NOT appear in paused lifecycle tools");
+		const tweakPhaseTools = lifecycleToolNamesForGoalStatus("paused", "tweakDrafting");
+		assert.equal(tweakPhaseTools.includes("propose_goal_tweak"), false,
+			"propose_goal_tweak is added by syncGoalTools during the tweak phase, not by the lifecycle set");
 		const completeTools = lifecycleToolNamesForGoalStatus("complete", "normal");
 		assert.equal(completeTools.includes("propose_goal_tweak"), false,
 			"propose_goal_tweak must NOT appear in complete lifecycle tools");

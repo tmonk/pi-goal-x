@@ -1,7 +1,7 @@
 import { statusLabel, type GoalDisplayRecordLike } from "./goal-core.ts";
 import type { GoalTask, GoalTaskList, TaskStatus } from "./goal-record.ts";
 
-export type GoalStatusLike = "active" | "paused" | "budget_limited" | "complete";
+export type GoalStatusLike = "active" | "paused" | "blocked" | "budget_limited" | "complete";
 export type StopReasonLike = "user" | "agent";
 
 export interface GoalPolicyRecordLike extends GoalDisplayRecordLike {
@@ -27,7 +27,8 @@ export function isRunnableStatus(status: GoalStatusLike): boolean {
 
 export function isCompletableStatus(status: GoalStatusLike): boolean {
 	// A budget-limited goal is NOT completed by the transition itself, but the
-	// user (or the model on explicit evidence) may still complete it.
+	// user (or the model on explicit evidence) may still complete it. A blocked
+	// goal is the model's terminal surrender — resume or clear it instead.
 	return status === "active" || status === "paused" || status === "budget_limited";
 }
 
@@ -65,6 +66,19 @@ export function validateGoalAbort(args: {
 	if (runningGoalId && goal.id !== runningGoalId) return { ok: false, message: "The active goal changed during this run; not aborting." };
 	if (goal.status === "complete") return { ok: false, message: "Goal is complete; abort_goal does not apply." };
 	if (!args.reason.trim()) return { ok: false, message: "abort_goal requires a non-empty reason." };
+	return { ok: true };
+}
+
+/** update_goal(blocked) applies only to an ACTIVE goal — paused/complete/blocked/budget-limited reject it. */
+export function validateGoalBlock(args: {
+	goal: GoalPolicyRecordLike | null;
+	runningGoalId?: string | null;
+}): PolicyValidation {
+	const { goal } = args;
+	if (!goal) return { ok: false, message: "No goal is set." };
+	if (goal.status !== "active") {
+		return { ok: false, message: `Goal is ${statusLabel(goal)}; update_goal(blocked) applies only to an active goal.` };
+	}
 	return { ok: true };
 }
 

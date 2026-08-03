@@ -20,7 +20,8 @@ export type GoalLedgerEvent =
   | { type: "task_list_set"; goalId: string; taskCount: number; blockCompletion: boolean; at: string }
   | { type: "task_complete"; goalId: string; taskId: string; evidence?: string; at: string }
   | { type: "task_skipped"; goalId: string; taskId: string; reason: string; at: string }
-  | { type: "goal_budget_limited"; goalId: string; budget: number; tokensUsed: number; at: string };
+  | { type: "goal_budget_limited"; goalId: string; budget: number; tokensUsed: number; at: string }
+  | { type: "goal_blocked"; goalId: string; reason: string; source: "agent" | "system"; at: string };
 
 export interface GoalLedgerContext {
   cwd: string;
@@ -159,6 +160,8 @@ function isValidLedgerEvent(value: unknown): value is GoalLedgerEvent {
       return typeof obj.goalId === "string" && typeof obj.taskId === "string" && typeof obj.reason === "string";
     case "goal_budget_limited":
       return typeof obj.goalId === "string" && typeof obj.budget === "number" && typeof obj.tokensUsed === "number";
+    case "goal_blocked":
+      return typeof obj.goalId === "string" && typeof obj.reason === "string" && (obj.source === "agent" || obj.source === "system");
     default:
       return false;
   }
@@ -195,6 +198,8 @@ function sanitizeEvent(event: GoalLedgerEvent): GoalLedgerEvent {
     case "task_skipped":
       return { ...event, goalId: safeGoalId(event.goalId) };
     case "goal_budget_limited":
+      return { ...event, goalId: safeGoalId(event.goalId) };
+    case "goal_blocked":
       return { ...event, goalId: safeGoalId(event.goalId) };
     case "goal_unfocused":
       return event;

@@ -73,19 +73,18 @@ function testFixture() {
 	return { cwd, goal: written, mockCtx, cleanup };
 }
 
-// ── Expected tool sets ───────────────────────────────────────────────────────
+// ── Expected tool sets (Stage 3: stable three-core + legacy task shims) ────
 
 const ACTIVE_LIFECYCLE_TOOLS = [
-	"get_goal", "complete_goal", "pause_goal", "abort_goal",
-	"propose_goal_tweak", "propose_task_list", "complete_task", "skip_task",
+	"create_goal", "get_goal", "update_goal",
+	"propose_task_list", "complete_task", "skip_task",
 ];
 
 const PAUSED_LIFECYCLE_TOOLS = [
-	"get_goal", "complete_goal", "abort_goal",
-	"propose_goal_tweak", "propose_task_list",
+	"create_goal", "get_goal", "update_goal", "propose_task_list",
 ];
 
-const NO_GOAL_TOOLS = ["get_goal"];
+const NO_GOAL_TOOLS = ["get_goal", "create_goal"];
 
 const BASE_WORK_TOOLS = ["read", "bash", "edit", "write"];
 
@@ -154,13 +153,16 @@ describe("Tool visibility integration", () => {
 					`active goal should have work tool "${tool}" after before_agent_start`);
 			}
 
-			// create_goal should NOT be available
-			assert.equal(activeToolNames.includes("create_goal"), false,
-				"create_goal must not be in active tool set");
+			// create_goal IS available (stable core, Stage 3)
+			assert.ok(activeToolNames.includes("create_goal"),
+				"create_goal must be in active tool set");
 
-			// propose_goal_draft should be available
-			assert.ok(activeToolNames.includes("propose_goal_draft"),
-				"propose_goal_draft must be in active tool set");
+			// propose_goal_draft is a drafting-phase shim; create_goal is the
+			// stable core creation tool
+			assert.ok(activeToolNames.includes("create_goal"),
+				"create_goal must be in active tool set");
+			assert.equal(activeToolNames.includes("propose_goal_draft"), false,
+				"propose_goal_draft must NOT be in the normal active tool set");
 		} finally {
 			f.cleanup();
 		}
@@ -203,7 +205,7 @@ describe("Tool visibility integration", () => {
 	});
 
 	// ── No goal (null state) ─────────────────────────────────────────────
-	it("no goal exposes only get_goal", async () => {
+	it("no goal exposes only get_goal and create_goal", async () => {
 		// Use a temp dir with NO goals at all (no .pi/goals directory)
 		const cwd = mkdtempSync(path.join(tmpdir(), "goal-tool-vis-nogoal-"));
 		try {
@@ -236,6 +238,7 @@ describe("Tool visibility integration", () => {
 			// Lifecycle tools should NOT be present
 			for (const tool of ALL_LIFECYCLE_TOOLS) {
 				if (tool === "get_goal") continue; // get_goal IS expected
+				if (tool === "create_goal") continue; // create_goal IS expected (Stage 3)
 				assert.equal(activeToolNames.includes(tool), false,
 					`no-goal state must NOT have tool "${tool}"`);
 			}
@@ -245,7 +248,7 @@ describe("Tool visibility integration", () => {
 	});
 
 	// ── Complete goal status ─────────────────────────────────────────────
-	it("completed goal exposes only get_goal", async () => {
+	it("completed goal exposes only get_goal and create_goal", async () => {
 		const f = testFixture();
 		try {
 			// Start with a completed goal
@@ -289,9 +292,10 @@ describe("Tool visibility integration", () => {
 					`completed goal should have tool "${tool}"`);
 			}
 
-			// Lifecycle tools should NOT be present (except get_goal)
+			// Lifecycle tools should NOT be present (except get_goal / create_goal)
 			for (const tool of ALL_LIFECYCLE_TOOLS) {
 				if (tool === "get_goal") continue;
+				if (tool === "create_goal") continue;
 				assert.equal(activeToolNames.includes(tool), false,
 					`completed goal must NOT have tool "${tool}"`);
 			}
@@ -405,16 +409,19 @@ describe("Tool visibility integration", () => {
 	});
 
 	// ── Verify complete_goal and pause_goal appear in active tools ───────
-	it("complete_goal and pause_goal are always in active tool set", () => {
+	it("core goal tools are always in active tool set", () => {
 		// Direct assertion: these constants are the source of truth
-		assert.ok(ACTIVE_LIFECYCLE_TOOLS.includes("complete_goal"),
-			"complete_goal must be in active lifecycle tools");
-		assert.ok(ACTIVE_LIFECYCLE_TOOLS.includes("pause_goal"),
-			"pause_goal must be in active lifecycle tools");
-		assert.ok(ACTIVE_LIFECYCLE_TOOLS.includes("abort_goal"),
-			"abort_goal must be in active lifecycle tools");
-		assert.ok(ACTIVE_LIFECYCLE_TOOLS.includes("propose_goal_tweak"),
-			"propose_goal_tweak must be in active lifecycle tools");
+		assert.ok(ACTIVE_LIFECYCLE_TOOLS.includes("create_goal"),
+			"create_goal must be in active lifecycle tools");
+		assert.ok(ACTIVE_LIFECYCLE_TOOLS.includes("get_goal"),
+			"get_goal must be in active lifecycle tools");
+		assert.ok(ACTIVE_LIFECYCLE_TOOLS.includes("update_goal"),
+			"update_goal must be in active lifecycle tools");
+		// Old lifecycle shims must NOT be advertised
+		for (const removed of ["complete_goal", "pause_goal", "abort_goal", "propose_goal_tweak"]) {
+			assert.equal(ACTIVE_LIFECYCLE_TOOLS.includes(removed), false,
+				`${removed} must not be advertised`);
+		}
 	});
 
 	// ── Verify all registered lifecycle tools have execute handlers ──────
@@ -532,13 +539,16 @@ describe("Tool visibility integration", () => {
 					`active goal WITH task list should have work tool "${tool}"`);
 			}
 
-			// propose_goal_draft should be available
-			assert.ok(activeToolNames.includes("propose_goal_draft"),
-				"propose_goal_draft must be in active tool set");
+			// propose_goal_draft is a drafting-phase shim; create_goal is the
+			// stable core creation tool
+			assert.ok(activeToolNames.includes("create_goal"),
+				"create_goal must be in active tool set");
+			assert.equal(activeToolNames.includes("propose_goal_draft"), false,
+				"propose_goal_draft must NOT be in the normal active tool set");
 
-			// create_goal should NOT be available
-			assert.equal(activeToolNames.includes("create_goal"), false,
-				"create_goal must not be in active tool set");
+			// create_goal IS available (stable core, Stage 3)
+			assert.ok(activeToolNames.includes("create_goal"),
+				"create_goal must be in active tool set");
 
 			// goal_question and goal_questionnaire should be available for active goals
 			assert.ok(activeToolNames.includes("goal_question"),

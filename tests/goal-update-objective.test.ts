@@ -88,13 +88,13 @@ test("complete_goal schema has additionalProperties: false to reject unknown par
 
 test("complete_goal without status throws correct error message", () => {
 	const source = readFileSync("extensions/goal.ts", "utf8");
-	const updateGoalIdx = source.indexOf('name: "complete_goal"');
-	const registerBlock = source.substring(updateGoalIdx, updateGoalIdx + 4000);
-	assert.ok(!registerBlock.includes("params.updatedObjective"),
+	// The completion flow (including the status validation) lives in the shared
+	// runGoalCompletionFlow helper used by both complete_goal and update_goal.
+	assert.ok(!source.includes("params.updatedObjective"),
 		"Phase 1 updatedObjective handling must be removed");
-	assert.ok(registerBlock.includes('"complete_goal requires status=complete when marking a goal complete."'),
+	assert.ok(source.includes('"complete_goal requires status=complete when marking a goal complete."'),
 		"handler must throw error mentioning status=complete");
-	assert.ok(!registerBlock.includes("updatedObjective"),
+	assert.ok(!source.includes("updatedObjective"),
 		"handler must not reference updatedObjective in error messages");
 });
 

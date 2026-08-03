@@ -1,5 +1,5 @@
 import { StringEnum, Type } from "@earendil-works/pi-ai";
-import { defineTool, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { defineTool, type AgentToolResult, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Text, visibleWidth } from "@earendil-works/pi-tui";
 import {
 	footerStatus,
@@ -36,17 +36,18 @@ import {
 } from "./goal-questionnaire.ts";
 import {
 	ABORT_GOAL_TOOL_NAME,
-	ACTIVE_GOAL_TOOL_NAMES,
 	COMPLETE_TASK_TOOL_NAME,
 	CREATE_GOAL_TOOL_NAME,
+	GET_GOAL_TOOL_NAME,
 	PROPOSE_DRAFT_TOOL_NAME,
 	PROPOSE_TASK_LIST_TOOL_NAME,
 	PROPOSE_TWEAK_TOOL_NAME,
 	QUESTIONNAIRE_TOOL_NAME,
 	QUESTION_TOOL_NAME,
 	SISYPHUS_STEP_TOOL_NAME,
+	TASK_TOOL_NAMES,
+	UPDATE_GOAL_TOOL_NAME,
 	GOAL_PROGRESS_TOOL_NAMES,
-	lifecycleToolNamesForGoalStatus,
 	SKIP_TASK_TOOL_NAME,
 } from "./goal-tool-names.ts";
 import {
@@ -120,6 +121,7 @@ import {
 	shouldInjectPostCompactReminder,
 	taskCompletionBlockWarning,
 	validateGoalAbort,
+	validateGoalBlock,
 	validateGoalCompletion,
 	validatePauseGoal,
 	checkSubtasksComplete,
@@ -441,7 +443,6 @@ export default function goalExtension(
 		appendFocusEntry: (goalId, reason) => appendFocusEntry(goalId, reason),
 		onFocusedGoalLost: (lostGoalId, ctx) => {
 			clearStoppedRuntimeState();
-			if (lostGoalId) resetGetGoalNudgeState(lostGoalId);
 			if (tweakDraftingFor !== null) tweakDraftingFor = null;
 			syncGoalTools();
 			updateUI(ctx as unknown as ExtensionContext);
@@ -450,11 +451,9 @@ export default function goalExtension(
 			if (goal.status !== "active" || !goal.autoContinue) clearContinuationState();
 			if (goal.status !== "active") clearActiveAccounting();
 		},
-		onFocusChanged: (from, to) => {
+		onFocusChanged: () => {
 			clearContinuationState();
 			clearActiveAccounting();
-			resetGetGoalNudgeState(from);
-			resetGetGoalNudgeState(to);
 		},
 	});
 	let runningGoalId: string | null = null;
@@ -496,6 +495,10 @@ export default function goalExtension(
 
 	const goalExecutionWorkTools = ["read", "bash", "edit", "write"] as const;
 
+	// Whether the task tools are advertised, decided once at session start from
+	// settings (disableTasks). Stage 4 replaces them with the two task tools.
+	let tasksEnabled = true;
+
 	function syncGoalTools(): void {
 		try {
 			const initialTools = pi.getActiveTools();
@@ -505,39 +508,55 @@ export default function goalExtension(
 			}
 			const active = new Set(initialTools);
 			for (const name of goalExecutionWorkTools) active.add(name);
-			active.delete(QUESTION_TOOL_NAME);
-			active.delete(QUESTIONNAIRE_TOOL_NAME);
-			for (const name of ACTIVE_GOAL_TOOL_NAMES) active.delete(name);
-			const phase = confirmationIntent !== null ? "drafting" : tweakDraftingFor !== null ? "tweakDrafting" : "normal";
-			const lifecycleTools = lifecycleToolNamesForGoalStatus(state.goal?.status, phase);
-			for (const name of lifecycleTools) active.add(name);
-			// Sisyphus is now a prompt/criteria style, not a separate step-counter
-			// mechanism. Keep step_complete registered for legacy transcripts, but do
-			// not expose it as an active work tool.
-			active.delete(SISYPHUS_STEP_TOOL_NAME);
-			// propose_goal_tweak is always available for active/paused goals via lifecycle tools.
-			// During a /goal-tweak drafting flow, additionally expose question tools.
+			// Remove every goal tool that must not be visible; the stable core set
+			// and phase-conditional shims are then added back explicitly.
+			for (const name of [
+				QUESTION_TOOL_NAME,
+				QUESTIONNAIRE_TOOL_NAME,
+				"complete_goal",
+				"pause_goal",
+				ABORT_GOAL_TOOL_NAME,
+				UPDATE_GOAL_TOOL_NAME,
+				PROPOSE_TWEAK_TOOL_NAME,
+				PROPOSE_DRAFT_TOOL_NAME,
+				PROPOSE_TASK_LIST_TOOL_NAME,
+				COMPLETE_TASK_TOOL_NAME,
+				SKIP_TASK_TOOL_NAME,
+				SISYPHUS_STEP_TOOL_NAME,
+			]) {
+				active.delete(name);
+			}
+			// Stable core: get_goal and create_goal are always advertised; update_goal
+			// appears whenever a (non-complete) goal is focused — with no
+			// phase-dependent synchronization (Stage 3).
+			active.add(GET_GOAL_TOOL_NAME);
+			active.add(CREATE_GOAL_TOOL_NAME);
+			if (state.goal && state.goal.status !== "complete") {
+				active.add(UPDATE_GOAL_TOOL_NAME);
+			}
+			// Task tools are advertised only when tasks are enabled and a goal is
+			// focused: all three for active goals, propose_task_list for paused
+			// (Stage 4 replaces them with set_goal_tasks / update_goal_task).
+			if (tasksEnabled && state.goal) {
+				if (state.goal.status === "active") {
+					for (const name of TASK_TOOL_NAMES) active.add(name);
+				} else if (state.goal.status === "paused") {
+					active.add(PROPOSE_TASK_LIST_TOOL_NAME);
+				}
+			}
+			// Drafting/tweak/question flows keep their existing shim visibility
+			// until Stage 6 removes them; they never leak into normal execution.
+			if (confirmationIntent !== null) {
+				active.add(PROPOSE_DRAFT_TOOL_NAME);
+				active.add(QUESTION_TOOL_NAME);
+				active.add(QUESTIONNAIRE_TOOL_NAME);
+			}
 			if (state.goal && tweakDraftingFor === state.goal.id) {
 				active.add(PROPOSE_TWEAK_TOOL_NAME);
 				active.add(QUESTION_TOOL_NAME);
 				active.add(QUESTIONNAIRE_TOOL_NAME);
 			}
-			// Outside of active/paused states, remove propose_goal_tweak
-			if (!state.goal || state.goal.status === "complete") {
-				active.delete(PROPOSE_TWEAK_TOOL_NAME);
-			}
-
-			// Keep the commit tool available and let its validator enforce that a
-			// drafting flow is active. This avoids fragile hidden-tool drift after
-			// question turns, compaction, or active-tool resync.
-			active.add(PROPOSE_DRAFT_TOOL_NAME);
-			// create_goal stays hidden — hard invariant: user must confirm via propose_goal_draft.
-			active.delete(CREATE_GOAL_TOOL_NAME);
-			if (confirmationIntent !== null) {
-				active.add(QUESTION_TOOL_NAME);
-				active.add(QUESTIONNAIRE_TOOL_NAME);
-			} else if (state.goal?.status === "active") {
-				for (const name of goalExecutionWorkTools) active.add(name);
+			if (confirmationIntent === null && tweakDraftingFor === null && state.goal?.status === "active") {
 				active.add(QUESTION_TOOL_NAME);
 				active.add(QUESTIONNAIRE_TOOL_NAME);
 			}
@@ -613,13 +632,6 @@ export default function goalExtension(
 	}
 
 
-	const activeGetGoalTurnsByGoalId = new Map<string, number>();
-
-	function resetGetGoalNudgeState(goalId: string | null | undefined): void {
-		if (goalId) {
-			activeGetGoalTurnsByGoalId.delete(goalId);
-		}
-	}
 
 	function openGoals(): GoalRecord[] {
 		return openGoalsFromPool(goalsById);
@@ -645,8 +657,6 @@ export default function goalExtension(
 		if (previousGoalId !== focusedGoalId) {
 			clearContinuationState();
 			clearActiveAccounting();
-			resetGetGoalNudgeState(previousGoalId);
-			resetGetGoalNudgeState(focusedGoalId);
 			if (tweakDraftingFor !== null && tweakDraftingFor !== focusedGoalId) tweakDraftingFor = null;
 		}
 		appendFocusEntry(focusedGoalId, reason);
@@ -669,8 +679,6 @@ export default function goalExtension(
 		goalsById.set(next.id, next);
 		assignFocusedGoalId(next.id);
 		if (previousGoalId !== focusedGoalId) {
-			resetGetGoalNudgeState(previousGoalId);
-			resetGetGoalNudgeState(focusedGoalId);
 		}
 		if (shouldPersist) persist(ctx);
 		else syncGoalTools();
@@ -687,7 +695,6 @@ export default function goalExtension(
 		if (focusedGoalId) goalsById.delete(focusedGoalId);
 		assignFocusedGoalId(null);
 		clearStoppedRuntimeState();
-		resetGetGoalNudgeState(previousGoalId);
 		appendFocusEntry(null, reason);
 		syncGoalTools();
 		updateUI(ctx);
@@ -888,6 +895,7 @@ export default function goalExtension(
 
 	function loadState(ctx: ExtensionContext): void {
 		goalsById = readActiveGoalPool(ctx);
+		tasksEnabled = !loadGoalSettings(ctx.cwd).disableTasks;
 		focusRevision += 1; // Session reload/tree navigation invalidates pending async focus operations.
 		assignFocusedGoalId(null);
 		hasExplicitSessionFocus = false;
@@ -935,8 +943,6 @@ export default function goalExtension(
 		if (focusChanged) {
 			clearContinuationState();
 			clearActiveAccounting();
-			resetGetGoalNudgeState(previousGoalId);
-			resetGetGoalNudgeState(focusedGoalId);
 		}
 		if (focusReason && focusChanged) appendFocusEntry(focusedGoalId, focusReason);
 		if (!state.goal || (state.goal.status !== "active") || !state.goal.autoContinue) {
@@ -1002,7 +1008,6 @@ export default function goalExtension(
 		// User-initiated pause (Esc / aborted turn). Clear any stale agent pause reason.
 		state.goal = { ...state.goal, autoContinue: false, pauseReason: undefined, pauseSuggestedAction: undefined };
 		stopActiveGoal("paused", "user", ctx);
-		resetGetGoalNudgeState(pausedGoalId);
 		ctx.ui.notify("Goal paused.", "info");
 	}
 
@@ -1318,9 +1323,10 @@ Verification contract:
 		runtime.queueContinuation(ctx, state.goal, force);
 	}
 
-	function replaceGoal(config: GoalCreationConfig, ctx: ExtensionContext, startNow = true, verificationContract?: string): void {
+	function replaceGoal(config: GoalCreationConfig, ctx: ExtensionContext, startNow = true, verificationContract?: string, tokenBudget?: number): void {
 		const goal = createGoal(config);
 		if (verificationContract) goal.verificationContract = verificationContract;
+		if (typeof tokenBudget === "number" && tokenBudget > 0) goal.tokenBudget = Math.floor(tokenBudget);
 		const result = goalService.create(ctx, {
 			goal,
 			ledger: [{
@@ -1335,7 +1341,6 @@ Verification contract:
 		if (result.focusChanged) appendFocusEntry(result.goalId, "created");
 		beginAccounting();
 		// Reset continuation nudge state — this is a fresh goal.
-		resetGetGoalNudgeState(state.goal?.id);
 		// A goal was committed — clear pending confirmation intent if any.
 		confirmationIntent = null;
 		ctx.ui.notify(buildGoalRunningNotification(config), "info");
@@ -1602,7 +1607,6 @@ Verification contract:
 			ctx,
 		);
 		beginAccounting();
-		resetGetGoalNudgeState(state.goal.id);
 		ctx.ui.notify("Goal resumed.", "info");
 		queueContinuation(ctx, true);
 		// Append ledger event for resumption
@@ -1722,7 +1726,6 @@ Verification contract:
 		}
 		const archived = archiveCurrentGoal(ctx, "user");
 		const didArchive = !!archived;
-		resetGetGoalNudgeState(state.goal?.id);
 		setGoal(null, ctx, true, "cleared");
 		// Phase 5 D: also abort any in-flight drafting so the agent's next turn
 		// doesn't try to propose into a cleared slot.
@@ -1749,7 +1752,6 @@ Verification contract:
 		}
 		const archived = archiveCurrentGoal(ctx, "user");
 		const didArchive = !!archived;
-		resetGetGoalNudgeState(state.goal?.id);
 		setGoal(null, ctx, true, "aborted");
 		const wasDrafting = confirmationIntent !== null;
 		confirmationIntent = null;
@@ -1883,30 +1885,44 @@ Verification contract:
 			"Before marking a goal complete, compare every explicit requirement with concrete evidence from the workspace/session.",
 			"If the returned goal has sisyphus mode on, you must execute strictly step-by-step in the order written in the objective; do not skip, combine, or rush steps, and stop to ask the user when blocked or unclear.",
 		],
-		parameters: Type.Object({}),
+		parameters: Type.Object({}, { additionalProperties: false }),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			reconcileFocusedGoalFromDisk(ctx);
 			if (state.goal) syncGoalPromptFromDisk(ctx);
 			syncGoalTools();
 			const view = goalForDisplay() ?? state.goal;
 			const otherCount = otherOpenGoalCount(goalsById, focusedGoalId);
-			let nudge = "";
-			if (view && view.status === "active" && view.id) {
-				const prior = activeGetGoalTurnsByGoalId.get(view.id) ?? 0;
-				if (prior >= 2) {
-					nudge = "\n\n[NUDGE] You have called get_goal multiple times this turn. Prefer concrete work tools (write/read/bash/edit) to advance the goal.";
-				}
+			if (!view) {
+				const text = openGoals().length > 0
+					? `${buildUnfocusedOpenGoalsSummary(openGoals().length)}\n\nCall create_goal with the objective to create and focus a new goal, or ask the user to run /goal-focus to choose an open goal.`
+					: "No goal is set in this session. Call create_goal with the objective when the user explicitly asks to start a persistent goal.";
+				return {
+					content: [{ type: "text", text }],
+					details: goalDetails(view),
+				};
 			}
-			const lifecycleHint = view && (view.status === "active" || view.status === "paused")
-				? "\nLifecycle tools: if evidence proves the objective is satisfied, call complete_goal({verificationSummary: \"evidence\"}); if blocked, call pause_goal({reason, suggestedAction?}); if abandoned/obsolete/unsafe, call abort_goal({reason}). For file or shell work, use the normal work tools directly (write/read/bash/edit); do not call get_goal repeatedly just to look for tools."
-				: "";
-			const text = view
-				? `${detailedSummary(view)}${lifecycleHint}${nudge}${otherCount > 0 ? `\nOther open goals: ${otherCount} (human can run /goal-list or /goal-focus)` : ""}`
-				: openGoals().length > 0
-					? buildUnfocusedOpenGoalsSummary(openGoals().length)
-					: detailedSummary(null);
+			const lines: string[] = [view.objective, ""];
+			lines.push(`Status: ${statusLabel(view)}`);
+			lines.push(`Mode: ${view.sisyphus ? "sisyphus" : "regular"}`);
+			const usageBits: string[] = [];
+			if (view.usage.activeSeconds > 0) usageBits.push(formatDuration(view.usage.activeSeconds));
+			if (view.usage.tokensUsed > 0) usageBits.push(formatTokenValue(view.usage.tokensUsed));
+			lines.push(`Usage: ${usageBits.length > 0 ? usageBits.join(" · ") : "none"}`);
+			const budget = budgetLine(view);
+			if (budget) lines.push(`Budget: ${budget}`);
+			if (view.taskList) lines.push(`Tasks: ${buildTaskSummary(view.taskList)}`);
+			if (view.verificationContract?.trim()) lines.push(`Verification contract: ${view.verificationContract.trim()}`);
+			if (view.status === "paused" || view.status === "blocked") {
+				if (view.pauseReason) lines.push(`Blocker: ${view.pauseReason}`);
+				if (view.pauseSuggestedAction) lines.push(`Suggested action: ${view.pauseSuggestedAction}`);
+			}
+			if (view.activePath) lines.push(`Path: ${view.activePath}`);
+			if (view.archivedPath) lines.push(`Archive: ${view.archivedPath}`);
+			if (otherCount > 0) lines.push(`Other open goals: ${otherCount} (user can run /goal-list or /goal-focus)`);
+			lines.push("");
+			lines.push("Lifecycle: call update_goal({status: \"complete\"}) only when every requirement is satisfied — the independent auditor verifies from actual evidence. Call update_goal({status: \"blocked\"}) only after the same blocker recurs on three consecutive goal turns. User commands handle pause/resume/clear/focus.");
 			return {
-				content: [{ type: "text", text }],
+				content: [{ type: "text", text: lines.join("\n") }],
 				details: goalDetails(view),
 			};
 		},
@@ -1921,27 +1937,52 @@ Verification contract:
 	pi.registerTool(defineTool({
 		name: "create_goal",
 		label: "Create Goal",
-		description: "Create a new active pi goal and focus it. Hidden outside drafting flows; propose_goal_draft is the normal commit path.",
-		promptSnippet: "Create a persistent pi goal when the user explicitly asks for one or when a goal-drafting interview has converged.",
+		description: "Create and focus a new pi goal after an explicit user request. Only call this when the user has explicitly asked to make something a persistent goal (directly, or via /goal or /sisyphus); do NOT infer a goal from an ordinary task. Creating a goal focuses it and leaves other open goals untouched.",
+		promptSnippet: "Create a persistent pi goal only when the user explicitly asks for one.",
 		promptGuidelines: [
-			"Use create_goal only when the user explicitly asks to start a long-running goal, OR when a /goals or /sisyphus intent discussion has produced a concrete objective.",
+			"Call create_goal only when the user explicitly asks to start a long-running goal or hands you a concrete objective to pursue. Never infer a goal from an ordinary one-off task.",
 			"Creating a new goal focuses it and leaves other open goals untouched. Do not archive or replace existing goals unless the user explicitly asks through a user command.",
-			"Pass sisyphus=true only when the goal came out of /sisyphus intent discussion or /sisyphus-set, or when the user explicitly invoked Sisyphus mode.",
+			"Pass mode=\"sisyphus\" only when the user explicitly invoked Sisyphus mode.",
 		],
 		parameters: Type.Object({
-			objective: Type.String({ description: "Concrete objective to pursue. For Sisyphus goals this MUST be the full plan including numbered steps and per-step done criteria." }),
-			autoContinue: Type.Optional(Type.Boolean({ description: "Whether pi should keep sending continuation prompts until complete. Defaults to true." })),
-			sisyphus: Type.Optional(Type.Boolean({ description: "When true, mark this as a Sisyphus goal: the agent must execute strictly step-by-step, no skipping, no rushing, no improvising. Default false." })),
-		}),
+			objective: Type.String({ description: "Full goal text. For Sisyphus goals this MUST include the user's numbered steps + per-step done criteria, taken faithfully from the user's input. 1-4000 characters." }),
+			mode: Type.Optional(StringEnum(["regular", "sisyphus"] as const, { description: "Goal mode. Defaults to regular. Use sisyphus only when the user explicitly invoked Sisyphus mode." })),
+			token_budget: Type.Optional(Type.Number({ minimum: 1, description: "Optional token budget in whole tokens. Accept it only when the user explicitly supplied a budget; never invent one." })),
+		}, { additionalProperties: false }),
 		executionMode: "sequential",
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			reconcileFocusedGoalFromDisk(ctx);
+			const objective = params.objective.trim();
+			if (!objective) throw new Error("create_goal requires a non-empty objective.");
+			if (objective.length > 4000) {
+				return {
+					content: [{ type: "text", text: `create_goal objective exceeds 4000 characters (${objective.length}). Shorten the objective and retry.` }],
+					details: goalDetails(state.goal),
+				};
+			}
+			const sisyphusFlag = params.mode === "sisyphus";
+			const { objective: cleanedObjective, verificationContract } = extractVerificationContract(objective);
+			confirmationIntent = null;
+			replaceGoal(
+				{ objective: cleanedObjective, autoContinue: true, sisyphus: sisyphusFlag },
+				ctx,
+				true,
+				verificationContract,
+				params.token_budget,
+			);
+			const created = state.goal;
+			const otherCount = otherOpenGoalCount(goalsById, focusedGoalId);
+			const otherLine = otherCount > 0
+				? `\n${otherCount} other open goal${otherCount === 1 ? "" : "s"} remain in .pi/goals — this goal is now the session focus.`
+				: "";
 			return {
-				content: [{ type: "text", text: "create_goal REJECTED: direct agent creation is disabled. Use /goals or /sisyphus with propose_goal_draft for confirmation, or have the user invoke /goals-set or /sisyphus-set for immediate creation." }],
-				details: goalDetails(state.goal),
+				content: [{ type: "text", text: `${buildGoalCreatedReport({ objective: created?.objective ?? objective, detailedSummary: detailedSummary(created) })}${otherLine}` }],
+				details: goalDetails(created),
+				terminate: true,
 			};
 		},
 		renderCall(args, theme) {
-			const prefix = args?.sisyphus ? "create_goal sisyphus " : "create_goal ";
+			const prefix = args?.mode === "sisyphus" ? "create_goal sisyphus " : "create_goal ";
 			return new Text(theme.fg("toolTitle", prefix) + theme.fg("muted", args?.objective ?? ""), 0, 0);
 		},
 		renderResult(result, _options, theme) {
@@ -2331,7 +2372,6 @@ ${objective}` : objective,
 				}
 				tweakDraftingFor = null;
 				// Reset autoContinue counter — plan changed, agent gets a fresh chain.
-				resetGetGoalNudgeState(state.goal.id);
 				// Mark turn-stopped so subsequent in-turn tool calls are blocked.
 				runtime.markTurnStopped(state.goal.id);
 				syncGoalTools();
@@ -2365,6 +2405,419 @@ ${objective}` : objective,
 		},
 	}));
 
+	async function runGoalCompletionFlow(ctx: ExtensionContext, opts: { completionSummary?: string; verificationSummary?: string; confirmBypassAuditor?: boolean; status?: string }): Promise<AgentToolResult<unknown>> {
+		reconcileFocusedGoalFromDisk(ctx);
+
+		// -- Phase 2: Status validation --
+		const effectiveStatus = opts.status ?? COMPLETE_STATUS;
+		if (effectiveStatus !== COMPLETE_STATUS) {
+			throw new Error("complete_goal requires status=complete when marking a goal complete.");
+		}
+
+		// -- Phase 3: Completion --
+		const completionGate = validateGoalCompletion({ goal: state.goal, runningGoalId });
+		if (!completionGate.ok) {
+			return {
+				content: [{ type: "text", text: completionGate.message }],
+				details: goalDetails(state.goal),
+			};
+		}
+		if (!state.goal) throw new Error("Goal disappeared during completion validation.");
+
+		// Task gate: warn if blockCompletion is enabled and tasks remain pending
+		const disableTasksSettings = loadGoalSettings(ctx.cwd).disableTasks;
+		if (!disableTasksSettings) {
+			const taskWarning = state.goal.taskList ? taskCompletionBlockWarning(state.goal.taskList) : null;
+			if (taskWarning) {
+				return {
+					content: [{ type: "text", text: taskWarning }],
+					details: goalDetails(state.goal),
+				};
+			}
+		}
+
+		// Verification contract gate: enforced only when the model supplied a
+		// verification summary. The new update_goal surface has no paperwork field
+		// — the independent auditor derives the requirements from the objective and
+		// contract and inspects actual state instead.
+		const disableContractsSettings = loadGoalSettings(ctx.cwd).disableContracts;
+		if (!disableContractsSettings && opts.verificationSummary !== undefined) {
+			const contractGate = validateVerificationSummary({
+				verificationContract: state.goal.verificationContract,
+				verificationSummary: opts.verificationSummary,
+			});
+			if (!contractGate.ok) {
+				return {
+					content: [{ type: "text", text: contractGate.message }],
+					details: goalDetails(state.goal),
+				};
+			}
+		}
+
+		const auditTarget = mergeGoalPromptFromDisk(ctx, state.goal);
+		const completionFocus = focusedOperationToken(auditTarget.id);
+		// Append ledger: completion requested
+		try {
+			goalService.appendEvents(ctx, [{
+				type: "completion_requested",
+				goalId: auditTarget.id,
+				summary: opts.completionSummary,
+				at: nowIso(),
+			}]);
+		} catch {
+			// Ledger append failure should not block completion
+		}
+		const settings = loadGoalSettingsFileConfig(ctx.cwd);
+		const auditorLabel = settings.provider || settings.model || settings.thinkingLevel
+			? `${settings.provider ?? "default"}/${settings.model ?? "default"}${settings.thinkingLevel ? `:${settings.thinkingLevel}` : ""}`
+			: "default";
+
+		// Check if auditor is disabled per-goal (user toggled it off during goal confirmation)
+		if (auditTarget.skipAuditor) {
+			pi.sendMessage<GoalAuditEventDetails>({
+				customType: GOAL_AUDIT_ENTRY,
+				content: `Goal completed — per-goal auditor disabled.`,
+				display: true,
+				details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
+			});
+			try {
+				goalService.appendEvents(ctx, [{
+					type: "audit_skipped",
+					goalId: auditTarget.id,
+					reason: "disabled",
+					provider: settings.provider,
+					model: settings.model,
+					thinkingLevel: settings.thinkingLevel,
+					at: nowIso(),
+				}]);
+			} catch {
+				// Ledger append failure should not block completion
+			}
+			accountProgress(ctx);
+			auditProgress = null;
+			goalWidgetComponent?.invalidate();
+			const completeResult = goalService.apply(ctx, {
+				reconcile: false,
+				focusToken: completionFocus,
+				mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+			});
+			if (completeResult.ok && completeResult.goal) runtime.markTurnStopped(completeResult.goal.id);
+			syncGoalTools();
+			updateUI(ctx);
+			return {
+				content: [{
+					type: "text",
+					text: buildCompletionReport({
+						detailedSummary: detailedSummary(state.goal),
+						completionSummary: opts.completionSummary,
+						auditSkippedReason: "per-goal auditor disabled",
+						taskSummary: state.goal?.taskList ? buildTaskSummary(state.goal.taskList) : null,
+					}),
+				}],
+				details: goalDetails(state.goal),
+				terminate: true,
+			};
+		}
+
+		// Check if auditor is disabled in settings
+		if (settings.disabled === true) {
+			if (opts.confirmBypassAuditor !== true) {
+				return {
+					content: [{ type: "text", text: [
+						"The completion auditor is disabled in settings.",
+						"",
+						`Use \`goal_question\` to ask the user: "The independent completion auditor is disabled. Bypass independent verification and mark the goal complete?"`,
+						"If the user confirms, call complete_goal again with confirmBypassAuditor: true.",
+					].join("\n") }],
+					details: goalDetails(state.goal),
+				};
+			}
+			// Auditor disabled and confirmed — skip audit.
+			// Defer archival: set goal complete in-memory + write active file WITHOUT
+			// archiving. Archival happens at turn_end so the agent has a chance to
+			// recognise the skipped audit before the goal is archived.
+			pi.sendMessage<GoalAuditEventDetails>({
+				customType: GOAL_AUDIT_ENTRY,
+				content: `Goal completed — auditor disabled in settings.`,
+				display: true,
+				details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
+			});
+			try {
+				goalService.appendEvents(ctx, [{
+					type: "audit_skipped",
+					goalId: auditTarget.id,
+					reason: "disabled",
+					provider: settings.provider,
+					model: settings.model,
+					thinkingLevel: settings.thinkingLevel,
+					at: nowIso(),
+				}]);
+			} catch {
+				// Ledger append failure should not block completion
+			}
+			// Set goal complete in memory (defer archival to turn_end)
+			accountProgress(ctx);
+			auditProgress = null;
+			goalWidgetComponent?.invalidate();
+			const completeResult = goalService.apply(ctx, {
+				reconcile: false,
+				focusToken: completionFocus,
+				mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+			});
+			if (completeResult.ok && completeResult.goal) runtime.markTurnStopped(completeResult.goal.id);
+			syncGoalTools();
+			updateUI(ctx);
+			return {
+				content: [{
+					type: "text",
+					text: buildCompletionReport({
+						detailedSummary: detailedSummary(state.goal),
+						completionSummary: opts.completionSummary,
+						auditSkippedReason: "auditor disabled in settings",
+						taskSummary: state.goal?.taskList ? buildTaskSummary(state.goal.taskList) : null,
+					}),
+				}],
+				details: goalDetails(state.goal),
+				terminate: true,
+			};
+		}
+
+		// Auditor is enabled — run the normal audit flow
+		await pi.sendMessage<GoalAuditEventDetails>({
+			customType: GOAL_AUDIT_ENTRY,
+			content: [
+				"Auditor: I am starting the independent completion audit.",
+				`Goal id: ${auditTarget.id}`,
+				`Auditor model: ${auditorLabel}`,
+				opts.completionSummary?.trim() ? `Completion claim: ${opts.completionSummary.trim()}` : undefined,
+			].filter((line): line is string => line !== undefined).join("\n"),
+			display: true,
+			details: { phase: "started", goalId: auditTarget.id, auditor: auditorLabel },
+		}, { triggerTurn: true });
+		if (!isFocusedOperationCurrent(completionFocus)) {
+			return focusedOperationCancelledResult("Goal completion", completionFocus);
+		}
+		// Append ledger: audit started
+		try {
+			goalService.appendEvents(ctx, [{
+				type: "audit_started",
+				goalId: auditTarget.id,
+				provider: settings.provider,
+				model: settings.model,
+				thinkingLevel: settings.thinkingLevel,
+				at: nowIso(),
+			}]);
+		} catch {
+			// Ledger append failure should not block completion
+		}
+		// Set up auditor progress display (before createAgentSession)
+		const auditStartedAt = Date.now();
+		auditProgress = {
+			recentOutput: [],
+			phase: "running",
+			elapsedMs: 0,
+		};
+		// Start animation timer for the spinner in the auditor widget
+		stopAuditAnimation();
+		auditAnimationTimer = setInterval(() => {
+			if (!auditProgress) {
+				stopAuditAnimation();
+				return;
+			}
+			auditProgress.elapsedMs = Date.now() - auditStartedAt;
+			goalWidgetComponent?.invalidate();
+		}, 80);
+		auditAnimationTimer.unref?.();
+
+		// Create a dedicated AbortController for the audit so it can be interrupted via Escape
+		auditAbortController?.abort(); // Clean up any stale controller
+		const completionAuditController = new AbortController();
+		auditAbortController = completionAuditController;
+
+		const auditor = await (dependencies.runCompletionAuditor ?? runGoalCompletionAuditor)({
+			ctx,
+			goal: auditTarget,
+			completionSummary: opts.completionSummary,
+			detailedSummary: detailedSummary(auditTarget),
+			verificationSummary: opts.verificationSummary,
+			settings: loadGoalSettings(ctx.cwd),
+			signal: completionAuditController.signal,
+			onProgress: (progress) => {
+				auditProgress = {
+					...progress,
+					elapsedMs: Date.now() - auditStartedAt,
+				};
+				goalWidgetComponent?.invalidate();
+			},
+		});
+		// Clear abort controller — audit finished on its own
+		if (auditAbortController === completionAuditController) auditAbortController = null;
+		// Clear auditor progress display
+		stopAuditAnimation();
+		if (!isFocusedOperationCurrent(completionFocus)) {
+			auditProgress = null;
+			goalWidgetComponent?.invalidate();
+			return focusedOperationCancelledResult("Goal completion", completionFocus);
+		}
+
+		// If the audit was aborted by the user (Esc), show a TUI dialog letting
+		// the user choose: mark complete without audit, or continue working.
+		if (auditor.error === "Auditor aborted.") {
+			auditProgress = null;
+			goalWidgetComponent?.invalidate();
+			updateUI(ctx);
+
+			showingEscapeDialog = true;
+			const userChoice: EscapeDialogResult = await showEscapeDialog(ctx, auditTarget.objective);
+			showingEscapeDialog = false;
+			if (!isFocusedOperationCurrent(completionFocus)) {
+				return focusedOperationCancelledResult("Goal completion", completionFocus);
+			}
+
+			if (userChoice === "complete_without_audit") {
+				// ── Mark complete without audit ────────────────────────────
+				pi.sendMessage<GoalAuditEventDetails>({
+					customType: GOAL_AUDIT_ENTRY,
+					content: `Goal completed — user bypassed audit via Escape.`,
+					display: true,
+					details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
+				});
+				try {
+					goalService.appendEvents(ctx, [{
+						type: "audit_skipped",
+						goalId: auditTarget.id,
+						reason: "user_aborted",
+						provider: settings.provider,
+						model: settings.model,
+						thinkingLevel: settings.thinkingLevel,
+						at: nowIso(),
+					}]);
+				} catch {
+					// Ledger append failure should not block completion
+				}
+				// Set goal complete in memory (defer archival to turn_end)
+				accountProgress(ctx);
+				const completeResult = goalService.apply(ctx, {
+					reconcile: false,
+					focusToken: completionFocus,
+					mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+				});
+				if (completeResult.ok && completeResult.goal) runtime.markTurnStopped(completeResult.goal.id);
+				syncGoalTools();
+				updateUI(ctx);
+				return {
+					content: [{
+						type: "text",
+						text: [
+							"User chose to mark the goal complete (bypassed audit via Escape).",
+							"",
+							"The goal is complete. Provide a final summary of what was accomplished.",
+						].join("\n"),
+					}],
+					details: goalDetails(state.goal),
+				};
+			} else {
+				// ── Continue working → pause the goal ──────────────
+				pauseActiveGoal(ctx);
+				if (state.goal) runtime.markTurnStopped(state.goal.id);
+				return {
+					content: [{ type: "text", text: "Goal paused — user chose to continue working after skipping audit." }],
+					details: state.goal ? goalDetails(state.goal) : undefined,
+				};
+			}
+		}
+
+		// Show final audit output briefly before clearing
+		if (auditProgress && auditor.output) {
+			const outputLines = auditor.output.split("\n").slice(0, 8);
+			auditProgress = {
+				...auditProgress,
+				phase: "done",
+				recentOutput: outputLines,
+				elapsedMs: Date.now() - auditStartedAt,
+			};
+			goalWidgetComponent?.invalidate();
+		}
+		// Append ledger: audit result
+		const verdict = auditor.approved ? "approved" : auditor.error ? "error" : "disapproved" as const;
+		try {
+			goalService.appendEvents(ctx, [{
+				type: "audit_result",
+				goalId: auditTarget.id,
+				verdict,
+				report: auditor.output || "Auditor produced no output.",
+				at: nowIso(),
+			}]);
+		} catch {
+			// Ledger append failure should not block completion
+		}
+		if (!auditor.approved) {
+			// Clear auditor progress to restore normal widget state
+			auditProgress = null;
+			goalWidgetComponent?.invalidate();
+			const rejectionText = [
+				"Goal audit rejected.",
+				"",
+				"Goal completion rejected by independent auditor.",
+				auditor.model ? `Auditor model: ${auditor.model}${auditor.thinkingLevel ? `:${auditor.thinkingLevel}` : ""}` : undefined,
+				auditor.error ? `Auditor error: ${auditor.error}` : undefined,
+				"",
+				auditor.output || "Auditor produced no approval marker.",
+			].filter((line): line is string => line !== undefined).join("\n");
+			pi.sendMessage<GoalAuditEventDetails>({
+				customType: GOAL_AUDIT_ENTRY,
+				content: rejectionText,
+				display: true,
+				details: { phase: "rejected", goalId: auditTarget.id, auditor: auditor.model },
+			});
+			return {
+				content: [{ type: "text", text: rejectionText }],
+				details: goalDetails(state.goal),
+			};
+		}
+		const approvalText = [
+			"Auditor: I approve this completion claim.",
+			auditor.model ? `Auditor model: ${auditor.model}${auditor.thinkingLevel ? `:${auditor.thinkingLevel}` : ""}` : undefined,
+			"",
+			auditor.output || "Auditor approved completion.",
+		].filter((line): line is string => line !== undefined).join("\n");
+		pi.sendMessage<GoalAuditEventDetails>({
+			customType: GOAL_AUDIT_ENTRY,
+			content: approvalText,
+			display: true,
+			details: { phase: "approved", goalId: auditTarget.id, auditor: auditor.model },
+		});
+		// Account for any remaining elapsed time.
+		// Defer archival: set goal complete in-memory + write active file WITHOUT
+		// archiving. Archival happens at turn_end so the agent can see the auditor
+		// approval before the goal is archived.
+		accountProgress(ctx);
+		auditProgress = null;
+		goalWidgetComponent?.invalidate();
+		const completeResult = goalService.apply(ctx, {
+			reconcile: false,
+			focusToken: completionFocus,
+			mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+		});
+		if (completeResult.ok && completeResult.goal) runtime.markTurnStopped(completeResult.goal.id);
+		syncGoalTools();
+		updateUI(ctx);
+		return {
+			content: [{
+				type: "text",
+				text: buildCompletionReport({
+					detailedSummary: detailedSummary(state.goal),
+					completionSummary: opts.completionSummary,
+					auditorReport: auditor.output,
+					taskSummary: state.goal?.taskList ? buildTaskSummary(state.goal.taskList) : null,
+				}),
+			}],
+			details: goalDetails(state.goal),
+			terminate: true,
+		};
+	}
+
+
 	pi.registerTool(defineTool({
 		name: "complete_goal",
 		label: "Complete Goal",
@@ -2388,420 +2841,96 @@ ${objective}` : objective,
 		}, { additionalProperties: false }),
 		executionMode: "sequential",
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-			reconcileFocusedGoalFromDisk(ctx);
-
-			// -- Phase 2: Status validation --
-			const effectiveStatus = params.status ?? COMPLETE_STATUS;
-			if (effectiveStatus !== COMPLETE_STATUS) {
-				throw new Error("complete_goal requires status=complete when marking a goal complete.");
-			}
-
-			// -- Phase 3: Completion --
-			const completionGate = validateGoalCompletion({ goal: state.goal, runningGoalId });
-			if (!completionGate.ok) {
-				return {
-					content: [{ type: "text", text: completionGate.message }],
-					details: goalDetails(state.goal),
-				};
-			}
-			if (!state.goal) throw new Error("Goal disappeared during completion validation.");
-
-			// Task gate: warn if blockCompletion is enabled and tasks remain pending
-			const disableTasksSettings = loadGoalSettings(ctx.cwd).disableTasks;
-			if (!disableTasksSettings) {
-				const taskWarning = state.goal.taskList ? taskCompletionBlockWarning(state.goal.taskList) : null;
-				if (taskWarning) {
-					return {
-						content: [{ type: "text", text: taskWarning }],
-						details: goalDetails(state.goal),
-					};
-				}
-			}
-
-			// Verification contract gate: if the goal has a contract, verificationSummary must be non-empty
-			const disableContractsSettings = loadGoalSettings(ctx.cwd).disableContracts;
-			if (!disableContractsSettings) {
-				const contractGate = validateVerificationSummary({
-					verificationContract: state.goal.verificationContract,
-					verificationSummary: params.verificationSummary,
-				});
-				if (!contractGate.ok) {
-					return {
-						content: [{ type: "text", text: contractGate.message }],
-						details: goalDetails(state.goal),
-					};
-				}
-			}
-
-			const auditTarget = mergeGoalPromptFromDisk(ctx, state.goal);
-			const completionFocus = focusedOperationToken(auditTarget.id);
-			// Append ledger: completion requested
-			try {
-				goalService.appendEvents(ctx, [{
-					type: "completion_requested",
-					goalId: auditTarget.id,
-					summary: params.completionSummary,
-					at: nowIso(),
-				}]);
-			} catch {
-				// Ledger append failure should not block completion
-			}
-			const settings = loadGoalSettingsFileConfig(ctx.cwd);
-			const auditorLabel = settings.provider || settings.model || settings.thinkingLevel
-				? `${settings.provider ?? "default"}/${settings.model ?? "default"}${settings.thinkingLevel ? `:${settings.thinkingLevel}` : ""}`
-				: "default";
-
-			// Check if auditor is disabled per-goal (user toggled it off during goal confirmation)
-			if (auditTarget.skipAuditor) {
-				pi.sendMessage<GoalAuditEventDetails>({
-					customType: GOAL_AUDIT_ENTRY,
-					content: `Goal completed — per-goal auditor disabled.`,
-					display: true,
-					details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
-				});
-				try {
-					goalService.appendEvents(ctx, [{
-						type: "audit_skipped",
-						goalId: auditTarget.id,
-						reason: "disabled",
-						provider: settings.provider,
-						model: settings.model,
-						thinkingLevel: settings.thinkingLevel,
-						at: nowIso(),
-					}]);
-				} catch {
-					// Ledger append failure should not block completion
-				}
-				accountProgress(ctx);
-				auditProgress = null;
-				goalWidgetComponent?.invalidate();
-				const completeResult = goalService.apply(ctx, {
-					reconcile: false,
-					focusToken: completionFocus,
-					mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
-				});
-				if (completeResult.ok && completeResult.goal) runtime.markTurnStopped(completeResult.goal.id);
-				resetGetGoalNudgeState(completeResult.ok ? completeResult.goal.id : undefined);
-				syncGoalTools();
-				updateUI(ctx);
-				return {
-					content: [{
-						type: "text",
-						text: buildCompletionReport({
-							detailedSummary: detailedSummary(state.goal),
-							completionSummary: params.completionSummary,
-							auditSkippedReason: "per-goal auditor disabled",
-							taskSummary: state.goal?.taskList ? buildTaskSummary(state.goal.taskList) : null,
-						}),
-					}],
-					details: goalDetails(state.goal),
-					terminate: true,
-				};
-			}
-
-			// Check if auditor is disabled in settings
-			if (settings.disabled === true) {
-				if (params.confirmBypassAuditor !== true) {
-					return {
-						content: [{ type: "text", text: [
-							"The completion auditor is disabled in settings.",
-							"",
-							`Use \`goal_question\` to ask the user: "The independent completion auditor is disabled. Bypass independent verification and mark the goal complete?"`,  
-							"If the user confirms, call complete_goal again with confirmBypassAuditor: true.",
-						].join("\n") }],
-						details: goalDetails(state.goal),
-					};
-				}
-				// Auditor disabled and confirmed — skip audit.
-				// Defer archival: set goal complete in-memory + write active file WITHOUT
-				// archiving. Archival happens at turn_end so the agent has a chance to
-				// recognise the skipped audit before the goal is archived.
-				pi.sendMessage<GoalAuditEventDetails>({
-					customType: GOAL_AUDIT_ENTRY,
-					content: `Goal completed — auditor disabled in settings.`,
-					display: true,
-					details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
-				});
-				try {
-					goalService.appendEvents(ctx, [{
-						type: "audit_skipped",
-						goalId: auditTarget.id,
-						reason: "disabled",
-						provider: settings.provider,
-						model: settings.model,
-						thinkingLevel: settings.thinkingLevel,
-						at: nowIso(),
-					}]);
-				} catch {
-					// Ledger append failure should not block completion
-				}
-				// Set goal complete in memory (defer archival to turn_end)
-				accountProgress(ctx);
-				auditProgress = null;
-				goalWidgetComponent?.invalidate();
-				const completeResult = goalService.apply(ctx, {
-					reconcile: false,
-					focusToken: completionFocus,
-					mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
-				});
-				if (completeResult.ok && completeResult.goal) runtime.markTurnStopped(completeResult.goal.id);
-				resetGetGoalNudgeState(completeResult.ok ? completeResult.goal.id : undefined);
-				syncGoalTools();
-				updateUI(ctx);
-				return {
-					content: [{
-						type: "text",
-						text: buildCompletionReport({
-							detailedSummary: detailedSummary(state.goal),
-							completionSummary: params.completionSummary,
-							auditSkippedReason: "auditor disabled in settings",
-							taskSummary: state.goal?.taskList ? buildTaskSummary(state.goal.taskList) : null,
-						}),
-					}],
-					details: goalDetails(state.goal),
-					terminate: true,
-				};
-			}
-
-			// Auditor is enabled — run the normal audit flow
-			await pi.sendMessage<GoalAuditEventDetails>({
-				customType: GOAL_AUDIT_ENTRY,
-				content: [
-					"Auditor: I am starting the independent completion audit.",
-					`Goal id: ${auditTarget.id}`,
-					`Auditor model: ${auditorLabel}`,
-					params.completionSummary?.trim() ? `Completion claim: ${params.completionSummary.trim()}` : undefined,
-				].filter((line): line is string => line !== undefined).join("\n"),
-				display: true,
-				details: { phase: "started", goalId: auditTarget.id, auditor: auditorLabel },
-			}, { triggerTurn: true });
-			if (!isFocusedOperationCurrent(completionFocus)) {
-				return focusedOperationCancelledResult("Goal completion", completionFocus);
-			}
-			// Append ledger: audit started
-			try {
-				goalService.appendEvents(ctx, [{
-					type: "audit_started",
-					goalId: auditTarget.id,
-					provider: settings.provider,
-					model: settings.model,
-					thinkingLevel: settings.thinkingLevel,
-					at: nowIso(),
-				}]);
-			} catch {
-				// Ledger append failure should not block completion
-			}
-			// Set up auditor progress display (before createAgentSession)
-			const auditStartedAt = Date.now();
-			auditProgress = {
-				recentOutput: [],
-				phase: "running",
-				elapsedMs: 0,
-			};
-			// Start animation timer for the spinner in the auditor widget
-			stopAuditAnimation();
-			auditAnimationTimer = setInterval(() => {
-				if (!auditProgress) {
-					stopAuditAnimation();
-					return;
-				}
-				auditProgress.elapsedMs = Date.now() - auditStartedAt;
-				goalWidgetComponent?.invalidate();
-			}, 80);
-			auditAnimationTimer.unref?.();
-
-			// Create a dedicated AbortController for the audit so it can be interrupted via Escape
-			auditAbortController?.abort(); // Clean up any stale controller
-			const completionAuditController = new AbortController();
-			auditAbortController = completionAuditController;
-
-			const auditor = await (dependencies.runCompletionAuditor ?? runGoalCompletionAuditor)({
-				ctx,
-				goal: auditTarget,
+			return runGoalCompletionFlow(ctx, {
 				completionSummary: params.completionSummary,
-				detailedSummary: detailedSummary(auditTarget),
 				verificationSummary: params.verificationSummary,
-				settings: loadGoalSettings(ctx.cwd),
-				signal: completionAuditController.signal,
-				onProgress: (progress) => {
-					auditProgress = {
-						...progress,
-						elapsedMs: Date.now() - auditStartedAt,
-					};
-					goalWidgetComponent?.invalidate();
-				},
+				confirmBypassAuditor: params.confirmBypassAuditor,
+				status: params.status,
 			});
-			// Clear abort controller — audit finished on its own
-			if (auditAbortController === completionAuditController) auditAbortController = null;
-			// Clear auditor progress display
-			stopAuditAnimation();
-			if (!isFocusedOperationCurrent(completionFocus)) {
-				auditProgress = null;
-				goalWidgetComponent?.invalidate();
-				return focusedOperationCancelledResult("Goal completion", completionFocus);
-			}
-
-			// If the audit was aborted by the user (Esc), show a TUI dialog letting
-			// the user choose: mark complete without audit, or continue working.
-			if (auditor.error === "Auditor aborted.") {
-				auditProgress = null;
-				goalWidgetComponent?.invalidate();
-				updateUI(ctx);
-
-				showingEscapeDialog = true;
-				const userChoice: EscapeDialogResult = await showEscapeDialog(ctx, auditTarget.objective);
-				showingEscapeDialog = false;
-				if (!isFocusedOperationCurrent(completionFocus)) {
-					return focusedOperationCancelledResult("Goal completion", completionFocus);
-				}
-
-				if (userChoice === "complete_without_audit") {
-					// ── Mark complete without audit ────────────────────────────
-					pi.sendMessage<GoalAuditEventDetails>({
-						customType: GOAL_AUDIT_ENTRY,
-						content: `Goal completed — user bypassed audit via Escape.`,
-						display: true,
-						details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
-					});
-					try {
-						goalService.appendEvents(ctx, [{
-							type: "audit_skipped",
-							goalId: auditTarget.id,
-							reason: "user_aborted",
-							provider: settings.provider,
-							model: settings.model,
-							thinkingLevel: settings.thinkingLevel,
-							at: nowIso(),
-						}]);
-					} catch {
-						// Ledger append failure should not block completion
-					}
-					// Set goal complete in memory (defer archival to turn_end)
-					accountProgress(ctx);
-					const completeResult = goalService.apply(ctx, {
-						reconcile: false,
-						focusToken: completionFocus,
-						mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
-					});
-					if (completeResult.ok && completeResult.goal) runtime.markTurnStopped(completeResult.goal.id);
-					resetGetGoalNudgeState(completeResult.ok ? completeResult.goal.id : undefined);
-					syncGoalTools();
-					updateUI(ctx);
-					return {
-						content: [{
-							type: "text",
-							text: [
-								"User chose to mark the goal complete (bypassed audit via Escape).",
-								"",
-								"The goal is complete. Provide a final summary of what was accomplished.",
-							].join("\n"),
-						}],
-						details: goalDetails(state.goal),
-					};
-				} else {
-					// ── Continue working → pause the goal ──────────────
-					pauseActiveGoal(ctx);
-					if (state.goal) runtime.markTurnStopped(state.goal.id);
-					return {
-						content: [{ type: "text", text: "Goal paused — user chose to continue working after skipping audit." }],
-						details: state.goal ? goalDetails(state.goal) : undefined,
-					};
-				}
-			}
-
-			// Show final audit output briefly before clearing
-			if (auditProgress && auditor.output) {
-				const outputLines = auditor.output.split("\n").slice(0, 8);
-				auditProgress = {
-					...auditProgress,
-					phase: "done",
-					recentOutput: outputLines,
-					elapsedMs: Date.now() - auditStartedAt,
-				};
-				goalWidgetComponent?.invalidate();
-			}
-			// Append ledger: audit result
-			const verdict = auditor.approved ? "approved" : auditor.error ? "error" : "disapproved" as const;
-			try {
-				goalService.appendEvents(ctx, [{
-					type: "audit_result",
-					goalId: auditTarget.id,
-					verdict,
-					report: auditor.output || "Auditor produced no output.",
-					at: nowIso(),
-				}]);
-			} catch {
-				// Ledger append failure should not block completion
-			}
-			if (!auditor.approved) {
-				// Clear auditor progress to restore normal widget state
-				auditProgress = null;
-				goalWidgetComponent?.invalidate();
-				const rejectionText = [
-					"Goal audit rejected.",
-					"",
-					"Goal completion rejected by independent auditor.",
-					auditor.model ? `Auditor model: ${auditor.model}${auditor.thinkingLevel ? `:${auditor.thinkingLevel}` : ""}` : undefined,
-					auditor.error ? `Auditor error: ${auditor.error}` : undefined,
-					"",
-					auditor.output || "Auditor produced no approval marker.",
-				].filter((line): line is string => line !== undefined).join("\n");
-				pi.sendMessage<GoalAuditEventDetails>({
-					customType: GOAL_AUDIT_ENTRY,
-					content: rejectionText,
-					display: true,
-					details: { phase: "rejected", goalId: auditTarget.id, auditor: auditor.model },
-				});
-				return {
-					content: [{ type: "text", text: rejectionText }],
-					details: goalDetails(state.goal),
-				};
-			}
-			const approvalText = [
-				"Auditor: I approve this completion claim.",
-				auditor.model ? `Auditor model: ${auditor.model}${auditor.thinkingLevel ? `:${auditor.thinkingLevel}` : ""}` : undefined,
-				"",
-				auditor.output || "Auditor approved completion.",
-			].filter((line): line is string => line !== undefined).join("\n");
-			pi.sendMessage<GoalAuditEventDetails>({
-				customType: GOAL_AUDIT_ENTRY,
-				content: approvalText,
-				display: true,
-				details: { phase: "approved", goalId: auditTarget.id, auditor: auditor.model },
-			});
-			// Account for any remaining elapsed time.
-			// Defer archival: set goal complete in-memory + write active file WITHOUT
-			// archiving. Archival happens at turn_end so the agent can see the auditor
-			// approval before the goal is archived.
-			accountProgress(ctx);
-			auditProgress = null;
-			goalWidgetComponent?.invalidate();
-			const completeResult = goalService.apply(ctx, {
-				reconcile: false,
-				focusToken: completionFocus,
-				mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
-			});
-			if (completeResult.ok && completeResult.goal) runtime.markTurnStopped(completeResult.goal.id);
-			resetGetGoalNudgeState(completeResult.ok ? completeResult.goal.id : undefined);
-			syncGoalTools();
-			updateUI(ctx);
-			return {
-				content: [{
-					type: "text",
-					text: buildCompletionReport({
-						detailedSummary: detailedSummary(state.goal),
-						completionSummary: params.completionSummary,
-						auditorReport: auditor.output,
-						taskSummary: state.goal?.taskList ? buildTaskSummary(state.goal.taskList) : null,
-					}),
-				}],
-				details: goalDetails(state.goal),
-				terminate: true,
-			};
-		},
+		}
+		,
 		renderCall(args, theme) {
 			const label = args?.status ?? "";
 			return new Text(theme.fg("toolTitle", "complete_goal ") + theme.fg("success", label), 0, 0);
+		},
+		renderResult(result, _options, theme) {
+			return renderGoalResult(result, theme);
+		},
+	}));
+
+	// ── update_goal: the model's terminal-outcome surface (Stage 3) ────────
+	// complete → the independent auditor verifies from actual evidence (no
+	// paperwork field); blocked → a distinct agent-blocked state that stops
+	// continuation. The three-consecutive-turn blocker rule is prompt policy.
+	async function runGoalBlockedFlow(ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
+		reconcileFocusedGoalFromDisk(ctx);
+		const gate = validateGoalBlock({ goal: state.goal, runningGoalId });
+		if (!gate.ok) {
+			return {
+				content: [{ type: "text", text: gate.message }],
+				details: goalDetails(state.goal),
+			};
+		}
+		if (!state.goal) throw new Error("Goal disappeared during blocked validation.");
+		accountProgress(ctx);
+		const result = goalService.apply(ctx, {
+			reconcile: false,
+			refreshFromDisk: true,
+			mutate: (g) => ({
+				...g,
+				status: "blocked" as const,
+				stopReason: "agent" as const,
+				pauseReason: g.pauseReason ?? "The model reported this goal as blocked after the same blocker recurred on consecutive turns.",
+				updatedAt: nowIso(),
+			}),
+			ledger: (written) => [{
+				type: "goal_blocked",
+				goalId: written.id,
+				reason: written.pauseReason ?? "blocked",
+				source: "agent",
+				at: written.updatedAt,
+			}],
+		});
+		if (result.ok) {
+			clearContinuationState();
+			clearActiveAccounting();
+			if (result.goal) runtime.markTurnStopped(result.goal.id);
+			syncGoalTools();
+			updateUI(ctx);
+		}
+		return {
+			content: [{
+				type: "text",
+				text: "Goal blocked. Continuation stopped; the goal is waiting for the user to resume, revise, or clear it. Stop now; do not start another tool call.",
+			}],
+			details: goalDetails(state.goal),
+			terminate: true,
+		};
+	}
+
+	pi.registerTool(defineTool({
+		name: "update_goal",
+		label: "Update Goal",
+		description: "Report one of two terminal outcomes for the current run: status \"complete\" (runs the independent completion auditor, which verifies from actual evidence — no paperwork field) or status \"blocked\" (records a distinct agent-blocked state and stops continuation). Call blocked only after the same blocker recurs on three consecutive goal turns.",
+		promptSnippet: "Report the current run as complete (audited) or blocked (after three consecutive identical blockers).",
+		promptGuidelines: [
+			"Call update_goal({status: \"complete\"}) only when every requirement is satisfied. There is no verification-summary parameter: the independent auditor derives the requirements from the objective and any verification contract, and inspects the actual workspace evidence.",
+			"Call update_goal({status: \"blocked\"}) only after the SAME blocker has recurred on three consecutive goal turns. Do not block on the first or second occurrence — keep trying concrete next steps and ask for help when genuinely stuck. A user pause remains an immediate, distinct state controlled by the user.",
+			"Do not use update_goal as an escape hatch: if the objective is achieved, complete it; if it is not, do not complete it. The goal objective is immutable — the model must never edit it on its own initiative.",
+			"For sisyphus goals, do not mark complete until every numbered step has been executed and individually verified against its done criterion.",
+		],
+		parameters: Type.Object({
+			status: StringEnum(["complete", "blocked"] as const, { description: "complete runs the independent auditor; blocked records a distinct agent-blocked state. Only these two outcomes are accepted." }),
+		}, { additionalProperties: false }),
+		executionMode: "sequential",
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (params.status === "blocked") {
+				return runGoalBlockedFlow(ctx);
+			}
+			return runGoalCompletionFlow(ctx, {});
+		},
+		renderCall(args, theme) {
+			return new Text(theme.fg("toolTitle", "update_goal ") + theme.fg("muted", args?.status ?? ""), 0, 0);
 		},
 		renderResult(result, _options, theme) {
 			return renderGoalResult(result, theme);
@@ -2845,7 +2974,6 @@ ${objective}` : objective,
 			state.goal = mergeGoalPromptFromDisk(ctx, state.goal);
 			const next = buildPausedByAgentGoal(state.goal, { reason, suggestedAction: suggested, updatedAt: nowIso() });
 			setGoal(next, ctx);
-			resetGetGoalNudgeState(next.id);
 			// C9 fix: mark turn-stopped so subsequent in-turn tool calls are blocked.
 			// This is the schema-level closure of "agent kept writing files after pause_goal".
 			runtime.markTurnStopped(state.goal.id);
@@ -2906,7 +3034,6 @@ ${objective}` : objective,
 			state.goal = mergeGoalPromptFromDisk(ctx, state.goal);
 			state.goal = buildAbortedByAgentGoal(state.goal, { reason, updatedAt: nowIso() });
 			const archived = archiveCurrentGoal(ctx, "agent");
-			resetGetGoalNudgeState(abortedGoalId);
 			setGoal(null, ctx, true, "aborted");
 			runtime.markTurnStopped(abortedGoalId);
 
@@ -3109,7 +3236,6 @@ ${objective}` : objective,
 				return focusedOperationCancelledResult("Task list proposal", taskListFocus);
 			}
 			runtime.markTurnStopped(state.goal.id);
-			resetGetGoalNudgeState(state.goal.id);
 			syncGoalTools();
 			updateUI(ctx);
 
@@ -3403,19 +3529,8 @@ promptGuidelines: [
 					`End the turn with a brief summary and yield to the user.`,
 			};
 		}
-		// Phase 5 soft gate relaxation: active-goal question block and repeated get_goal
-		// block are removed. The agent is trusted to prefer work tools; prompts nudge
-		// toward concrete work without hard-stopping the turn.
-		if (confirmationIntent === null && tweakDraftingFor === null && state.goal?.status === "active") {
-			if (event.toolName === "get_goal") {
-				const prior = activeGetGoalTurnsByGoalId.get(state.goal.id) ?? 0;
-				activeGetGoalTurnsByGoalId.set(state.goal.id, prior + 1);
-				// Nudge only: do not hard-block, but warn in tool response via get_goal execute
-			}
-		}
 		// Track for #4 empty-turn gate.
 		if (isMeaningfulProgressToolCall(event.toolName, asRecord(event)?.args)) {
-			if (state.goal?.id) activeGetGoalTurnsByGoalId.delete(state.goal.id);
 			goalWorkToolCalledThisTurn = true;
 		}
 		return;
@@ -3455,7 +3570,6 @@ promptGuidelines: [
 				}],
 			});
 			if (archiveResult.ok) {
-				resetGetGoalNudgeState(completedGoal.id);
 				goalsById.delete(completedGoal.id);
 				assignFocusedGoalId(null);
 				appendFocusEntry(null, "completed");
@@ -3575,7 +3689,6 @@ promptGuidelines: [
 			// autoContinue nudge state so the user always gets a fresh chain.
 			runtime.setCheckpoint(null);
 			clearContinuationState();
-			resetGetGoalNudgeState(state.goal?.id);
 		}
 
 		if (!state.goal) {
