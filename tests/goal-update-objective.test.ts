@@ -104,7 +104,7 @@ test("update_goal(complete) requires status=complete in the shared completion fl
 
 // ─── completion flow unaffected ────────────────────────────────────────────
 
-test("complete_goal with status=complete still works (completion flow unchanged)", () => {
+test("update_goal(complete) with status=complete still works (completion flow unchanged)", () => {
 	const ctx = tempCtx();
 	try {
 		const goal = makeGoal();
@@ -143,13 +143,13 @@ test("buildCompletionReport handles updated objective display", () => {
 	assert.ok(report.includes("<approved/>"));
 });
 
-// ─── propose_goal_tweak handler simulation ───────────────────────────────────
-// The propose_goal_tweak confirm path writes the new objective via
+// ─── tweak persist-path simulation (shared proposal validators) ────────────
+// The tweak persist path writes the new objective via
 // writeActiveGoalFile, appends a state entry, clears tweakDraftingFor, sets
 // turnStoppedFor, and returns terminate:true. We simulate the storage-level
 // write and verify the goal is updated on disk.
 
-test("propose_goal_tweak path: writeActiveGoalFile with new objective (simulated handler execution)", () => {
+test("tweak persist path: writeActiveGoalFile with new objective (simulated handler execution)", () => {
 	const ctx = tempCtx();
 	try {
 		const originalObj = "Original objective";
@@ -160,7 +160,7 @@ test("propose_goal_tweak path: writeActiveGoalFile with new objective (simulated
 		const active = writeActiveGoalFile(ctx, goal);
 		assert.equal(active.objective, originalObj);
 
-		// Simulate propose_goal_tweak confirm path: write with new objective (same
+		// Simulate the tweak persist path: write with new objective (same
 		// pattern the handler uses: spread state goal, set new objective + updatedAt)
 		const tweaked = writeActiveGoalFile(ctx, {
 			...active,
@@ -185,7 +185,7 @@ test("propose_goal_tweak path: writeActiveGoalFile with new objective (simulated
 	}
 });
 
-test("propose_goal_tweak path: taskList persisted when tasks parameter provided", () => {
+test("tweak persist path: taskList persisted when tasks parameter provided", () => {
 	const ctx = tempCtx();
 	try {
 		const goal = makeGoal({
@@ -198,7 +198,7 @@ test("propose_goal_tweak path: taskList persisted when tasks parameter provided"
 			{ id: "t2", title: "Task two", status: "pending" as const, verificationContract: "Must verify" },
 		];
 
-		// Simulate propose_goal_tweak confirm path with tasks parameter
+		// Simulate the tweak persist path with tasks parameter
 		const tweaked = writeActiveGoalFile(ctx, {
 			...active,
 			objective: "Updated objective with new tasks",
@@ -225,7 +225,7 @@ test("propose_goal_tweak path: taskList persisted when tasks parameter provided"
 	}
 });
 
-test("propose_goal_tweak path: original taskList inherited when tasks omitted", () => {
+test("tweak persist path: original taskList inherited when tasks omitted", () => {
 	const ctx = tempCtx();
 	try {
 		const originalTasks = [
@@ -244,7 +244,7 @@ test("propose_goal_tweak path: original taskList inherited when tasks omitted", 
 		const active = writeActiveGoalFile(ctx, goal);
 		assert.ok(active.taskList, "original must have taskList");
 
-		// Simulate propose_goal_tweak confirm path WITHOUT tasks parameter:
+		// Simulate the tweak persist path WITHOUT tasks parameter:
 		// the handler inherits the current goal's taskList
 		const updatedObjective = "Objective tweaked, tasks inherited unchanged";
 		const withInherited = writeActiveGoalFile(ctx, {
@@ -269,7 +269,7 @@ test("propose_goal_tweak path: original taskList inherited when tasks omitted", 
 	}
 });
 
-test("propose_goal_tweak path: taskList cleared when tasks omitted and goal has no taskList", () => {
+test("tweak persist path: taskList cleared when tasks omitted and goal has no taskList", () => {
 	const ctx = tempCtx();
 	try {
 		// Goal WITHOUT task list
@@ -291,7 +291,7 @@ test("propose_goal_tweak path: taskList cleared when tasks omitted and goal has 
 	}
 });
 
-test("propose_goal_tweak path: task validation rejects deep subtasks", () => {
+test("tweak persist path: task validation rejects deep subtasks", () => {
 	const ctx = tempCtx();
 	try {
 		const goal = makeGoal({ objective: "Test validation" });

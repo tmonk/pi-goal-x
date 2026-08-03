@@ -408,7 +408,7 @@ describe("Tool visibility integration", () => {
 		}
 	});
 
-	// ── Verify complete_goal and pause_goal appear in active tools ───────
+	// ── Verify removed lifecycle tools never appear in active tools ───────
 	it("core goal tools are always in active tool set", () => {
 		// Direct assertion: these constants are the source of truth
 		assert.ok(ACTIVE_LIFECYCLE_TOOLS.includes("create_goal"),
@@ -441,7 +441,7 @@ describe("Tool visibility integration", () => {
 	});
 
 	// ── tool_call handler is registered ──────────────────────────────────
-	it("tool_call handler is registered for complete_goal processing", () => {
+	it("tool_call handler is registered", () => {
 		const handler = lifecycleHandlers.get("tool_call");
 		assert.ok(handler, "tool_call handler must be registered");
 	});
@@ -461,7 +461,7 @@ describe("Tool visibility integration", () => {
 	it("active goal with task list exposes all lifecycle tools", async () => {
 		const f = testFixture();
 		try {
-			// Create a goal with a task list (mimics propose_goal_draft + task list flow)
+			// Create a goal with a task list (direct creation + set_goal_tasks flow)
 			const now = new Date().toISOString();
 			const goalWithTasks = createGoal({
 				objective: "Test goal with task list",
@@ -700,10 +700,10 @@ describe("Tool visibility integration", () => {
 				undefined,
 				taskCtx,
 			);
-			assert.ok(result1, "complete_task result must be defined");
+			assert.ok(result1, "update_goal_task result must be defined");
 			const text1 = result1.content?.[0]?.text ?? "";
 			assert.ok(text1.includes("t1 complete") || text1.includes("1/2"),
-				`complete_task should report t1 complete. Got: ${text1}`);
+				`update_goal_task should report t1 complete. Got: ${text1}`);
 
 			// After executing update_goal_task, all lifecycle tools should still be present
 			for (const tool of ALL_LIFECYCLE_TOOLS) {
@@ -719,7 +719,7 @@ describe("Tool visibility integration", () => {
 				undefined,
 				taskCtx,
 			);
-			assert.ok(result2, "complete_task result must be defined");
+			assert.ok(result2, "update_goal_task result must be defined");
 
 			// Tools should still be present after all tasks complete
 			for (const tool of ALL_LIFECYCLE_TOOLS) {

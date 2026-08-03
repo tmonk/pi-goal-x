@@ -126,7 +126,7 @@ export function buildCompactionSummary(args: {
   }
 
   lines.push("[INSTRUCTION]");
-  lines.push("Continue from the focused goal above, or ask the user to run /goals, /goals-set, or /goal-focus.");
+  lines.push("Continue from the focused goal above, or ask the user to run /goal-focus.");
   lines.push("Do not rely on chat memory for goal state; use the facts above.");
 
   return lines.join("\n");

@@ -110,7 +110,7 @@ test("quick-sync then later complete: archived file has updated objective", () =
 		assert.equal(synced.status, "active");
 		assert.equal(synced.archivedPath, undefined);
 
-		// Step 2: Later, mark complete (simulating complete_goal({status:"complete"}))
+		// Step 2: Later, mark complete (simulating update_goal({status:"complete"}))
 		const completed = writeActiveGoalFile(ctx, {
 			...synced,
 			status: "complete" as const,
@@ -230,7 +230,7 @@ test("multiple syncs then complete: final objective in archived file", () => {
 });
 
 // ── 7. Sync while paused ─────────────────────────────────────────────────────
-// Simulates: goal is paused, agent syncs objective via propose_goal_tweak.
+// Simulates: goal is paused and the objective is updated via /goal-tweak.
 // Status stays paused, objective changes on disk.
 
 test("sync while paused: status stays paused, objective changed on disk", () => {

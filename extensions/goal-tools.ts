@@ -661,9 +661,7 @@ export function registerGoalTools(core: GoalCore): void {
 		},
 	}));
 
-				// ── propose_task_list ──────────────────────────────────────────────────
-		// ── complete_task ─────────────────────────────────────────────────────
-		// ── skip_task ─────────────────────────────────────────────────────────
+
 		// ── set_goal_tasks: flat parent-linked structural task-tree tool ───────────
 	pi.registerTool(defineTool({
 		name: SET_GOAL_TASKS_TOOL_NAME,

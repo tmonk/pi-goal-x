@@ -113,7 +113,7 @@ test("pause, resume, and clear policy preserve human-owned lifecycle affordances
 	);
 	// When the auditor approves, the full auditor output MUST be included in the
 	// completion report so the executor agent can see the auditor's reasoning.
-	// This validates the contract: the complete_goal tool handler passes
+	// This validates the contract: the completion-flow handler passes
 	// auditor.output as auditorReport (regression test for the fix).
 	const longAuditorReport = [
 		"I have inspected the codebase.",

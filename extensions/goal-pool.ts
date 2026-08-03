@@ -72,7 +72,7 @@ export function goalSelectorLabel(goal: GoalRecord, focusedGoalId: string | null
 
 export function buildGoalListText(pool: Map<string, GoalRecord>, focusedGoalId: string | null): string {
 	const open = openGoalsFromPool(pool);
-	if (open.length === 0) return "No open goals. Use /goals <topic> or /sisyphus <topic> to discuss, or /goals-set <objective> / /sisyphus-set <objective> to start immediately.";
+	if (open.length === 0) return "No open goals. Use /goal <objective> or /sisyphus <objective> to start immediately.";
 	const lines = [`Open goals: ${open.length}`, ""];
 	for (const goal of open) {
 		const focused = goal.id === focusedGoalId ? "*" : " ";

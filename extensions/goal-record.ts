@@ -42,7 +42,7 @@ export interface GoalRecord {
 	activePath?: string;
 	archivedPath?: string;
 	stopReason?: StopReason;
-	// Set by the agent's pause_goal tool. Cleared when the goal becomes active again.
+	// Set when the model reports the goal blocked. Cleared when the goal becomes active again.
 	pauseReason?: string;
 	pauseSuggestedAction?: string;
 	skipAuditor?: boolean;

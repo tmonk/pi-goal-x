@@ -51,9 +51,9 @@ function fileExists(filePath: string): boolean {
 }
 
 /**
- * Simulates the full lifecycle that complete_goal + turn_end perform:
+ * Simulates the full lifecycle that update_goal(complete) + turn_end perform:
  * 1. Write goal as active (normal)
- * 2. Mark complete with deferred write (complete_goal behavior)
+ * 2. Mark complete with deferred write (update_goal(complete) behavior)
  * 3. Verify NOT archived yet
  * 4. Archive (turn_end behavior)
  * 5. Verify IS archived
@@ -71,7 +71,7 @@ test("deferred archival lifecycle via writeActiveGoalFile then archiveGoalFile",
 		const poolBefore = readActiveGoalPool(ctx);
 		assert.ok(poolBefore.has(goal.id), "goal should be in active pool before completion");
 
-		// Step 2: Simulate complete_goal — mark complete via writeActiveGoalFile (deferred archival)
+		// Step 2: Simulate update_goal(complete) — mark complete via writeActiveGoalFile (deferred archival)
 		const completed = writeActiveGoalFile(ctx, { ...active, status: "complete" as const });
 		assert.match(completed.activePath ?? "", /^\.pi\/goals\/active_goal_/, "complete goal should still have activePath (deferred)");
 		assert.equal(completed.archivedPath, undefined, "complete goal should NOT have archivedPath yet (deferred)");
@@ -198,7 +198,7 @@ test("all three paths produce distinct tool output text", () => {
 
 /**
  * Verify that readActiveGoalFiles filters out complete goals (even if archivedPath
- * is not set — deferred state). This ensures the 'complete_goal returns but goal
+ * is not set — deferred state). This ensures the completion flow returns but the goal
  * not yet archived' state is handled correctly by the pool.
  */
 test("readActiveGoalFiles filters complete goals regardless of archivedPath", () => {
@@ -235,7 +235,7 @@ test("detect complete-but-not-archived goal for turn_end archival", () => {
 	try {
 		const goal = makeGoal({ id: "pending-archival-detect" });
 		const active = writeActiveGoalFile(ctx, goal);
-		// Simulate deferred state from complete_goal
+		// Simulate deferred state from update_goal(complete)
 		const deferred = writeActiveGoalFile(ctx, { ...active, status: "complete" as const });
 
 		// The condition the turn_end handler checks:

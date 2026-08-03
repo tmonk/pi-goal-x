@@ -1,6 +1,6 @@
 {
   "name": "pi-goal-x",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "Goal mode extension for pi: persistent long-running objectives, /goal-set drafting, Sisyphus prompt style, autoContinue, and an above-editor status overlay. Fork of @capyup/pi-goal.",
   "license": "MIT",
   "author": "pi-goal-x contributors",

@@ -312,7 +312,7 @@ Verification contract:
 				autoContinue: goal.autoContinue,
 			});
 
-			// Append task proposal — exactly like propose_task_list would
+			// Append the task proposal to the confirmation text
 			const taskLines = renderDebugTaskLines(tasks).map((l) => `│   ${l}`);
 			const taskProposal = [
 				"",
