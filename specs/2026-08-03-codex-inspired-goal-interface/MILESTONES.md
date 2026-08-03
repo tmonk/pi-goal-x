@@ -288,3 +288,31 @@ task tools; all 469 prior tests stayed green and 10 new tests added (479).
 
 Validation: `npm run test:serial` 479 pass / 0 fail; `npm run check` (tsc) 0
 errors; `git diff --check` clean.
+
+### 2026-08-04 02:30:00 - Stage 5: curated ten-command palette
+
+Slash completion now exposes exactly the ten curated commands; all 479 prior
+tests stayed green and 4 command-palette tests added (483).
+
+- `/goal <objective>` is a direct regular-goal creation path; bare `/goal`
+  shows status. `/sisyphus <objective>` is the single direct Sisyphus creation
+  path. Both materialize through the existing direct-set handler (extract
+  verification contract, replaceGoal, auto-continue).
+- Removed registrations: `/goal-status`, `/goals`, `/goals-set`,
+  `/sisyphus-set`, `/goal-abort`. Retained unchanged with concise action-first
+  descriptions: `/goal-list`, `/goal-focus`, `/goal-unfocus`,
+  `/goal-settings`, `/goal-tweak`, `/goal-clear`, `/goal-pause`,
+  `/goal-resume`.
+- The creation-drafting entry commands are gone, so the confirmationIntent
+  drafting flow is now dormant (the shim tools it exposed stay registered;
+  Stage 6 removes the orchestration). `/goal-tweak` keeps its drafting flow.
+- Migration documentation added to README.md ("Command migration" table):
+  goal-status→/goal, goals-set→/goal, sisyphus-set→/sisyphus,
+  goal-abort→/goal-clear, /goals→discussion + /goal/create_goal.
+- Tests: `tests/goal-command-palette.test.ts` (4 tests: exactly the ten
+  commands registered and the five legacy absent with no extras, /goal creates
+  directly, bare /goal shows status without creating, /sisyphus creates a
+  sisyphus goal); surface-baseline command list updated from 15 to 10.
+
+Validation: `npm run test:serial` 483 pass / 0 fail; `npm run check` (tsc) 0
+errors; `git diff --check` clean.

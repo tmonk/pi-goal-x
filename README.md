@@ -76,24 +76,37 @@ If the objective is already final and should start immediately, use:
 
 ## User commands
 
+The curated ten-command palette (each lifecycle action is independently
+registered so tab completion is self-explanatory):
+
 ```text
-/goals <topic>          Discuss/research/grill a regular goal, then confirm a draft
-/sisyphus <topic>       Discuss/grill a Sisyphus-style goal, then confirm a draft
-/goals-set <objective>  Immediately create and start a regular goal
-/sisyphus-set <objective> Immediately create and start a Sisyphus-style goal
-/goal-status            Show focused goal state
-/goal-list              List all open goals in .pi/goals/
+/goal [objective]       With an objective: create and focus a regular goal directly.
+                        With no arguments: show focused goal state.
+/sisyphus <objective>   Create and focus a Sisyphus-style goal (strict ordered steps) directly.
+/goal-list              List all open goals in .pi/goals/ and the current focus
 /goal-focus             Choose this session's focused goal
 /goal-unfocus           Stop this session's goal work without modifying the shared goal
-/goal-tweak <change>    Draft a revision to the focused active/paused goal
+/goal-tweak <change>    Refine the focused goal's objective with the user
 /goal-pause             Pause the focused active goal
-/goal-resume            Resume a paused goal
+/goal-resume            Resume a paused or blocked goal
 /goal-settings          Configure pi-goal settings, including auditor model settings
-/goal-abort             Abort/archive the focused goal or cancel drafting
-/goal-clear             Archive the focused goal or cancel drafting
+/goal-clear             Archive the focused goal after confirmation
 ```
 
 Pressing `Esc` or aborting an active run pauses the goal so it does not remain falsely active.
+
+### Command migration
+
+| Legacy command | New command |
+|---|---|
+| `/goal-status` | `/goal` (no arguments) |
+| `/goals-set <x>` | `/goal <x>` |
+| `/sisyphus-set <x>` | `/sisyphus <x>` |
+| `/goal-abort` | `/goal-clear` |
+| `/goals <topic>` | Normal discussion, then `/goal <objective>` or an explicit `create_goal` request |
+
+`/goal-tweak`, `/goal-pause`, `/goal-resume`, `/goal-clear`, `/goal-list`,
+`/goal-focus`, `/goal-unfocus`, and `/goal-settings` are retained unchanged.
 
 ## Multiple open goals and focus
 
