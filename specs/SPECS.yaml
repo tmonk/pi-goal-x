@@ -1,5 +1,5 @@
 version: 1
-focused: 2026-05-13-drafting-runtime-simplification
+focused: 2026-08-03-codex-inspired-goal-interface
 status_vocabulary:
   - draft
   - ready_for_review
@@ -20,6 +20,13 @@ specs:
     path: specs/2026-05-13-drafting-runtime-simplification
     title: Simplify goal drafting while hardening runtime execution and audit
     status: completed
-    focused: true
+    focused: false
     last_audit: null
     updated: 2026-05-13
+  - id: 2026-08-03-codex-inspired-goal-interface
+    path: specs/2026-08-03-codex-inspired-goal-interface
+    title: Codex-inspired goal interface simplification
+    status: ready_for_review
+    focused: true
+    last_audit: null
+    updated: 2026-08-03

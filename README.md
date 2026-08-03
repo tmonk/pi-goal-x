@@ -299,17 +299,9 @@ extensions/widgets/goal-notifications.ts widget-style notification text
 - **Disk-backed continuity**: goal state survives context churn and can be audited from `.pi/goals/`.
 - **Human-owned focus**: the agent may work on the focused goal, but only user commands/UI selection switch focus.
 
-## Upstream
+## Relationship to pi-goal
 
-This repository is a downstream fork of [@capyup/pi-goal](https://github.com/capyup/pi-goal). To sync with upstream changes:
-
-```bash
-git fetch upstream
-git merge upstream/main
-# resolve conflicts, test, commit
-```
-
-The `upstream` remote should point to `https://github.com/capyup/pi-goal.git`.
+pi-goal-x started as a fork of [@capyup/pi-goal](https://github.com/capyup/pi-goal), but it is maintained as an independent project and does **not** track an `upstream` remote. There is no sync workflow with the original repository; bug reports, feature requests, and contributions target this repository directly.
 
 ## Release policy
 
