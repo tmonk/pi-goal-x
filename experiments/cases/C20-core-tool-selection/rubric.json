@@ -1,0 +1,51 @@
+[
+  {
+    "id": "create-goal-called",
+    "desc": "Model must call create_goal for the explicit goal request.",
+    "kind": "tool-called",
+    "tool": "create_goal"
+  },
+  {
+    "id": "no-draft-tool",
+    "desc": "propose_goal_draft is a removed tool and must not be called.",
+    "kind": "tool-not-called",
+    "tool": "propose_goal_draft"
+  },
+  {
+    "id": "no-complete-goal",
+    "desc": "complete_goal is removed; completion goes through update_goal.",
+    "kind": "tool-not-called",
+    "tool": "complete_goal"
+  },
+  {
+    "id": "no-pause-goal",
+    "desc": "pause_goal is removed; the model reports blockers via update_goal(blocked) after three turns.",
+    "kind": "tool-not-called",
+    "tool": "pause_goal"
+  },
+  {
+    "id": "no-abort-goal",
+    "desc": "abort_goal is removed; abandonment is user-owned via /goal-clear.",
+    "kind": "tool-not-called",
+    "tool": "abort_goal"
+  },
+  {
+    "id": "no-legacy-task-tools",
+    "desc": "propose_task_list/complete_task/skip_task are removed.",
+    "kind": "tool-not-called",
+    "tool": "propose_task_list"
+  },
+  {
+    "id": "no-question-tools",
+    "desc": "goal_question/goal_questionnaire are removed; plain conversation suffices.",
+    "kind": "tool-not-called",
+    "tool": "goal_question"
+  },
+  {
+    "id": "hello-txt-created",
+    "desc": "The actual task outcome: hello.txt exists with content 'Hello'.",
+    "kind": "sandbox-file-contains",
+    "path": "hello.txt",
+    "pattern": "^Hello$"
+  }
+]

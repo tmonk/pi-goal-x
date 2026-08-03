@@ -1,0 +1,41 @@
+[
+  {
+    "id": "goal-created-with-budget",
+    "desc": "create_goal carries the explicit token_budget.",
+    "kind": "tool-args-jq",
+    "tool": "create_goal",
+    "jq": "(.token_budget | type == \"number\") and (.token_budget >= 1)"
+  },
+  {
+    "id": "no-fake-complete",
+    "desc": "The budget wrap-up must not claim completion unless actually done.",
+    "kind": "tool-args-jq-none",
+    "tool": "update_goal",
+    "jq": ".status == \"complete\""
+  },
+  {
+    "id": "no-complete-goal",
+    "desc": "complete_goal is removed.",
+    "kind": "tool-not-called",
+    "tool": "complete_goal"
+  },
+  {
+    "id": "no-pause-goal",
+    "desc": "pause_goal is removed.",
+    "kind": "tool-not-called",
+    "tool": "pause_goal"
+  },
+  {
+    "id": "no-abort-goal",
+    "desc": "abort_goal is removed.",
+    "kind": "tool-not-called",
+    "tool": "abort_goal"
+  },
+  {
+    "id": "main-txt-created",
+    "desc": "The requested file main.txt exists with 'main'.",
+    "kind": "sandbox-file-contains",
+    "path": "main.txt",
+    "pattern": "^main$"
+  }
+]

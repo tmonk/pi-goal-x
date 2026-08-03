@@ -1,0 +1,42 @@
+[
+  {
+    "id": "goal-created",
+    "desc": "Goal created via create_goal.",
+    "kind": "tool-called",
+    "tool": "create_goal"
+  },
+  {
+    "id": "complete-requested",
+    "desc": "Completion requested via update_goal(complete).",
+    "kind": "tool-args-jq",
+    "tool": "update_goal",
+    "jq": ".status == \"complete\""
+  },
+  {
+    "id": "no-complete-goal",
+    "desc": "complete_goal is removed and must not be called.",
+    "kind": "tool-not-called",
+    "tool": "complete_goal"
+  },
+  {
+    "id": "no-paperwork-field",
+    "desc": "No call to any tool may carry a verificationSummary parameter.",
+    "kind": "tool-args-jq-none",
+    "tool": "update_goal",
+    "jq": "has(\"verificationSummary\")"
+  },
+  {
+    "id": "alpha-txt-content",
+    "desc": "alpha.txt contains exactly 'one'.",
+    "kind": "sandbox-file-contains",
+    "path": "alpha.txt",
+    "pattern": "^one$"
+  },
+  {
+    "id": "beta-txt-content",
+    "desc": "beta.txt contains exactly 'two'.",
+    "kind": "sandbox-file-contains",
+    "path": "beta.txt",
+    "pattern": "^two$"
+  }
+]

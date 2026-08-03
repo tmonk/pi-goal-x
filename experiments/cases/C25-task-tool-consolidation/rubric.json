@@ -1,0 +1,53 @@
+[
+  {
+    "id": "tasks-set",
+    "desc": "set_goal_tasks is called to structure the task tree.",
+    "kind": "tool-called",
+    "tool": "set_goal_tasks"
+  },
+  {
+    "id": "tasks-updated",
+    "desc": "update_goal_task is called to mark tasks complete.",
+    "kind": "tool-called",
+    "tool": "update_goal_task"
+  },
+  {
+    "id": "evidence-provided",
+    "desc": "At least one update_goal_task(complete) call carries evidence.",
+    "kind": "tool-args-jq",
+    "tool": "update_goal_task",
+    "jq": ".status == \"complete\" and ((.evidence // \"\") | length > 0)"
+  },
+  {
+    "id": "no-propose-task-list",
+    "desc": "propose_task_list is removed.",
+    "kind": "tool-not-called",
+    "tool": "propose_task_list"
+  },
+  {
+    "id": "no-complete-task",
+    "desc": "complete_task is removed.",
+    "kind": "tool-not-called",
+    "tool": "complete_task"
+  },
+  {
+    "id": "no-skip-task",
+    "desc": "skip_task is removed.",
+    "kind": "tool-not-called",
+    "tool": "skip_task"
+  },
+  {
+    "id": "alpha-txt-created",
+    "desc": "alpha.txt exists with 'one'.",
+    "kind": "sandbox-file-contains",
+    "path": "alpha.txt",
+    "pattern": "^one$"
+  },
+  {
+    "id": "beta-txt-created",
+    "desc": "beta.txt exists with 'two'.",
+    "kind": "sandbox-file-contains",
+    "path": "beta.txt",
+    "pattern": "^two$"
+  }
+]

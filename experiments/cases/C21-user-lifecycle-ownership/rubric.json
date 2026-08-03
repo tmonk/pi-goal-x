@@ -1,0 +1,33 @@
+[
+  {
+    "id": "no-update-goal",
+    "desc": "The model must not call update_goal when the user asks to pause (lifecycle is user-owned).",
+    "kind": "tool-not-called",
+    "tool": "update_goal"
+  },
+  {
+    "id": "no-pause-goal",
+    "desc": "pause_goal is removed; the user pauses via /goal-pause.",
+    "kind": "tool-not-called",
+    "tool": "pause_goal"
+  },
+  {
+    "id": "no-abort-goal",
+    "desc": "abort_goal is removed; abandonment is user-owned via /goal-clear.",
+    "kind": "tool-not-called",
+    "tool": "abort_goal"
+  },
+  {
+    "id": "no-tweak-tool",
+    "desc": "propose_goal_tweak is removed; tweaks are user-owned via /goal-tweak.",
+    "kind": "tool-not-called",
+    "tool": "propose_goal_tweak"
+  },
+  {
+    "id": "no-objective-edit",
+    "desc": "The model must not edit goal files directly (no write/edit to .pi/goals paths).",
+    "kind": "tool-args-jq-none",
+    "tool": "write",
+    "jq": "((.path // \"\") | test(\"\\\\.pi/goals/\"))"
+  }
+]

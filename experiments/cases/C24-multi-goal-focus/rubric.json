@@ -1,0 +1,36 @@
+[
+  {
+    "id": "two-goals-created",
+    "desc": "create_goal is called twice for the two goals.",
+    "kind": "tool-call-count",
+    "tool": "create_goal",
+    "op": "ge",
+    "count": 2
+  },
+  {
+    "id": "no-abort-goal",
+    "desc": "abort_goal is removed.",
+    "kind": "tool-not-called",
+    "tool": "abort_goal"
+  },
+  {
+    "id": "no-clear-via-model",
+    "desc": "The model must not clear/archive goals; /goal-clear is user-owned.",
+    "kind": "tool-not-called",
+    "tool": "update_goal"
+  },
+  {
+    "id": "one-txt-created",
+    "desc": "one.txt exists with content 'one'.",
+    "kind": "sandbox-file-contains",
+    "path": "one.txt",
+    "pattern": "^one$"
+  },
+  {
+    "id": "two-txt-created",
+    "desc": "two.txt exists with content 'two'.",
+    "kind": "sandbox-file-contains",
+    "path": "two.txt",
+    "pattern": "^two$"
+  }
+]
