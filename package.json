@@ -37,7 +37,8 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:serial": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
