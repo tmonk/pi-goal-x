@@ -7,16 +7,16 @@ The extension is designed around one rule: **the user owns intent; the agent exe
 ## Features
 
 - **Two goal styles** — Regular goals for open-ended research and implementation. Sisyphus goals for patient ordered execution, one step at a time.
-- **Simple goal creation** — Use `/goals` to discuss and confirm a draft. Use `/goals-set` to skip discussion and start immediately.
-- **Full lifecycle** — Pause blocked goals, resume when unblocked, abort obsolete work, complete when done. Auto-continue keeps the agent working across turns until completion, interruption, or the empty-turn guard.
+- **Simple goal creation** — Use `/goal <objective>` to create and focus a goal directly, or `/sisyphus <objective>` for strict ordered execution.
+- **Full lifecycle** — Pause, resume, clear, and complete through user commands and the five model tools. Auto-continue keeps the agent working across turns until completion, interruption, or the empty-turn guard.
 - **Multiple open goals** — Keep several goals in `.pi/goals/`. Each session focuses one at a time; switch with `/goal-focus`.
 - **Above-editor status widget** — See the current goal, status, file path, and progress at a glance while the agent works.
 - **Structured task lists with subtasks** — Break goals into trackable tasks. Agents can mark individual tasks or subtasks complete without stopping the turn. Subtask IDs are validated for uniqueness and depth.
-- **Verification contracts** — Attach plain-text requirements to a goal or task (e.g. "Run npm test, zero failures"). The agent must provide matching evidence before `complete_goal` or `complete_task` will succeed.
+- **Verification contracts** — Attach plain-text requirements to a goal or task (e.g. "Run npm test, zero failures"). The independent auditor verifies them from actual evidence; per-task contracts require evidence on `update_goal_task`.
 - **Independent completion auditor** — When a goal is marked complete, a separate pi agent inspects the workspace, verifies every success criterion, and approves or rejects before the goal is archived. You can press Escape during an audit to abort it. Configure the auditor model via `/goal-settings`.
-- **Schema-gated tools** — Agents see only the tools relevant to the current lifecycle phase: drafting, active, paused, or tweaking. Lifecycle tools like `pause_goal`, `complete_task`, and `abort_goal` appear and disappear automatically.
-- **Immutable objective** — The agent cannot silently change your goal. Objective updates require a `/goal-tweak` drafting flow with explicit user confirmation.
-- **Built-in questionnaire tools** — During drafting, agents can ask structured questions through `goal_question` and `goal_questionnaire` without depending on external packages.
+- **Stable five-tool surface** — Agents see exactly `create_goal`, `get_goal`, `update_goal`, and (when tasks are enabled) `set_goal_tasks` / `update_goal_task`, installed statically without phase-dependent synchronization.
+- **Immutable objective** — The agent cannot silently change your goal. Objective updates happen through user-owned `/goal-tweak`.
+- **User-owned lifecycle** — Pause, resume, clear, focus, and settings are immediate user commands; the model reports only complete/blocked outcomes.
 - **Disk-backed state** — Active and archived goals persist in `.pi/goals/`. Goal state survives session compaction, workspace switches, and context churn.
 - **Configurable settings** — Tune the auditor model, disable the task system or contracts, and set subtask depth through `/goal-settings` or `.pi/pi-goal-x-settings.json`.
 
@@ -47,17 +47,20 @@ pi -e .
 ### Regular goal
 
 ```text
-/goals add structured logging to the auth module
+/goal add structured logging to the auth module
 ```
 
 Flow:
 
-1. The agent clarifies, researches, or grills only when the goal contract needs it.
-2. The agent calls `propose_goal_draft` with a concrete objective once the contract is clear.
-3. pi shows a full plain-text confirmation report.
-4. If confirmed, the full finalized goal is printed into the conversation and written to `.pi/goals/`.
-5. The new goal becomes this session's focus. Existing open goals remain in `.pi/goals/` and can be selected later with `/goal-focus`.
-6. The agent works only on the focused goal until it calls `complete_goal`, pauses, aborts, produces an empty/non-progress turn, or the user interrupts.
+1. `/goal <objective>` creates and focuses an active goal directly — the
+   explicit command is the user's confirmation.
+2. The full finalized objective is printed into the conversation and written to
+   `.pi/goals/`.
+3. The new goal becomes this session's focus. Existing open goals remain in
+   `.pi/goals/` and can be selected later with `/goal-focus`.
+4. The agent works only on the focused goal until it requests completion via
+   `update_goal`, reports a blocker, produces an empty/non-progress turn, or the
+   user interrupts.
 
 ### Sisyphus goal
 
@@ -67,12 +70,8 @@ Flow:
 
 Sisyphus mode is for patient ordered execution. It uses the same lifecycle and tools as a regular goal; the difference is the prompt style and completion standard: preserve the user's order, do not rush, do not invent preflight/reconnaissance steps, and stop to ask when blocked.
 
-If the objective is already final and should start immediately, use:
-
-```text
-/goals-set add structured logging to the auth module
-/sisyphus-set Refactor auth flow exactly as ordered: 1) extract token validation. 2) wire it into login. 3) update tests.
-```
+If the objective is already final, `/goal` and `/sisyphus` start immediately —
+there is no separate discussion/drafting step.
 
 ## User commands
 
@@ -118,69 +117,86 @@ Pressing `Esc` or aborting an active run pauses the goal so it does not remain f
 - **Branch-local focus**: because focus is reconstructed from the current session branch, `/tree` navigation can restore a different focus for a different branch.
 - **One continuation chain**: auto-continue only schedules work for the focused goal in the current session.
 
-Creating a goal with `/goals`, `/sisyphus`, `/goals-set`, or `/sisyphus-set` no longer clears other open goals. It creates a new active goal file and focuses it. Use `/goal-list` to inspect open goals, `/goal-focus` to switch the session focus, and `/goal-unfocus` to detach the current session without pausing, modifying, archiving, or recording a project-ledger focus change for the shared goal. Unfocus also aborts in-flight work and audits owned by that session; asynchronous lifecycle results are discarded if focus changed while they were pending. If the latest focus entry explicitly clears focus, or points at a missing/stale goal, a remaining single open goal is not auto-focused and resume does not prompt to replace that explicit choice. By default (`autoSelectSingleGoal: false`) sessions start unfocused so focus stays session-scoped — useful when multiple sessions share the same `.pi/goals/` directory. Set `autoSelectSingleGoal: true` to restore the old behavior where a single open goal is auto-focused when no focus entry exists at all. If multiple open goals exist and the session has no valid focus, `/goal-resume`, `/goal-clear`, `/goal-abort`, `/goal-pause`, and `/goal-tweak` ask the user to choose a goal instead of acting on all of them.
+Creating a goal with `/goal <objective>` or `/sisyphus <objective>` never clears other open goals; it creates a new active goal file and focuses it. Use `/goal-list` to inspect open goals, `/goal-focus` to switch the session focus, and `/goal-unfocus` to detach the current session without pausing, modifying, archiving, or recording a project-ledger focus change for the shared goal. Unfocus also aborts in-flight work and audits owned by that session; asynchronous lifecycle results are discarded if focus changed while they were pending. If the latest focus entry explicitly clears focus, or points at a missing/stale goal, a remaining single open goal is not auto-focused and resume does not prompt to replace that explicit choice. By default (`autoSelectSingleGoal: false`) sessions start unfocused so focus stays session-scoped — useful when multiple sessions share the same `.pi/goals/` directory. Set `autoSelectSingleGoal: true` to restore the old behavior where a single open goal is auto-focused when no focus entry exists at all. If multiple open goals exist and the session has no valid focus, `/goal-resume`, `/goal-clear`, `/goal-pause`, and `/goal-tweak` ask the user to choose a goal instead of acting on all of them.
 
 ## Agent tools
 
-The extension exposes tools only when they make sense for the current lifecycle phase.
+The extension exposes a stable five-tool model surface (installed statically,
+no phase-dependent synchronization):
 
-| Tool | Visible when | Purpose |
-|---|---|---|
-| `goal_question` | drafting / tweak drafting | Ask one focused user question |
-| `goal_questionnaire` | drafting / tweak drafting | Ask multiple structured questions |
-| `get_goal` | always | Read the focused goal state; mentions other open goals when present |
-| `propose_goal_draft` | drafting only (goal creation) | Submit a concrete draft for user confirmation |
-| `propose_goal_tweak` | tweak drafting only | Submit a revision to an existing goal (shows Confirm / Continue Chatting dialog) |
-| `complete_goal` | focused active or paused goal | Mark the focused goal complete — supply a `verificationSummary` covering all contract items. When the auditor is disabled, supply `confirmBypassAuditor: true` after user confirmation to bypass the audit |
-| `pause_goal` | focused active goal | Pause the focused goal because of a real blocker |
-| `abort_goal` | focused active or paused goal | Abort/archive an obsolete, impossible, unsafe, or user-cancelled focused goal |
-| `propose_task_list` | active or paused goal | Propose a structured task list for user confirmation (stops the turn) |
-| `complete_task` | active or paused goal | Mark a task complete with optional `verificationSummary`. If the task has a `verificationContract`, the summary is required (does not stop turn) |
-| `skip_task` | active or paused goal | Mark a task skipped with a required reason (does not stop turn) |
-| `propose_goal_tweak` | tweak drafting only | Submit a revision to the focused goal (shows Confirm / Continue Chatting dialog) |
-| `step_complete` | hidden / legacy | Compatibility no-op; Sisyphus no longer requires a step counter |
-| `create_goal` | hidden | Direct calls are rejected; normal creation goes through `propose_goal_draft` |
+| Tool | Purpose |
+|---|---|
+| `create_goal` | Create and focus a new goal after an explicit user request (objective 1–4000 chars, optional `mode` regular/sisyphus and `token_budget`). Never infer a goal from an ordinary task. |
+| `get_goal` | Read-only complete focused goal snapshot: objective, status, mode, usage, budget + remaining, task summary, verification contract, blocker details, paths, other-open count. |
+| `update_goal` | Report one of two terminal outcomes: `complete` (runs the independent auditor, which verifies from actual evidence — no paperwork field) or `blocked` (distinct agent-blocked state, only after the same blocker recurs on three consecutive turns). |
+| `set_goal_tasks` | Create or structurally replace the task tree (flat parent-linked input, confirmation dialog, matching ids keep status/evidence). |
+| `update_goal_task` | Update one task without stopping the turn: complete (evidence for contracted tasks), skipped (reason), pending (reopens skipped). |
 
-## Drafting behavior
+Plus the ordinary Pi work tools (write/read/bash/edit). Lifecycle actions the
+model does not own (pause, resume, clear, focus, tweak, settings) are
+user-owned slash commands. When `disableTasks` is enabled, only the three core
+tools are advertised.
 
-`/goals` and `/sisyphus` start a lightweight intent discussion, not a heavy runtime sub-state. The agent clarifies, researches, and grills only when needed, may proceed directly for fully specified requests, and then calls `propose_goal_draft` to show the user a Confirm / Continue Chatting dialog. `goal_question` and `goal_questionnaire` are available when structured input helps, but plain conversation is acceptable.
+## Goal creation
 
-`/goals-set` and `/sisyphus-set` skip the discussion and confirmation dialog. They directly create and focus an active goal from the supplied objective so execution can begin immediately.
+`/goal <objective>` and `/sisyphus <objective>` create and focus a goal
+directly — the explicit command is the user's confirmation, so no second
+confirmation phase is needed. A conversational request may call `create_goal`
+directly when the user explicitly asks to start a persistent goal; the model
+must not infer a goal from an ordinary one-off task. Users can refine an
+unclear objective in normal conversation first, then say "make this a goal" or
+invoke `/goal` with the final objective. A separate goal-specific
+questionnaire/drafting state is not required.
 
-The agent may do minimal read-only reconnaissance when it directly improves the goal contract, but should not begin substantive implementation before confirmation. The strict runtime starts after the user confirms the draft and an active goal is created.
-
-When a draft is proposed, the confirmation UI shows a full plain-text report with draft details, the original topic, and the proposed goal. If the confirmation UI throws in interactive mode, creation fails closed and confirmation remains active; it never auto-creates a goal. When a draft is confirmed, the tool result includes the full final objective, not a one-line summary, and normal work tools (`write`, `read`, `bash`, `edit`) are available for execution. This makes the confirmed contract visible in the conversation as well as on disk.
-
-While goal confirmation or tweak drafting is active, old goal execution is suspended: active-goal prompts, accounting, and auto-continue checkpoints do not run for the previously focused goal.
+The model may do minimal read-only reconnaissance before creating a goal, but
+should not begin substantive implementation before the goal exists. When a
+goal is created, the tool result includes the full final objective and the
+normal work tools (`write`, `read`, `bash`, `edit`) are available for
+execution.
 
 ## Completion behavior
 
-Completion is also explicit and is checked by an independent pi auditor agent. The executor calls `complete_goal` with its completion claim:
+Completion is explicit and checked by an independent pi auditor agent. The
+model calls `update_goal` with the terminal outcome:
 
 ```json
-{
-  "status": "complete",
-  "completionSummary": "What was completed and what evidence proves it."
-}
+{ "status": "complete" }
 ```
 
-Before archiving the goal, `complete_goal` starts a separate pi agent in an isolated in-memory session. The auditor receives the objective, the executor's completion claim, and current goal metadata, then can inspect the workspace with read-only-oriented tools (`read`, `grep`, `find`, `ls`, and `bash`). It must end its report with exactly one marker:
+There is no paperwork field: the auditor derives the requirements from the
+objective and any verification contract, and inspects the actual workspace
+evidence (including the task tree and its evidence). `update_goal` accepts only
+`complete` or `blocked`.
+
+Before archiving the goal, completion starts a separate pi agent in an isolated
+in-memory session. The auditor receives the objective, mode, verification
+contract, task tree and task evidence, current usage/budget, and the workspace
+path with read-only-oriented tools (`read`, `grep`, `find`, `ls`, `bash`). It
+must end its report with exactly one marker:
 
 - `<approved/>` archives the goal as complete.
-- `<disapproved/>`, no marker, an error, or an abort rejects completion and leaves the goal open.
+- `<disapproved/>`, no marker, an error, or an abort rejects completion and
+  leaves the goal open with the auditor feedback recorded.
 
-The auditor is semantic, not a paperwork checklist: it should reject scaffold-only, alpha, generated-template, proxy-metric, build-only, or weakly verified completions when the real user outcome is not satisfied.
+The auditor is semantic, not a paperwork checklist: it should reject
+scaffold-only, alpha, generated-template, proxy-metric, build-only, or weakly
+verified completions when the real user outcome is not satisfied.
 
-By default the auditor uses the current/default pi model. Configure it via `.pi/pi-goal-x-settings.json`, or interactively with `/goal-settings` (see [Configuration](#configuration)).
+By default the auditor uses the current/default pi model. Configure it via
+`.pi/pi-goal-x-settings.json`, or interactively with `/goal-settings`.
 
-The completion result prints a full report into the conversation:
+`blocked` records a distinct agent-blocked state and stops continuation. To
+align with Codex behavior, the tool description and continuation prompt require
+the same blocker to recur on three consecutive goal turns before the model
+reports blocked; there is no separate attempt counter. A user pause
+(`/goal-pause`, Esc) remains an immediate, distinct state. The model cannot
+abort a goal — obsolete or abandoned goals are cleared by the user through
+`/goal-clear`.
 
-- `Goal complete.`
-- optional completion summary / evidence supplied by the executor
-- the auditor's approval report
-- full current goal details, including objective, status, usage, mode, and file path
-
-Sisyphus goals use the same completion tool as regular goals. The stricter part is the prompt/criteria standard: the agent should only call completion after the whole ordered objective is actually satisfied and likely to survive independent auditing. A paused goal can also be completed directly when the agent already has enough evidence that every requirement is satisfied; it does not need a resume just to call `complete_goal`.
+Sisyphus goals use the same lifecycle tools as regular goals; the difference is
+the prompt/criteria execution standard. A paused goal can also be completed
+directly when the agent already has enough evidence that every requirement is
+satisfied.
 
 ## Schema gates
 
@@ -188,17 +204,17 @@ The shipped gates are intentionally small and mechanical.
 
 | Gate | Prevents |
 |---|---|
-| Focus consistency | `/goals` accidentally becoming Sisyphus, or `/sisyphus` becoming regular mode |
-| Confirm-before-commit | The agent silently creating or replacing a discussion-based goal |
-| Direct set intent | `/goals-set` and `/sisyphus-set` are explicit user shortcuts that bypass draft confirmation |
+| Objective bound | `create_goal` / `/goal` objectives outside 1–4000 characters |
+| Explicit request | The model inferring a goal from an ordinary task (prompt policy) |
 | Completion auditor gate | Archiving completion unless an independent pi auditor agent returns `<approved/>` |
-| Abort gate | Aborting missing, stale, completed, or reasonless goals |
-| Direct-create rejection | Hidden `create_goal` calls creating goals without the confirmation flow |
-| Post-stop block | Continuing to call tools after `pause_goal`, `abort_goal`, `complete_goal`, or `propose_goal_tweak` stops the turn |
+| Blocked-from-active | `update_goal(blocked)` on a non-active goal |
+| Task schema gates | set_goal_tasks flat-input validation (ids, parents, acyclic, ≤50, depth, lightweight placement); update_goal_task evidence/reason/status rules |
+| Post-stop block | Continuing to call tools after `update_goal` / `set_goal_tasks` / a user lifecycle command stops the turn |
 | Empty-turn guard | Pure chat loops that would keep auto-continuing without meaningful goal work |
 | Abort pause | Active goals staying active after user abort / Ctrl-C |
 | Disk reconciliation | External pause/archive/delete/status changes being ignored or overwritten by stale memory |
 | Post-compaction reminder | Losing the active objective after session compaction |
+| Budget transition | Accounted usage crossing the token budget firing more than once |
 
 ## Files
 

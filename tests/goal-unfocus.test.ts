@@ -341,42 +341,6 @@ test("the null entry produced by unfocus survives resume/tree and suppresses opt
 	}
 });
 
-test("an async tweak confirmation cannot mutate the goal after unfocus", async () => {
-	const fixture = createFixture();
-	let resolveDialog!: (value: unknown) => void;
-	const dialog = new Promise<unknown>((resolve) => { resolveDialog = resolve; });
-	const harness = createHarness({
-		cwd: fixture.cwd,
-		hasUI: true,
-		idle: false,
-		custom: () => dialog,
-		sessionEntries: [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(fixture.goal.id, "created") }],
-	});
-	try {
-		await harness.handlers.get("session_start")?.({ reason: "startup" }, harness.ctx);
-		await harness.commands.get("goal-tweak")!.handler("Prepare a delayed tweak", harness.ctx);
-		const goalFileBeforeProposal = readFileSync(fixture.activePath);
-		const proposal = harness.tools.get("propose_goal_tweak");
-		const proposalPromise = proposal.execute("tweak-1", {
-			newObjective: "A stale replacement objective",
-			changeSummary: "Must not be applied",
-		}, undefined, undefined, harness.ctx);
-		await new Promise((resolve) => setImmediate(resolve));
-		await harness.commands.get("goal-unfocus")!.handler("", harness.ctx);
-		resolveDialog({
-			cancelled: false,
-			questions: [],
-			answers: [{ id: "confirm", question: "Confirm Goal Draft", answer: "Confirm — create this goal now", wasCustom: false }],
-			auditorEnabled: true,
-		});
-		const result = await proposalPromise;
-		assert.match(result.content[0]?.text ?? "", /Goal tweak cancelled because goal .* is no longer focused/);
-		assert.deepEqual(readFileSync(fixture.activePath), goalFileBeforeProposal);
-	} finally {
-		fixture.cleanup();
-	}
-});
-
 test("an approved completion audit cannot complete or archive a goal after unfocus", async () => {
 	const fixture = createFixture({}, { autoSelectSingleGoal: false });
 	const originalGoalFile = readFileSync(fixture.activePath);
@@ -398,11 +362,9 @@ test("an approved completion audit cannot complete or archive a goal after unfoc
 	try {
 		await harness.handlers.get("session_start")?.({ reason: "startup" }, harness.ctx);
 		await harness.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "finish" }, harness.ctx);
-		const complete = harness.tools.get("complete_goal");
+		const complete = harness.tools.get("update_goal");
 		const completionPromise = complete.execute("complete-1", {
 			status: "complete",
-			completionSummary: "Claimed complete",
-			verificationSummary: "Tests passed",
 		}, undefined, undefined, harness.ctx);
 		await started;
 		await harness.commands.get("goal-unfocus")!.handler("", harness.ctx);
@@ -435,11 +397,11 @@ test("an async task-list confirmation cannot mutate the goal after unfocus", asy
 	});
 	try {
 		await harness.handlers.get("session_start")?.({ reason: "startup" }, harness.ctx);
-		const proposal = harness.tools.get("propose_task_list");
+		const proposal = harness.tools.get("set_goal_tasks");
 		assert.ok(proposal);
 		const proposalPromise = proposal.execute("call-1", {
 			tasks: [{ id: "t1", title: "Must not be applied" }],
-			blockCompletion: false,
+			block_completion: false,
 		}, undefined, undefined, harness.ctx);
 		await new Promise((resolve) => setImmediate(resolve));
 		await harness.commands.get("goal-unfocus")!.handler("", harness.ctx);

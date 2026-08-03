@@ -425,26 +425,19 @@ describe("Tool visibility integration", () => {
 	});
 
 	// ── Verify all registered lifecycle tools have execute handlers ──────
-	it("all lifecycle tools are registered with execute handlers", () => {
-		const lifecycleToolNames = [
-			"get_goal", "complete_goal", "pause_goal", "abort_goal",
-			"propose_goal_tweak", "propose_task_list", "complete_task", "skip_task",
+	it("all five model tools are registered with execute handlers", () => {
+		const toolNames = [
+			"get_goal", "create_goal", "update_goal", "set_goal_tasks", "update_goal_task",
 		];
-		for (const name of lifecycleToolNames) {
+		for (const name of toolNames) {
 			const tool = registeredTools.find((t) => t.name === name);
 			assert.ok(tool, `Tool "${name}" must be registered`);
 			assert.ok(typeof tool!.execute === "function", `Tool "${name}" must have an execute handler`);
 		}
-	});
-
-	// ── complete_goal tool has confirmBypassAuditor parameter ────────────
-	it("complete_goal has confirmBypassAuditor parameter", () => {
-		const tool = registeredTools.find((t) => t.name === "complete_goal");
-		assert.ok(tool, "complete_goal must be registered");
-		const params = tool!.parameters as any;
-		assert.ok(params, "tool must have parameters");
-		assert.ok(params.properties?.confirmBypassAuditor !== undefined,
-			"complete_goal must have confirmBypassAuditor parameter");
+		// Removed tools must not be registered at all.
+		for (const removed of ["complete_goal", "pause_goal", "abort_goal", "propose_goal_tweak", "propose_goal_draft", "step_complete", "propose_task_list", "complete_task", "skip_task", "goal_question", "goal_questionnaire"]) {
+			assert.equal(registeredTools.some((t) => t.name === removed), false, `${removed} must not be registered`);
+		}
 	});
 
 	// ── tool_call handler is registered ──────────────────────────────────
@@ -455,15 +448,13 @@ describe("Tool visibility integration", () => {
 
 	// ── Escape dialog component is available via the import ──────────────
 	it("escape dialog handler paths are wired", () => {
-		// The tool_call handler is registered and ready to process complete_goal.
 		// The escape flow (Esc during audit → showEscapeDialog → pause path)
-		// is triggered via the complete_goal execute handler when auditor raises
-		// "Auditor aborted." This test verifies the handler piping is intact.
+		// is triggered via the update_goal execute handler when the auditor
+		// raises "Auditor aborted." This test verifies the handler piping is intact.
 		const handler = lifecycleHandlers.get("tool_call");
 		assert.ok(handler, "tool_call handler must exist for escape dialog path");
-		// complete_goal tool must be registered for the handler to process it
-		const tool = registeredTools.find((t) => t.name === "complete_goal");
-		assert.ok(tool, "complete_goal tool must be registered");
+		const tool = registeredTools.find((t) => t.name === "update_goal");
+		assert.ok(tool, "update_goal tool must be registered");
 	});
 
 	// ── Active goal WITH task list exposes all lifecycle tools ──────────
@@ -550,11 +541,11 @@ describe("Tool visibility integration", () => {
 			assert.ok(activeToolNames.includes("create_goal"),
 				"create_goal must be in active tool set");
 
-			// goal_question and goal_questionnaire should be available for active goals
-			assert.ok(activeToolNames.includes("goal_question"),
-				"goal_question must be available for active goals");
-			assert.ok(activeToolNames.includes("goal_questionnaire"),
-				"goal_questionnaire must be available for active goals");
+			// goal_question/goal_questionnaire were removed in Stage 6
+			assert.equal(activeToolNames.includes("goal_question"), false,
+				"goal_question must not be advertised");
+			assert.equal(activeToolNames.includes("goal_questionnaire"), false,
+				"goal_questionnaire must not be advertised");
 		} finally {
 			f.cleanup();
 		}

@@ -146,15 +146,14 @@ test("verificationContractBlock: includes contract text and rules", () => {
 	assert.ok(block.includes("VERIFICATION CONTRACT"));
 	assert.ok(block.includes("goalId=g1"));
 	assert.ok(block.includes("Run npm test (0 failures), search for remaining references"));
-	assert.ok(block.includes("complete_goal"));
-	assert.ok(block.includes("non-empty verificationSummary"));
-	assert.ok(block.includes("verify them against their contract") || block.includes("verified them against"));
+	assert.ok(block.includes("independent completion auditor derives the requirements"));
+	assert.ok(block.includes("Do NOT mark sub-items or tasks as complete"));
 });
 
 test("verificationContractBlock: mentions per-task contracts", () => {
 	const block = verificationContractBlock(goal({
 		verificationContract: "Check all tests pass",
 	}));
-	assert.ok(block.includes("complete_task requires a verificationSummary"));
-	assert.ok(block.includes("task in the task list"));
+	assert.ok(block.includes("independent completion auditor derives the requirements"));
+	assert.ok(block.includes("sub-items or tasks"));
 });

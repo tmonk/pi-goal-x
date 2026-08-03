@@ -71,28 +71,30 @@ test("validateGoalUpdate accepts paused goal", () => {
 	assert.equal(result.ok, true);
 });
 
-// ─── updatedObjective schema rejection (was removed from complete_goal) ───────
+// ─── updatedObjective schema rejection (removed from the model surface) ──────
 
-test("complete_goal schema has additionalProperties: false to reject unknown params", () => {
+test("update_goal schema has additionalProperties: false and no updatedObjective", () => {
 	const source = readFileSync("extensions/goal.ts", "utf8");
-	const updateGoalIdx = source.indexOf('name: "complete_goal"');
-	assert.ok(updateGoalIdx >= 0, "must find complete_goal tool registration");
+	const updateGoalIdx = source.indexOf('name: "update_goal"');
+	assert.ok(updateGoalIdx >= 0, "must find update_goal tool registration");
 	const registerBlock = source.substring(updateGoalIdx, updateGoalIdx + 4000);
 	assert.ok(registerBlock.includes("additionalProperties: false"),
-		"complete_goal schema must have additionalProperties: false");
+		"update_goal schema must have additionalProperties: false");
 	assert.ok(!registerBlock.includes("updatedObjective"),
-		"complete_goal schema must not contain updatedObjective");
+		"update_goal schema must not contain updatedObjective");
 	assert.ok(!source.includes("updatedObjective"),
 		"updatedObjective must not appear anywhere in goal.ts");
+	assert.equal(source.includes('name: "complete_goal"'), false,
+		"complete_goal tool registration must be removed");
 });
 
-test("complete_goal without status throws correct error message", () => {
+test("update_goal(complete) requires status=complete in the shared completion flow", () => {
 	const source = readFileSync("extensions/goal.ts", "utf8");
 	// The completion flow (including the status validation) lives in the shared
-	// runGoalCompletionFlow helper used by both complete_goal and update_goal.
+	// runGoalCompletionFlow helper used by update_goal.
 	assert.ok(!source.includes("params.updatedObjective"),
 		"Phase 1 updatedObjective handling must be removed");
-	assert.ok(source.includes('"complete_goal requires status=complete when marking a goal complete."'),
+	assert.ok(source.includes('"update_goal(complete) requires status=complete when marking a goal complete."'),
 		"handler must throw error mentioning status=complete");
 	assert.ok(!source.includes("updatedObjective"),
 		"handler must not reference updatedObjective in error messages");
@@ -335,13 +337,11 @@ test("goal evolution instruction mentions /goal-tweak instead of updatedObjectiv
 	const goal = makeGoal();
 
 	const contText = continuationPrompt(goal);
-	assert.ok(contText.includes("Goal evolution:"), "continuationPrompt must include Goal evolution instruction");
 	assert.ok(!contText.includes("updatedObjective"), "continuationPrompt must NOT reference updatedObjective");
 	assert.ok(contText.includes("immutable"), "continuationPrompt must mention the goal is immutable");
 	assert.ok(contText.includes("/goal-tweak"), "continuationPrompt must instruct user to run /goal-tweak");
 
 	const goalText = goalPrompt(goal);
-	assert.ok(goalText.includes("Goal evolution:"), "goalPrompt must include Goal evolution instruction");
 	assert.ok(!goalText.includes("updatedObjective"), "goalPrompt must NOT reference updatedObjective");
 	assert.ok(goalText.includes("/goal-tweak"), "goalPrompt must instruct user to run /goal-tweak");
 });

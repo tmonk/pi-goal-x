@@ -10,11 +10,8 @@ import {
 } from "./goal-core.ts";
 import {
 	buildDraftConfirmationText,
-	buildTweakConfirmationText,
 	extractVerificationContract,
-	goalDraftingPrompt,
 	renderConfirmationTasks,
-	validateGoalDraftProposal,
 	type GoalDraftingFocus,
 } from "./goal-draft.ts";
 import {
@@ -103,7 +100,6 @@ import {
 } from "./goal-pool.ts";
 import {
 	goalPrompt,
-	goalTweakDraftingPrompt,
 	staleContinuationPrompt,
 	unfocusedOpenGoalsPrompt,
 	untrustedObjectiveBlock,
@@ -152,26 +148,9 @@ const COMPLETE_STATUS = "complete";
  */
 const GOAL_PROGRESS_TOOL_SET = new Set<string>(GOAL_PROGRESS_TOOL_NAMES);
 
-/**
- * When non-null, /goal-tweak drafting is in progress for this goal id and the
- * agent is allowed to call propose_goal_tweak. Cleared after the tweak is applied
- * or when a user-driven turn arrives without a tweak follow-through. This is
- * the schema-level affordance gate that prevents the agent from "tweaking" via
- * arbitrary write/edit calls.
- */
-let tweakDraftingFor: string | null = null;
 
-/**
- * Thin session-local confirmation intent for /goals and /sisyphus.
- * It protects mode consistency and user confirmation without turning drafting
- * into a separate long-running runtime state machine.
- */
-interface GoalConfirmationIntent {
-	focus: GoalDraftingFocus;
-	originalTopic: string;
-	startedAt: number;
-}
-let confirmationIntent: GoalConfirmationIntent | null = null;
+
+
 
 
 // ---------- summaries ----------
@@ -447,7 +426,6 @@ export default function goalExtension(
 		appendFocusEntry: (goalId, reason) => appendFocusEntry(goalId, reason),
 		onFocusedGoalLost: (lostGoalId, ctx) => {
 			clearStoppedRuntimeState();
-			if (tweakDraftingFor !== null) tweakDraftingFor = null;
 			syncGoalTools();
 			updateUI(ctx as unknown as ExtensionContext);
 		},
@@ -510,58 +488,28 @@ export default function goalExtension(
 				console.error("[pi-goal] syncGoalTools: pi.getActiveTools() did not return an array, got", typeof initialTools);
 				return;
 			}
+			// Static install (Stage 6): the five model tools are the only goal
+			// tools. get_goal is always present; create_goal too; update_goal
+			// appears whenever a non-complete goal is focused; the two task tools
+			// are gated on tasksEnabled (decided at session start) and status.
 			const active = new Set(initialTools);
 			for (const name of goalExecutionWorkTools) active.add(name);
-			// Remove every goal tool that must not be visible; the stable core set
-			// and phase-conditional shims are then added back explicitly.
-			for (const name of [
-				QUESTION_TOOL_NAME,
-				QUESTIONNAIRE_TOOL_NAME,
-				"complete_goal",
-				"pause_goal",
-				ABORT_GOAL_TOOL_NAME,
-				UPDATE_GOAL_TOOL_NAME,
-				PROPOSE_TWEAK_TOOL_NAME,
-				PROPOSE_DRAFT_TOOL_NAME,
-				...LEGACY_TASK_TOOL_NAMES,
-				...TASK_TOOL_NAMES,
-				SISYPHUS_STEP_TOOL_NAME,
-			]) {
-				active.delete(name);
-			}
-			// Stable core: get_goal and create_goal are always advertised; update_goal
-			// appears whenever a (non-complete) goal is focused — with no
-			// phase-dependent synchronization (Stage 3).
+			// Remove the state-dependent goal tools first, then add back per state,
+			// so stale tools from a prior focus never leak into the active set.
+			active.delete(UPDATE_GOAL_TOOL_NAME);
+			active.delete(SET_GOAL_TASKS_TOOL_NAME);
+			active.delete(UPDATE_GOAL_TASK_TOOL_NAME);
 			active.add(GET_GOAL_TOOL_NAME);
 			active.add(CREATE_GOAL_TOOL_NAME);
 			if (state.goal && state.goal.status !== "complete") {
 				active.add(UPDATE_GOAL_TOOL_NAME);
 			}
-			// The two consolidated task tools are advertised only when tasks are
-			// enabled and a goal is focused: both for active goals, set_goal_tasks
-			// for paused (Stage 4).
 			if (tasksEnabled && state.goal) {
 				if (state.goal.status === "active") {
 					for (const name of TASK_TOOL_NAMES) active.add(name);
 				} else if (state.goal.status === "paused") {
 					active.add(SET_GOAL_TASKS_TOOL_NAME);
 				}
-			}
-			// Drafting/tweak/question flows keep their existing shim visibility
-			// until Stage 6 removes them; they never leak into normal execution.
-			if (confirmationIntent !== null) {
-				active.add(PROPOSE_DRAFT_TOOL_NAME);
-				active.add(QUESTION_TOOL_NAME);
-				active.add(QUESTIONNAIRE_TOOL_NAME);
-			}
-			if (state.goal && tweakDraftingFor === state.goal.id) {
-				active.add(PROPOSE_TWEAK_TOOL_NAME);
-				active.add(QUESTION_TOOL_NAME);
-				active.add(QUESTIONNAIRE_TOOL_NAME);
-			}
-			if (confirmationIntent === null && tweakDraftingFor === null && state.goal?.status === "active") {
-				active.add(QUESTION_TOOL_NAME);
-				active.add(QUESTIONNAIRE_TOOL_NAME);
 			}
 			pi.setActiveTools(Array.from(active));
 		} catch (err) {
@@ -660,7 +608,6 @@ export default function goalExtension(
 		if (previousGoalId !== focusedGoalId) {
 			clearContinuationState();
 			clearActiveAccounting();
-			if (tweakDraftingFor !== null && tweakDraftingFor !== focusedGoalId) tweakDraftingFor = null;
 		}
 		appendFocusEntry(focusedGoalId, reason);
 		// Append ledger event for focus changes
@@ -704,10 +651,6 @@ export default function goalExtension(
 	}
 
 	function beginAccounting(): void {
-		if (confirmationIntent !== null || tweakDraftingFor !== null) {
-			clearActiveAccounting();
-			return;
-		}
 		if (!state.goal || (state.goal.status !== "active")) {
 			clearActiveAccounting();
 			return;
@@ -727,10 +670,6 @@ export default function goalExtension(
 	}
 
 	function accountProgress(ctx: ExtensionContext, opts: { completedTurnTokens?: number } = {}): void {
-		if (confirmationIntent !== null || tweakDraftingFor !== null) {
-			clearActiveAccounting();
-			return;
-		}
 		// Skip disk reconciliation for complete goals — they are pending archival at turn_end.
 		if (state.goal?.activePath && state.goal?.status !== "complete" && !reconcileFocusedGoalFromDisk(ctx, { preserveMemoryUsage: true })) return;
 		if (!state.goal || state.goal.status !== "active" || !accounting.isActiveFor(state.goal.id)) {
@@ -953,10 +892,6 @@ export default function goalExtension(
 		}
 		if (!state.goal || state.goal.status === "paused" || state.goal.status === "complete") {
 			clearActiveAccounting();
-		}
-		if (!state.goal || state.goal.id !== previousGoalId) {
-			// Drop any stale tweak-edit-gate that didn't belong to this goal.
-			if (tweakDraftingFor !== null && tweakDraftingFor !== state.goal?.id) tweakDraftingFor = null;
 		}
 		if (shouldPersist) persist(ctx);
 		else syncGoalTools();
@@ -1321,7 +1256,6 @@ Verification contract:
 	}
 
 	function queueContinuation(ctx: ExtensionContext, force = false): void {
-		if (confirmationIntent !== null || tweakDraftingFor !== null) return;
 		if (!state.goal) return;
 		runtime.queueContinuation(ctx, state.goal, force);
 	}
@@ -1343,94 +1277,75 @@ Verification contract:
 		});
 		if (result.focusChanged) appendFocusEntry(result.goalId, "created");
 		beginAccounting();
-		// Reset continuation nudge state — this is a fresh goal.
-		// A goal was committed — clear pending confirmation intent if any.
-		confirmationIntent = null;
 		ctx.ui.notify(buildGoalRunningNotification(config), "info");
 		if (startNow && state.goal?.autoContinue) queueContinuation(ctx, true);
 	}
 
-	async function startGoalTweakDrafting(hint: string, ctx: ExtensionContext): Promise<void> {
+	async function startGoalTweakDrafting(replacement: string, ctx: ExtensionContext): Promise<void> {
 		reconcileFocusedGoalFromDisk(ctx);
-		clearContinuationState();
-		clearActiveAccounting();
 		if (!state.goal) {
 			if (openGoals().length > 0) {
 				const selected = await chooseOpenGoal(ctx, "Tweak which open goal?");
 				if (!selected) return;
 			} else {
-				ctx.ui.notify("No goal is set. Use /goals or /sisyphus to discuss, or /goals-set / /sisyphus-set to start immediately.", "warning");
+				ctx.ui.notify("No goal is set. Use /goal <objective> or /sisyphus <objective> to create one.", "warning");
 				return;
 			}
 		}
 		const currentGoal = state.goal;
 		if (!currentGoal) return;
 		if (currentGoal.status === "complete") {
-			ctx.ui.notify("Goal is complete. Use /goals to discuss a new one or /goals-set to start immediately.", "warning");
+			ctx.ui.notify("Goal is complete. Use /goal <objective> to create a new one.", "warning");
 			return;
 		}
+		const trimmed = replacement.trim();
+		if (!trimmed) {
+			ctx.ui.notify("Provide the replacement objective: /goal-tweak <new objective>", "info");
+			return;
+		}
+		if (trimmed.length > 4000) {
+			ctx.ui.notify(`Replacement objective exceeds 4000 characters (${trimmed.length}).`, "warning");
+			return;
+		}
+		// User-owned tweak (Stage 6): apply the replacement directly through the
+		// service — preserve usage/tasks/mode/budget, reactivate budget-limited
+		// goals, clear any agent pause reason, and record the tweak ledger event.
 		syncGoalPromptFromDisk(ctx);
-		persist(ctx);
-		const trimmed = hint.trim();
-		const focused = state.goal;
-		if (!focused) return;
-		const sisyphusOn = focused.sisyphus;
-		const label = sisyphusOn ? "Sisyphus tweak drafting" : "Goal tweak drafting";
-		// Activate the tweak edit-gate so propose_goal_tweak is callable.
-		tweakDraftingFor = focused.id;
-		syncGoalTools();
-		ctx.ui.notify(
-			`${label} started${trimmed ? `: ${truncateText(trimmed, 60)}` : ""}. The agent will interview you and then propose the revision for you to Confirm.`,
-			"info",
-		);
-		const draftId = `tweak-${focused.id}-${Date.now().toString(36)}`;
-		try {
-			pi.sendMessage<GoalEventDetails>(
-				{
-					customType: GOAL_EVENT_ENTRY,
-					content: goalTweakDraftingPrompt(focused, trimmed),
-					display: false,
-					details: {
-						kind: "drafting",
-						goalId: draftId,
-						objective: trimmed,
-						focus: sisyphusOn ? "sisyphus" : "goal",
-						timestamp: Date.now(),
-					},
-				},
-				{ triggerTurn: true, deliverAs: ctx.isIdle() ? "followUp" : "steer" },
-			);
-		} catch (err) {
-			tweakDraftingFor = null;
-			syncGoalTools();
-			ctx.ui.notify(`Could not start goal tweak: ${(err as Error).message}`, "error");
+		const current = state.goal;
+		if (!current) return;
+		const { objective: cleanedObjective, verificationContract } = extractVerificationContract(trimmed);
+		const now = nowIso();
+		const result = goalService.apply(ctx, {
+			reconcile: false,
+			mutate: (g) => {
+				const reactivate = g.status === "budget_limited";
+				return {
+					...g,
+					objective: cleanedObjective,
+					verificationContract: verificationContract ?? g.verificationContract,
+					updatedAt: now,
+					pauseReason: undefined,
+					pauseSuggestedAction: undefined,
+					status: reactivate ? "active" : g.status,
+					autoContinue: reactivate ? true : g.autoContinue,
+				} as GoalRecord;
+			},
+			ledger: (written) => [{
+				type: "goal_tweaked",
+				goalId: written.id,
+				changeSummary: "Objective updated by the user via /goal-tweak.",
+				at: written.updatedAt,
+			}],
+		});
+		if (!result.ok) {
+			ctx.ui.notify(`Goal tweak failed: ${result.message}`, "error");
+			return;
 		}
-	}
-
-	function startGoalDrafting(topic: string, focus: DraftingFocus, ctx: ExtensionContext): void {
+		runtime.markTurnStopped(result.goal.id);
 		clearContinuationState();
-		clearActiveAccounting();
-		const trimmed = topic.trim();
-		const label = focus === "sisyphus" ? "Sisyphus intent discussion" : "Goal intent discussion";
-		const hint = focus === "sisyphus"
-			? "The agent will research or grill the ordered plan as needed, then propose a draft for you to Confirm. No skipping, no rushing."
-			: "The agent will clarify, research, or grill assumptions as needed, then propose a draft for you to Confirm.";
-		ctx.ui.notify(
-			`${label} started${trimmed ? `: ${truncateText(trimmed, 60)}` : ""}. ${hint}`,
-			"info",
-		);
-
-		confirmationIntent = {
-			focus,
-			originalTopic: trimmed,
-			startedAt: Date.now(),
-		};
 		syncGoalTools();
-		try {
-			pi.sendUserMessage(goalDraftingPrompt(trimmed, focus), { deliverAs: ctx.isIdle() ? "followUp" : "steer" });
-		} catch (err) {
-			ctx.ui.notify(`Could not start ${label.toLowerCase()}: ${(err as Error).message}`, "error");
-		}
+		updateUI(ctx);
+		ctx.ui.notify("Goal objective updated.", "info");
 	}
 
 	async function chooseOpenGoal(ctx: ExtensionContext, title: string): Promise<GoalRecord | null> {
@@ -1519,17 +1434,6 @@ Verification contract:
 		ctx.ui.notify(`Goal unfocused for this session. It remains open in .pi/goals: ${current.id}`, "info");
 	}
 
-	async function handleGoalCommandTopic(rawTopic: string, ctx: ExtensionContext, focus: DraftingFocus, opts: { replace: boolean }): Promise<void> {
-		const topic = rawTopic.trim();
-		if (opts.replace) {
-			const replacementTarget = await chooseOpenGoal(ctx, "Replace which open goal?");
-			if (openGoals().length > 0 && !replacementTarget) return;
-			archiveCurrentGoal(ctx, "user");
-			setGoal(null, ctx, true, "cleared");
-		}
-		startGoalDrafting(topic, focus, ctx);
-	}
-
 	function handleDirectGoalSet(rawObjective: string, ctx: ExtensionContext, focus: DraftingFocus): void {
 		const raw = rawObjective.trim();
 		if (!raw) {
@@ -1540,7 +1444,6 @@ Verification contract:
 		const { objective, verificationContract } = extractVerificationContract(raw);
 		clearContinuationState();
 		clearActiveAccounting();
-		confirmationIntent = null;
 		syncGoalTools();
 		replaceGoal({ objective, autoContinue: true, sisyphus: focus === "sisyphus" }, ctx, true, verificationContract);
 	}
@@ -1714,14 +1617,6 @@ Verification contract:
 	}
 
 	async function handleGoalClear(ctx: ExtensionContext): Promise<void> {
-		if (confirmationIntent !== null || tweakDraftingFor !== null) {
-			confirmationIntent = null;
-			tweakDraftingFor = null;
-			syncGoalTools();
-			updateUI(ctx);
-			ctx.ui.notify(clearGoalCommandMessage({ archived: false, wasDrafting: true }), "info");
-			return;
-		}
 		reconcileFocusedGoalFromDisk(ctx);
 		if (!state.goal && openGoals().length > 0) {
 			const selected = await chooseOpenGoal(ctx, "Clear which open goal?");
@@ -1730,24 +1625,12 @@ Verification contract:
 		const archived = archiveCurrentGoal(ctx, "user");
 		const didArchive = !!archived;
 		setGoal(null, ctx, true, "cleared");
-		// Phase 5 D: also abort any in-flight drafting so the agent's next turn
-		// doesn't try to propose into a cleared slot.
-		const wasDrafting = confirmationIntent !== null;
-		confirmationIntent = null;
 		syncGoalTools();
-		const msg = clearGoalCommandMessage({ archived: didArchive, wasDrafting });
-		ctx.ui.notify(msg, didArchive || wasDrafting ? "info" : "warning");
+		const msg = clearGoalCommandMessage({ archived: didArchive, wasDrafting: false });
+		ctx.ui.notify(msg, didArchive ? "info" : "warning");
 	}
 
 	async function handleGoalAbort(ctx: ExtensionContext): Promise<void> {
-		if (confirmationIntent !== null || tweakDraftingFor !== null) {
-			confirmationIntent = null;
-			tweakDraftingFor = null;
-			syncGoalTools();
-			updateUI(ctx);
-			ctx.ui.notify(abortGoalCommandMessage({ archived: false, wasDrafting: true }), "info");
-			return;
-		}
 		reconcileFocusedGoalFromDisk(ctx);
 		if (!state.goal && openGoals().length > 0) {
 			const selected = await chooseOpenGoal(ctx, "Abort which open goal?");
@@ -1756,11 +1639,9 @@ Verification contract:
 		const archived = archiveCurrentGoal(ctx, "user");
 		const didArchive = !!archived;
 		setGoal(null, ctx, true, "aborted");
-		const wasDrafting = confirmationIntent !== null;
-		confirmationIntent = null;
 		syncGoalTools();
-		const msg = abortGoalCommandMessage({ archived: didArchive, wasDrafting });
-		ctx.ui.notify(msg, didArchive || wasDrafting ? "info" : "warning");
+		const msg = abortGoalCommandMessage({ archived: didArchive, wasDrafting: false });
+		ctx.ui.notify(msg, didArchive ? "info" : "warning");
 	}
 
 	pi.registerMessageRenderer<GoalEventDetails>(GOAL_EVENT_ENTRY, renderGoalEvent);
@@ -1849,7 +1730,6 @@ Verification contract:
 	});
 
 
-	registerQuestionnaireTools(pi);
 
 	pi.registerTool(defineTool({
 		name: "get_goal",
@@ -1938,7 +1818,6 @@ Verification contract:
 			}
 			const sisyphusFlag = params.mode === "sisyphus";
 			const { objective: cleanedObjective, verificationContract } = extractVerificationContract(objective);
-			confirmationIntent = null;
 			replaceGoal(
 				{ objective: cleanedObjective, autoContinue: true, sisyphus: sisyphusFlag },
 				ctx,
@@ -1972,422 +1851,13 @@ Verification contract:
 	// Schema gates enforce focus-vs-sisyphus consistency; draftId is ignored for
 	// one-release compatibility with older prompt residue.
 	// In headless mode (no UI), auto-confirms — harness-friendly.
-	pi.registerTool(defineTool({
-		name: PROPOSE_DRAFT_TOOL_NAME,
-		label: "Propose Goal Draft",
-		description: "During /goals or /sisyphus intent discussion, propose the goal draft to the user. The user sees a full plain-text confirmation report and chooses Confirm (creates the goal) or Continue Chatting (returns control to you to refine). REPLACES create_goal during discussion-based creation.",
-		promptSnippet: "Propose the drafted goal to the user with a full plain-text Confirm / Continue Chatting dialog.",
-		promptGuidelines: [
-			"Call propose_goal_draft when a /goals or /sisyphus intent discussion has enough information to write a concrete goal. Ask a focused question only when the request is still ambiguous.",
-			"If an answer exposes ambiguity, keep interviewing the user — do not propose prematurely.",
-			"The user will see a full plain-text draft report plus a [Confirm] / [Continue Chatting] choice. Confirm creates the goal; Continue Chatting returns control to you to ask follow-up questions.",
-			"If the tool returns 'continue chatting', ask the user what they want changed. Do NOT propose again immediately with the same content; iterate based on their feedback first.",
-			"The sisyphus field must match the user's confirmation focus: /sisyphus -> sisyphus=true, /goals -> sisyphus=false. The schema enforces this; mismatched proposals are REJECTED.",
-			"For sisyphus goals, preserve the user's requested ordered style and completion standard. Do not add reconnaissance/preflight steps, merge steps, reorder steps, or change the mode without explicit user confirmation.",
-			"create_goal is rejected; propose_goal_draft is the confirmation path. This is intentional — the user wants explicit say in goal creation.",
-			"You may include a Verification contract: section in the objective to specify what verification evidence is required before the goal can be completed. This is optional — if omitted, no per-goal contract enforcement applies.",
-		],
-		parameters: Type.Object({
-			objective: Type.String({ description: "Full goal text. For Sisyphus goals this MUST include the user's numbered steps + per-step done criteria, taken faithfully from the user's input." }),
-			autoContinue: Type.Optional(Type.Boolean({ description: "Whether pi should keep sending continuation prompts until complete. Default true." })),
-			sisyphus: Type.Optional(Type.Boolean({ description: "Must equal true for /sisyphus discussion, false for /goals discussion. Schema-enforced via B1 gate." })),
-			tasks: Type.Optional(Type.Array(Type.Object({
-				id: Type.String({ description: "Short stable slug e.g. 'task-1'" }),
-				title: Type.String({ description: "Human-readable task title" }),
-				verificationContract: Type.Optional(Type.String({ description: "Optional verification contract for this task." })),
-				lightweightSubtasks: Type.Optional(Type.Boolean({ description: "If true, subtasks are lightweight (no completion enforcement). Default false." })),
-				subtasks: Type.Optional(Type.Any({ description: "Optional recursive array of sub-tasks (same shape as parent)." })),
-			}), { description: "Optional task list to confirm together with the goal in a single step. Each task supports recursive subtasks." })),
-			draftId: Type.Optional(Type.String({ description: "Deprecated compatibility field. It is accepted but ignored; current goal confirmation no longer depends on hidden draft ids." })),
-		}),
-		executionMode: "sequential",
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const validation = validateGoalDraftProposal({
-				intent: confirmationIntent,
-				hasUnfinishedGoal: !!state.goal && state.goal.status !== "complete",
-				objective: params.objective,
-				sisyphus: params.sisyphus,
-				draftId: params.draftId,
-			});
-			if (!validation.ok) {
-				if (validation.clearDrafting) {
-					confirmationIntent = null;
-					syncGoalTools();
-				}
-				return {
-					content: [{ type: "text", text: validation.message }],
-					details: goalDetails(state.goal),
-				};
-			}
-			const activeIntent = confirmationIntent;
-			if (!activeIntent) throw new Error("Goal confirmation intent disappeared during proposal validation.");
-
-			// All schema gates passed. Decide how to confirm.
-			const objective = validation.objective;
-			const autoContinueFlag = params.autoContinue ?? true;
-			const sisyphusFlag = validation.expectedSisyphus;
-			// Build confirmation text: goal + optional task list
-			let taskSummarySection = "";
-			let tasksToCreate: GoalTask[] | undefined;
-			if (params.tasks && params.tasks.length > 0) {
-				tasksToCreate = params.tasks.map((t) => {
-					const task: GoalTask = {
-						id: (t as Record<string, unknown>).id as string,
-						title: (t as Record<string, unknown>).title as string,
-						status: "pending",
-						verificationContract: (t as Record<string, unknown>).verificationContract as string | undefined,
-						lightweightSubtasks: (t as Record<string, unknown>).lightweightSubtasks === true ? true : undefined,
-					};
-					const rawSubtasks = (t as Record<string, unknown>).subtasks;
-					if (Array.isArray(rawSubtasks) && rawSubtasks.length > 0) {
-						task.subtasks = rawSubtasks.map((s) => normalizeTaskItem(s as Record<string, unknown>)).filter((s): s is GoalTask => !!s);
-					}
-					return task;
-				});
-				// Validate subtask depth BEFORE showing dialog (consistent with propose_task_list)
-				const settings = loadGoalSettings(ctx.cwd);
-				const depthViolation = findSubtaskDepthViolation(tasksToCreate, settings.subtaskDepth ?? 1);
-				if (depthViolation) {
-					return {
-						content: [{ type: "text", text: depthViolation }],
-						details: goalDetails(state.goal),
-					};
-				}
-				const taskLines = renderConfirmationTasks(tasksToCreate, 0);
-				taskSummarySection = `\n\n┌─ TASKS ─────────────────────────────────────┐\n${taskLines.join("\n")}\n└──────────────────────────────────────────────┘`;
-			}
-
-			const draftSummary = buildDraftConfirmationText({
-				focus: activeIntent.focus,
-				originalTopic: activeIntent.originalTopic,
-				// Tasks section appears FIRST in the context so it stays visible
-				// even when the dialog caps long context lines.
-				objective: taskSummarySection ? `${taskSummarySection}
-
-${objective}` : objective,
-				autoContinue: autoContinueFlag,
-			});
-
-			const headless = shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM });
-
-			let decision: { decision: "confirm" | "continue"; auditorEnabled: boolean };
-			const auditorDefault = isAuditorEnabledByDefault(loadGoalSettings(ctx.cwd));
-			if (headless) {
-				// Headless: auto-confirm (tests and non-TUI sessions).
-				decision = { decision: "confirm", auditorEnabled: auditorDefault };
-			} else {
-				// TUI: show overlay dialog.
-				try {
-					decision = await showProposalDialog(ctx, draftSummary, activeIntent.focus, auditorDefault);
-				} catch (err) {
-					const message = proposalDialogFailureMessage(err);
-					ctx.ui.notify(message, "error");
-					return {
-						content: [{ type: "text", text: message }],
-						details: goalDetails(state.goal),
-					};
-				}
-			}
-
-			if (decision.decision === "confirm") {
-				// Extract verification contract from objective before creation
-				const { objective: cleanedObjective, verificationContract } = extractVerificationContract(objective);
-				const config: GoalCreationConfig = {
-					objective: cleanedObjective,
-					autoContinue: autoContinueFlag,
-					sisyphus: sisyphusFlag,
-				};
-				confirmationIntent = null;
-				replaceGoal(config, ctx, false, verificationContract);
-
-				// Set skipAuditor on the goal if user toggled auditor off
-				if (!decision.auditorEnabled && state.goal) {
-					state.goal = { ...state.goal, skipAuditor: true };
-					setGoal(state.goal, ctx);
-				}
-
-				// Set task list if provided
-				if (tasksToCreate && tasksToCreate.length > 0 && state.goal) {
-					const now = nowIso();
-					state.goal = {
-						...state.goal,
-						taskList: {
-							tasks: tasksToCreate,
-							blockCompletion: false,
-							proposedAt: now,
-						},
-						updatedAt: now,
-					};
-					setGoal(state.goal, ctx);
-					// Append ledger event for task list
-					try {
-						goalService.appendEvents(ctx, [{
-							type: "task_list_set",
-							goalId: state.goal.id,
-							taskCount: tasksToCreate.length,
-							blockCompletion: false,
-							at: now,
-						}]);
-					} catch {
-						// Ledger failure should not block creation
-					}
-					syncGoalTools();
-					updateUI(ctx);
-				}
-
-				syncGoalTools();
-				return {
-					content: [{ type: "text", text: buildGoalCreatedReport({ objective, detailedSummary: detailedSummary(state.goal) }) }],
-					details: goalDetails(state.goal),
-					terminate: true,
-				};
-			}
-			// "continue" — user wants to keep chatting. Drafting state stays armed.
-			return {
-				content: [{
-					type: "text",
-					text: "Goal draft refinement requested (Continue Chatting). The goal was not created — drafting remains active. Ask the user what they want changed about the draft (objective, scope, criteria, steps), then revise and call propose_goal_draft again. Do not re-propose the same content — wait for the user's input first.",
-				}],
-				details: goalDetails(state.goal),
-			};
-		},
-		renderCall(args, theme) {
-			const prefix = args?.sisyphus ? "propose_goal_draft sisyphus " : "propose_goal_draft ";
-			return new Text(theme.fg("toolTitle", prefix) + theme.fg("muted", truncateText(args?.objective ?? "", 80)), 0, 0);
-		},
-		renderResult(result, _options, theme) {
-			return renderGoalResult(result, theme);
-		},
-	}));
-
-	pi.registerTool(defineTool({
-		name: PROPOSE_TWEAK_TOOL_NAME,
-		label: "Propose Goal Tweak",
-		description: "Propose a goal tweak or auto-start the /goal-tweak drafting flow. When a goal is active or paused and no /goal-tweak flow is active, calling this auto-starts the drafting interview; inside an active flow it presents the revised goal for confirmation.",
-		promptSnippet: "Propose the revised goal to the user with a Confirm / Continue Chatting dialog.",
-		promptGuidelines: [
-			"Always callable when a goal is active or paused. Calling outside a /goal-tweak flow automatically starts one — the tool enters a drafting interview so you can clarify the change before proposing.",
-			"newObjective must be the FULL revised objective text, formatted the same way as the original (=== Goal === or === Sisyphus Goal === block). Do NOT pass a diff or partial patch; pass the whole new objective.",
-			"For Sisyphus goals: preserve the Sisyphus style and ordered-plan wording unless the user explicitly asks to remove it.",
-			"changeSummary is a one-sentence description of WHAT changed (for the confirmation dialog, activity log, and tweak log). When auto-starting a tweak flow, this is used as the hint for the drafting interview.",
-			"The user will see a full plain-text report plus a [Confirm] / [Continue Chatting] choice. Confirm applies the tweak; Continue Chatting returns control to you to ask follow-up questions.",
-			"If the tool returns 'continue chatting', ask the user what they want changed. Do NOT re-propose the same content immediately; iterate based on their feedback first.",
-			"Do NOT use write/edit/bash to modify the active goal file directly. propose_goal_tweak is the only sanctioned channel.",
-			"tasks (optional): an array of task objects to REPLACE the current goal's task list. When omitted,",
-			"  the existing task list is inherited as-is. When provided, the full task list is replaced with",
-			"  the new tasks — add/remove/change tasks by passing the complete updated list.",
-			"  Each task has: {id, title, verificationContract?, lightweightSubtasks?, subtasks?}.",
-			"  Subtasks use the same shape recursively. The task list is displayed in the confirmation",
-			"  dialog alongside the objective diff, matching propose_goal_draft's rendering format.",
-			"Start from the current goal's objective text and task list (the inheritance defaults), then",
-			"  edit/rewrite them directly rather than composing a goal from scratch.",
-		],
-		parameters: Type.Object({
-			newObjective: Type.String({ description: "The complete revised objective text. For Sisyphus goals, preserve the Sisyphus style unless the user explicitly changes it." }),
-			changeSummary: Type.String({ description: "One-sentence description of what was changed (used in confirmation dialog, activity log, and tweak log)." }),
-			tasks: Type.Optional(Type.Array(Type.Object({
-				id: Type.String({ description: "Short stable slug e.g. 'task-1'" }),
-				title: Type.String({ description: "Human-readable task title" }),
-				verificationContract: Type.Optional(Type.String({ description: "Optional verification contract for this task." })),
-				lightweightSubtasks: Type.Optional(Type.Boolean({ description: "If true, subtasks are lightweight (no completion enforcement). Default false." })),
-				subtasks: Type.Optional(Type.Any({ description: "Optional recursive array of sub-tasks (same shape as parent)." })),
-			}), { description: "Optional task list to replace the current goal's tasks. When omitted the existing task list is inherited. Each task supports recursive subtasks." })),
-		}),
-		executionMode: "sequential",
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			reconcileFocusedGoalFromDisk(ctx);
-			if (!state.goal) {
-				return {
-					content: [{ type: "text", text: "No goal is set; propose_goal_tweak is a no-op." }],
-					details: goalDetails(state.goal),
-				};
-			}
-			if (state.goal.status !== "active" && state.goal.status !== "paused") {
-				return {
-					content: [{ type: "text", text: `Goal is ${statusLabel(state.goal)}; cannot apply a tweak.` }],
-					details: goalDetails(state.goal),
-				};
-			}
-			const newObjective = params.newObjective.trim();
-			if (!newObjective) throw new Error("propose_goal_tweak requires a non-empty newObjective.");
-			const changeSummary = params.changeSummary.trim();
-			if (!changeSummary) throw new Error("propose_goal_tweak requires a non-empty changeSummary.");
-
-			// Resolve tasks: inherit from current goal if not provided, or normalize/validate the passed tasks.
-			let tweakTasks: GoalTask[] | undefined;
-			if (params.tasks && Array.isArray(params.tasks) && params.tasks.length > 0) {
-				tweakTasks = params.tasks.map((t: Record<string, unknown>) => {
-					const task: GoalTask = {
-						id: t.id as string,
-						title: t.title as string,
-						status: "pending",
-						verificationContract: t.verificationContract as string | undefined,
-						lightweightSubtasks: t.lightweightSubtasks === true ? true : undefined,
-					};
-					const rawSubtasks = t.subtasks;
-					if (Array.isArray(rawSubtasks) && rawSubtasks.length > 0) {
-						task.subtasks = rawSubtasks
-							.map((s: Record<string, unknown>) => normalizeTaskItem(s))
-							.filter((s: GoalTask | undefined): s is GoalTask => !!s);
-					}
-					return task;
-				});
-				// Validate task list
-				if (tweakTasks.length > 50) {
-					return { content: [{ type: "text", text: "Task list cannot exceed 50 tasks." }], details: goalDetails(state.goal) };
-				}
-				const settings = loadGoalSettings(ctx.cwd);
-				const depthViolation = findSubtaskDepthViolation(tweakTasks, settings.subtaskDepth ?? 1);
-				if (depthViolation) {
-					return { content: [{ type: "text", text: depthViolation }], details: goalDetails(state.goal) };
-				}
-			} else {
-				// Inherit current task list when no tasks parameter provided
-				if (state.goal.taskList && state.goal.taskList.tasks.length > 0) {
-					tweakTasks = state.goal.taskList.tasks;
-				}
-			}
-
-			// Auto-start the tweak drafting flow if not already active.
-			if (tweakDraftingFor !== state.goal.id) {
-				await startGoalTweakDrafting(changeSummary, ctx);
-				return {
-					content: [{
-						type: "text",
-						text: "Tweak drafting flow auto-started. The drafting interview prompt will arrive in a new turn. " +
-							"Ask the user clarifying questions as needed, refine the proposal, then call propose_goal_tweak again with the complete revision.",
-					}],
-					details: goalDetails(state.goal),
-				};
-			}
-
-			// Build the confirmation dialog text.
-			const draftSummary = buildTweakConfirmationText({
-				currentObjective: state.goal.objective,
-				newObjective,
-				changeSummary,
-				sisyphus: !!state.goal.sisyphus,
-				tasks: tweakTasks,
-			});
-
-			const headless = shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM });
-			const tweakFocus = focusedOperationToken(state.goal.id);
-
-			let decision: { decision: "confirm" | "continue"; auditorEnabled: boolean };
-			if (headless) {
-				decision = { decision: "confirm", auditorEnabled: !state.goal.skipAuditor };
-			} else {
-				try {
-					decision = await showProposalDialog(ctx, draftSummary, state.goal.sisyphus ? "sisyphus" : "goal", !state.goal.skipAuditor);
-				} catch (err) {
-					const message = proposalDialogFailureMessage(err);
-					ctx.ui.notify(message, "error");
-					return {
-						content: [{ type: "text", text: message }],
-						details: goalDetails(state.goal),
-					};
-				}
-			}
-			if (!isFocusedOperationCurrent(tweakFocus)) {
-				return focusedOperationCancelledResult("Goal tweak", tweakFocus);
-			}
-
-			if (decision.decision === "confirm") {
-				// Persist any auditor toggle change
-				if (state.goal) {
-					state.goal = { ...state.goal, skipAuditor: !decision.auditorEnabled };
-				}
-				// Extract verification contract from revised objective
-				const { objective: cleanedObjective, verificationContract } = extractVerificationContract(newObjective);
-				// Apply the tweak: write the new objective to disk authoritatively.
-				const next: GoalRecord = {
-					...state.goal,
-					objective: cleanedObjective,
-					verificationContract: verificationContract,
-					updatedAt: nowIso(),
-					// Clear any prior agent pause reason — the user has redefined the work.
-					pauseReason: undefined,
-					pauseSuggestedAction: undefined,
-					taskList: tweakTasks && tweakTasks.length > 0
-						? { tasks: tweakTasks, blockCompletion: false, proposedAt: nowIso() }
-						: undefined,
-				};
-				// IMPORTANT: bypass setGoal() / persist() here. persist() calls
-				// syncGoalPromptFromDisk() which would RE-READ the stale objective
-				// from the still-old goal file on disk and clobber our new objective
-				// before writing. propose_goal_tweak is the authoritative source for
-				// objective changes — the disk is downstream, not upstream. Route the
-				// write through the service WITHOUT reconciliation so the new
-				// objective is never clobbered, and append the tweak/task ledger
-				// events in the same ordered write.
-				const tweakResult = goalService.apply(ctx, {
-					reconcile: false,
-					focusToken: tweakFocus,
-					mutate: () => next,
-					ledger: (written) => {
-						const events: GoalLedgerEvent[] = [{
-							type: "goal_tweaked",
-							goalId: written.id,
-							changeSummary,
-							at: written.updatedAt,
-						}];
-						if (params.tasks && Array.isArray(params.tasks) && params.tasks.length > 0) {
-							events.push({
-								type: "task_list_set",
-								goalId: written.id,
-								taskCount: params.tasks.length,
-								blockCompletion: false,
-								at: written.updatedAt,
-							});
-						}
-						return events;
-					},
-				});
-				if (!tweakResult.ok) {
-					return focusedOperationCancelledResult("Goal tweak", tweakFocus);
-				}
-				tweakDraftingFor = null;
-				// Reset autoContinue counter — plan changed, agent gets a fresh chain.
-				// Mark turn-stopped so subsequent in-turn tool calls are blocked.
-				runtime.markTurnStopped(state.goal.id);
-				syncGoalTools();
-				updateUI(ctx);
-				ctx.ui.notify(`Goal tweaked: ${truncateText(changeSummary, 160)}`, "info");
-				return {
-					content: [{
-						type: "text",
-						text: `Goal tweak applied. ${changeSummary}\nStop now; the next continuation will arrive automatically if the goal is active.`,
-					}],
-					details: goalDetails(state.goal),
-					terminate: true,
-				};
-			}
-
-			// "continue" — user wants to keep chatting. Drafting state stays armed.
-			return {
-				content: [{
-					type: "text",
-					text: "Goal tweak refinement requested (Continue Chatting). The tweak was not applied — drafting remains active. Ask the user what they want changed about the revision, then revise and call propose_goal_tweak again. Do not re-propose the same content — wait for the user's input first.",
-				}],
-				details: goalDetails(state.goal),
-			};
-		},
-		renderCall(args, theme) {
-			const summary = typeof args?.changeSummary === "string" ? truncateText(args.changeSummary, 80) : "";
-			return new Text(theme.fg("toolTitle", "propose_goal_tweak ") + theme.fg("muted", summary), 0, 0);
-		},
-		renderResult(result, _options, theme) {
-			return renderGoalResult(result, theme);
-		},
-	}));
-
-	async function runGoalCompletionFlow(ctx: ExtensionContext, opts: { completionSummary?: string; verificationSummary?: string; confirmBypassAuditor?: boolean; status?: string }): Promise<AgentToolResult<unknown>> {
+			async function runGoalCompletionFlow(ctx: ExtensionContext, opts: { completionSummary?: string; verificationSummary?: string; confirmBypassAuditor?: boolean; status?: string }): Promise<AgentToolResult<unknown>> {
 		reconcileFocusedGoalFromDisk(ctx);
 
 		// -- Phase 2: Status validation --
 		const effectiveStatus = opts.status ?? COMPLETE_STATUS;
 		if (effectiveStatus !== COMPLETE_STATUS) {
-			throw new Error("complete_goal requires status=complete when marking a goal complete.");
+			throw new Error("update_goal(complete) requires status=complete when marking a goal complete.");
 		}
 
 		// -- Phase 3: Completion --
@@ -2502,8 +1972,7 @@ ${objective}` : objective,
 					content: [{ type: "text", text: [
 						"The completion auditor is disabled in settings.",
 						"",
-						`Use \`goal_question\` to ask the user: "The independent completion auditor is disabled. Bypass independent verification and mark the goal complete?"`,
-						"If the user confirms, call complete_goal again with confirmBypassAuditor: true.",
+						"The completion auditor is disabled in settings. There is no model-side bypass for update_goal; enable the auditor in /goal-settings or ask the user to complete via the TUI.",
 					].join("\n") }],
 					details: goalDetails(state.goal),
 				};
@@ -2794,47 +2263,7 @@ ${objective}` : objective,
 	}
 
 
-	pi.registerTool(defineTool({
-		name: "complete_goal",
-		label: "Complete Goal",
-		description: "Mark the current active or paused pi goal complete. Only call this when the goal objective is actually achieved — no required work remains.",
-		promptSnippet: "Mark the active or paused pi goal complete — only when every requirement is satisfied.",
-		promptGuidelines: [
-			"Call complete_goal only when the pi goal objective has actually been achieved and no required work remains.",
-			"Before calling complete_goal, you MUST provide a verificationSummary that addresses every success criterion and any verification contract on the goal. Fold all verification evidence (test output, grep results, requirements coverage) into this single field.",
-			"The auditor is authoritative: completion is archived only if the auditor report ends with <approved/>. If it ends with <disapproved/> or no approval marker, complete_goal is rejected and the goal remains open.",
-			"Do NOT call complete_goal if any work remains, even if substantial progress was made. Do not use it merely because work is stopping, tests passed, or you are blocked.",
-			"Do not use complete_goal=complete as an escape hatch when you are blocked. If you are blocked, call pause_goal({reason, suggestedAction?}) instead so the user can intervene.",
-			"For sisyphus goals, do not mark complete until every numbered step has been executed and individually verified against its done criterion.",
-			"The goal objective is immutable. The agent MUST NOT modify the goal objective on its own initiative. If the user gives requirements, feedback, or corrections that differ from the goal objective, ask the user to run /goal-tweak to revise the goal. Use goal_question to confirm when the change is ambiguous.",
-			"If the goal has a verificationContract, your verificationSummary must address every item in the contract. The auditor will cross-check your claims against real artifacts.",
-		],
-		parameters: Type.Object({
-			status: Type.Optional(StringEnum([COMPLETE_STATUS] as const, { description: "Set to complete only when the objective is achieved." })),
-			completionSummary: Type.Optional(Type.String({ description: "Concise completion claim and evidence summary passed to the independent auditor agent." })),
-			verificationSummary: Type.String({ description: "Required verification evidence showing what was checked before declaring completion. Must address every success criterion and any verification contract on the goal. Examples: 'Ran npm test (0 failures), re-read requirements and confirmed A1-A3 complete, grepped for remaining STP references (none found).' The exact requirements depend on the specific goal." }),
-			confirmBypassAuditor: Type.Optional(Type.Boolean({ description: "Set to true to confirm bypassing the independent auditor when it is disabled in settings." })),
-		}, { additionalProperties: false }),
-		executionMode: "sequential",
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-			return runGoalCompletionFlow(ctx, {
-				completionSummary: params.completionSummary,
-				verificationSummary: params.verificationSummary,
-				confirmBypassAuditor: params.confirmBypassAuditor,
-				status: params.status,
-			});
-		}
-		,
-		renderCall(args, theme) {
-			const label = args?.status ?? "";
-			return new Text(theme.fg("toolTitle", "complete_goal ") + theme.fg("success", label), 0, 0);
-		},
-		renderResult(result, _options, theme) {
-			return renderGoalResult(result, theme);
-		},
-	}));
-
-	// ── update_goal: the model's terminal-outcome surface (Stage 3) ────────
+		// ── update_goal: the model's terminal-outcome surface (Stage 3) ────────
 	// complete → the independent auditor verifies from actual evidence (no
 	// paperwork field); blocked → a distinct agent-blocked state that stops
 	// continuation. The three-consecutive-turn blocker rule is prompt policy.
@@ -2913,528 +2342,10 @@ ${objective}` : objective,
 		},
 	}));
 
-	pi.registerTool(defineTool({
-		name: "pause_goal",
-		label: "Pause Goal",
-		description: "Pause the active pi goal and report a blocker to the user. The user must /goal-resume, /goal-tweak, or /goal-clear before work continues.",
-		promptSnippet: "Pause the active pi goal and report a concrete blocker so the user can intervene.",
-		promptGuidelines: [
-			"Use pause_goal when you have hit a real blocker that you cannot resolve with one more reasonable next step: missing credentials, ambiguous or contradictory spec, a file or permission you cannot access, a sisyphus step whose precondition is not in the plan, or any irreversible / dangerous operation that requires explicit user approval.",
-			"Do NOT use pause_goal to escape a merely hard problem; first try one concrete next step. Do not use pause_goal as a softer substitute for complete_goal \u2014 if the objective is achieved, complete it; if it is not, do not complete it.",
-			"Never silently invent a workaround, fake completion, or quietly redefine the objective. Pause and report instead.",
-			"Always pass a concrete one-sentence reason. When you know how the user can unblock you, pass suggestedAction (e.g. 'Set FOO_API_KEY env var and /goal-resume', or 'Use /goal-tweak to insert a precondition step before step 3').",
-			"After pause_goal returns, stop. Do not call other tools in the same turn.",
-			"For sisyphus goals: if any step is unclear, blocked, fails, or seems wrong, pause_goal is the correct action \u2014 do not skip the step or invent a workaround.",
-		],
-		parameters: Type.Object({
-			reason: Type.String({ description: "One-sentence concrete blocker description. Plain language, not an apology." }),
-			suggestedAction: Type.Optional(Type.String({ description: "Optional concrete suggestion for how the user can unblock (e.g. command to run, value to provide, /goal-tweak hint)." })),
-		}),
-		executionMode: "sequential",
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			reconcileFocusedGoalFromDisk(ctx);
-			const reason = params.reason.trim();
-			if (!reason) throw new Error("pause_goal requires a non-empty reason.");
-			const pauseGate = validatePauseGoal({ goal: state.goal, runningGoalId, reason });
-			if (!pauseGate.ok) {
-				return {
-					content: [{ type: "text", text: pauseGate.message }],
-					details: goalDetails(state.goal),
-				};
-			}
-			if (!state.goal) throw new Error("Goal disappeared during pause validation.");
-			const suggested = params.suggestedAction?.trim() || undefined;
-
-			// Account for any remaining elapsed time before stopping the run.
-			accountProgress(ctx);
-			state.goal = mergeGoalPromptFromDisk(ctx, state.goal);
-			const next = buildPausedByAgentGoal(state.goal, { reason, suggestedAction: suggested, updatedAt: nowIso() });
-			setGoal(next, ctx);
-			// C9 fix: mark turn-stopped so subsequent in-turn tool calls are blocked.
-			// This is the schema-level closure of "agent kept writing files after pause_goal".
-			runtime.markTurnStopped(state.goal.id);
-
-			const suggestionLine = suggested ? `\nSuggested: ${truncateText(suggested, 160)}` : "";
-			ctx.ui.notify(
-				`Goal paused by agent.\nReason: ${truncateText(reason, 200)}${suggestionLine}\n\nUse /goal-resume to continue, /goal-tweak to revise, or /goal-clear to abandon.`,
-				"warning",
-			);
-			return {
-				content: [{
-					type: "text",
-					text: `Goal paused. Reason: ${reason}${suggested ? `\nSuggested: ${suggested}` : ""}\nWaiting for user to /goal-resume, /goal-tweak, or /goal-clear. Stop now; do not start another tool call.`,
-				}],
-				details: goalDetails(state.goal),
-				terminate: true,
-			};
-		},
-		renderCall(args, theme) {
-			return new Text(theme.fg("toolTitle", "pause_goal ") + theme.fg("warning", truncateText(args?.reason ?? "", 80)), 0, 0);
-		},
-		renderResult(result, _options, theme) {
-			return renderGoalResult(result, theme);
-		},
-	}));
-
-	pi.registerTool(defineTool({
-		name: ABORT_GOAL_TOOL_NAME,
-		label: "Abort Goal",
-		description: "Abort the current active or paused pi goal and archive it without marking it complete.",
-		promptSnippet: "Abort the current pi goal only when the user asks to abandon it or the objective is obsolete/impossible.",
-		promptGuidelines: [
-			"Use abort_goal only when the user explicitly asks to abandon/cancel the current goal, or when the goal is impossible, obsolete, or unsafe to continue and should not be marked complete.",
-			"Do not use abort_goal as a substitute for complete_goal. If the objective is achieved, complete it instead.",
-			"Do not use abort_goal for ordinary blockers that the user can resolve; use pause_goal({reason, suggestedAction?}) for that case.",
-			"Always pass a concrete one-sentence reason. After abort_goal returns, stop and do not call other tools in the same turn.",
-		],
-		parameters: Type.Object({
-			reason: Type.String({ description: "One-sentence reason for abandoning the current goal. Plain language, not an apology." }),
-		}),
-		executionMode: "sequential",
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			reconcileFocusedGoalFromDisk(ctx);
-			const reason = params.reason.trim();
-			if (!reason) throw new Error("abort_goal requires a non-empty reason.");
-			const abortGate = validateGoalAbort({ goal: state.goal, runningGoalId, reason });
-			if (!abortGate.ok) {
-				return {
-					content: [{ type: "text", text: abortGate.message }],
-					details: goalDetails(state.goal),
-				};
-			}
-			if (!state.goal) throw new Error("Goal disappeared during abort validation.");
-			const abortedGoalId = state.goal.id;
-
-			// Account for any remaining elapsed time before abandoning the run.
-			accountProgress(ctx);
-			state.goal = mergeGoalPromptFromDisk(ctx, state.goal);
-			state.goal = buildAbortedByAgentGoal(state.goal, { reason, updatedAt: nowIso() });
-			const archived = archiveCurrentGoal(ctx, "agent");
-			setGoal(null, ctx, true, "aborted");
-			runtime.markTurnStopped(abortedGoalId);
-
-			const archiveLine = archived?.archivedPath ? `\nArchive: ${archived.archivedPath}` : "";
-			ctx.ui.notify(
-				`Goal aborted by agent.\nReason: ${truncateText(reason, 200)}${archiveLine}`,
-				"warning",
-			);
-			// Append ledger event for abort
-			try {
-				goalService.appendEvents(ctx, [{
-					type: "goal_aborted",
-					goalId: abortedGoalId,
-					reason,
-					archivePath: archived?.archivedPath,
-					at: nowIso(),
-				}]);
-			} catch {
-				// Ledger append failure should not crash abort
-			}
-			return {
-				content: [{
-					type: "text",
-					text: `Goal aborted. Reason: ${reason}${archiveLine}\nThe goal has been archived and cleared. Stop now; do not start another tool call.`,
-				}],
-				details: goalDetails(state.goal),
-				terminate: true,
-			};
-		},
-		renderCall(args, theme) {
-			return new Text(theme.fg("toolTitle", "abort_goal ") + theme.fg("warning", truncateText(args?.reason ?? "", 80)), 0, 0);
-		},
-		renderResult(result, _options, theme) {
-			return renderGoalResult(result, theme);
-		},
-	}));
-
-	pi.registerTool(defineTool({
-		name: SISYPHUS_STEP_TOOL_NAME,
-		label: "Sisyphus Step Complete (Legacy)",
-		description: "Legacy compatibility tool. Current Sisyphus mode is a prompt/criteria style and no longer uses schema-tracked step completion.",
-		promptSnippet: "Legacy no-op: Sisyphus no longer requires step_complete.",
-		promptGuidelines: [
-			"Do not call this in normal operation. Sisyphus mode shares the normal goal lifecycle and completion gate.",
-			"Call complete_goal only when the full objective is actually satisfied.",
-		],
-		parameters: Type.Object({
-			stepIndex: Type.Integer({ minimum: 1, description: "Legacy step index. Ignored." }),
-			evidence: Type.String({ description: "Legacy evidence text. Ignored by the schema." }),
-			verifyCommand: Type.Optional(Type.String({ description: "Legacy field. Not executed." })),
-		}),
-		executionMode: "sequential",
-		async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
-			return {
-				content: [{ type: "text", text: "step_complete is no longer required. Sisyphus is now a prompt/criteria style that uses the normal goal lifecycle. Continue working from the objective, or call complete_goal only when the full objective is actually satisfied." }],
-				details: goalDetails(state.goal),
-			};
-		},
-		renderCall(args, theme) {
-			return new Text(theme.fg("toolTitle", "step_complete legacy ") + theme.fg("muted", `#${args?.stepIndex ?? "?"}`), 0, 0);
-		},
-		renderResult(result, _options, theme) {
-			return renderGoalResult(result, theme);
-		},
-	}));
-
-	// ── propose_task_list ──────────────────────────────────────────────────
-	pi.registerTool(defineTool({
-		name: PROPOSE_TASK_LIST_TOOL_NAME,
-		label: "Propose Task List",
-		description: "Propose a structured task list for the current goal. Mirrors the propose_goal_tweak pattern: shows a confirmation dialog and stops the turn.",
-		promptSnippet: "Propose a task list with confirmation. Stops the turn after confirmation.",
-		promptGuidelines: [
-			"Use propose_task_list after a goal is confirmed, on the first continuation turn, if the objective naturally decomposes into trackable milestones.",
-			"Do not add a task list for simple, single-step goals.",
-			"If a task list already exists on the goal, only call propose_task_list to restructure it when (a) the user explicitly asks for a change, or (b) the goal objective or requirements have structurally changed. Do not restructure the task list autonomously.",
-			"Existing tasks with matching IDs preserve their status/evidence/timestamps; new IDs start as pending; removed IDs are gone.",
-			"After confirmation the turn stops; the next continuation will arrive automatically.",
-			"You may optionally specify a verificationContract per task to define what verification evidence is required before completing that task.",
-		],
-		parameters: Type.Object({
-			tasks: Type.Array(Type.Object({
-				id: Type.String({ description: "Short stable slug e.g. 'task-1'" }),
-				title: Type.String({ description: "Human-readable task title" }),
-				verificationContract: Type.Optional(Type.String({ description: "Optional verification contract for this task — what evidence is required before marking it complete." })),
-				lightweightSubtasks: Type.Optional(Type.Boolean({ description: "If true, subtasks are lightweight (no completion enforcement). Default false (full subtasks)." })),
-				subtasks: Type.Optional(Type.Any({ description: "Optional recursive array of sub-tasks (same shape as parent). Nested up to subtaskDepth (default 1, from settings)." })),
-			}), { description: "Array of task objects with id, title, optional subtasks" }),
-			blockCompletion: Type.Optional(Type.Boolean({ description: "If true, warns when pending tasks remain during complete_goal. Default false." })),
-			changeSummary: Type.Optional(Type.String({ description: "Optional summary of the task list proposal" })),
-		}),
-		executionMode: "sequential",
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			reconcileFocusedGoalFromDisk(ctx);
-			if (!state.goal) {
-				return {
-					content: [{ type: "text", text: "No goal is set; propose_task_list requires an active goal." }],
-					details: goalDetails(state.goal),
-				};
-			}
-			// Reject if task lists are disabled via settings
-			if (loadGoalSettings(ctx.cwd).disableTasks) {
-				return {
-					content: [{ type: "text", text: "propose_task_list is disabled by settings (disableTasks: true)." }],
-					details: goalDetails(state.goal),
-				};
-			}
-			const settings = loadGoalSettings(ctx.cwd);
-			const gate = validateTaskListProposal({ goal: state.goal, tasks: params.tasks as GoalTask[], maxSubtaskDepth: settings.subtaskDepth });
-			if (!gate.ok) {
-				return {
-					content: [{ type: "text", text: gate.message }],
-					details: goalDetails(state.goal),
-				};
-			}
-			const blockCompletion = params.blockCompletion === true;
-			const now = nowIso();
-			const existingTasks = state.goal.taskList?.tasks ?? [];
-			const existingById = new Map(existingTasks.map((t) => [t.id, t]));
-
-			// Merge: existing tasks with matching IDs preserve status/timestamps
-			function mergeTask(input: GoalTask): GoalTask {
-				const existing = existingById.get(input.id);
-				const base: GoalTask = existing
-					? {
-						...existing,
-						title: input.title,
-						verificationContract: input.verificationContract ?? existing.verificationContract,
-						lightweightSubtasks: input.lightweightSubtasks ?? existing.lightweightSubtasks,
-					}
-					: {
-						id: input.id,
-						title: input.title,
-						status: "pending" as const,
-						verificationContract: input.verificationContract || undefined,
-						lightweightSubtasks: input.lightweightSubtasks || undefined,
-					};
-				if (input.subtasks && input.subtasks.length > 0) {
-					base.subtasks = input.subtasks.map((child) => mergeTask(child));
-				}
-				return base;
-			}
-			const mergedTasks = params.tasks.map((p) => mergeTask(p as GoalTask));
-
-			const taskList: GoalTaskList = {
-				tasks: mergedTasks,
-				blockCompletion,
-				proposedAt: now,
-			};
-
-			// Show full proposed task list in confirmation dialog (with subtasks)
-			function renderTaskLines(tasks: GoalTask[], indent = 0): string[] {
-				const prefix = "  ".repeat(indent);
-				const lines: string[] = [];
-				for (const t of tasks) {
-					const marker = t.status === "complete" ? "[x]" : t.status === "skipped" ? "[~]" : "[ ]";
-					const lw = t.lightweightSubtasks ? " (lightweight)" : "";
-					lines.push(`${prefix}${marker} ${t.id}: ${t.title}${lw}`);
-					if (t.subtasks && t.subtasks.length > 0) {
-						lines.push(...renderTaskLines(t.subtasks, indent + 1));
-					}
-				}
-				return lines;
-			}
-			const taskLines = renderTaskLines(taskList.tasks);
-			const gateLabel = blockCompletion ? " (blockCompletion enabled)" : "";
-			const proposalText = [`Proposed task list${gateLabel}:`, "", ...taskLines].join("\n");
-			const taskListFocus = focusedOperationToken(state.goal.id);
-
-			const dialogResult = await showProposalDialog(ctx, proposalText, "goal", !state.goal?.skipAuditor);
-			if (!isFocusedOperationCurrent(taskListFocus)) {
-				return focusedOperationCancelledResult("Task list proposal", taskListFocus);
-			}
-			if (dialogResult.decision !== "confirm") {
-				return {
-					content: [{ type: "text", text: "Task list proposal declined." }],
-					details: goalDetails(state.goal),
-				};
-			}
-			// Persist any auditor toggle change
-			if (state.goal) {
-				state.goal = { ...state.goal, skipAuditor: !dialogResult.auditorEnabled };
-			}
-
-			// Apply
-			const taskListResult = goalService.apply(ctx, {
-				reconcile: false,
-				focusToken: taskListFocus,
-				refreshFromDisk: true,
-				mutate: (g) => ({ ...g, taskList, updatedAt: now }),
-				ledger: (written) => [{
-					type: "task_list_set",
-					goalId: written.id,
-					taskCount: taskList.tasks.length,
-					blockCompletion,
-					at: written.updatedAt,
-				}],
-			});
-			if (!taskListResult.ok) {
-				return focusedOperationCancelledResult("Task list proposal", taskListFocus);
-			}
-			runtime.markTurnStopped(state.goal.id);
-			syncGoalTools();
-			updateUI(ctx);
-
-			return {
-				content: [{ type: "text", text: `Task list proposed and confirmed. ${taskList.tasks.length} task${taskList.tasks.length === 1 ? "" : "s"} set.${gateLabel}` }],
-				details: goalDetails(state.goal),
-				terminate: true,
-			};
-		},
-		renderCall(args, theme) {
-			const summary = args?.changeSummary ? truncateText(args.changeSummary, 80) : `${args?.tasks?.length ?? 0} tasks`;
-			return new Text(theme.fg("toolTitle", "propose_task_list ") + theme.fg("muted", summary), 0, 0);
-		},
-		renderResult(result, _options, theme) {
-			return renderGoalResult(result, theme);
-		},
-	}));
-
-	// ── complete_task ─────────────────────────────────────────────────────
-	pi.registerTool(defineTool({
-		name: COMPLETE_TASK_TOOL_NAME,
-		label: "Complete Task",
-		description: "Mark a task as complete within the current goal's task list. Does NOT stop the turn — the agent can continue working.",
-		promptSnippet: "Mark a task done and continue. Does not stop the turn.",
-		promptGuidelines: [
-			"Use complete_task to mark a task as complete with optional evidence text (max 200 characters).",
-			"The turn does NOT stop after complete_task — you may continue with other work.",
-			"If the task has a verificationContract, you MUST provide a verificationSummary that addresses it.",
-		],
-		parameters: Type.Object({
-			taskId: Type.String({ description: "Task id to mark as complete" }),
-			evidence: Type.Optional(Type.String({ description: "Optional evidence note (max 200 characters)" })),
-			verificationSummary: Type.Optional(Type.String({ description: "Verification evidence for this task. Required if the task has a verificationContract." })),
-		}),
-		executionMode: "sequential",
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			reconcileFocusedGoalFromDisk(ctx);
-			if (loadGoalSettings(ctx.cwd).disableTasks) {
-				return {
-					content: [{ type: "text", text: "complete_task is disabled by settings (disableTasks: true)." }],
-					details: goalDetails(state.goal),
-				};
-			}
-			const gate = validateTaskCompletion({ goal: state.goal, taskId: params.taskId });
-			if (!gate.ok) {
-				return {
-					content: [{ type: "text", text: gate.message }],
-					details: goalDetails(state.goal),
-				};
-			}
-			if (!state.goal?.taskList) throw new Error("Task list disappeared during task completion.");
-
-			// Check verification contract for the task (skip if contracts disabled)
-			const settings = loadGoalSettings(ctx.cwd);
-			const taskToComplete = findTaskInTree(state.goal.taskList.tasks, params.taskId);
-			if (!settings.disableContracts) {
-				const contractGate = validateVerificationSummary({
-					verificationContract: taskToComplete?.verificationContract,
-					verificationSummary: params.verificationSummary,
-				});
-				if (!contractGate.ok) {
-					return {
-						content: [{ type: "text", text: contractGate.message }],
-						details: goalDetails(state.goal),
-					};
-				}
-			}
-
-			// Check subtask completion (full subtasks only)
-			if (taskToComplete) {
-				const subtaskGate = checkSubtasksComplete(taskToComplete);
-				if (subtaskGate) {
-					return {
-						content: [{ type: "text", text: subtaskGate }],
-						details: goalDetails(state.goal),
-					};
-				}
-			}
-
-			const now = nowIso();
-			const evidence = params.evidence?.trim().slice(0, 200) || undefined;
-			const updatedTasks = updateTaskInTree(state.goal.taskList.tasks, params.taskId, (t) => ({
-				...t,
-				status: "complete" as const,
-				completedAt: now,
-				evidence,
-			}));
-			const completeTaskResult = goalService.apply(ctx, {
-				reconcile: false,
-				refreshFromDisk: true,
-				mutate: (g) => {
-					if (!g.taskList) throw new Error("Goal disappeared during task completion.");
-					return {
-						...g,
-						taskList: { ...g.taskList, blockCompletion: g.taskList.blockCompletion, tasks: updatedTasks },
-						updatedAt: now,
-					};
-				},
-				ledger: (written) => [{
-					type: "task_complete",
-					goalId: written.id,
-					taskId: params.taskId,
-					evidence,
-					at: written.updatedAt,
-				}],
-			});
-			if (!completeTaskResult.ok) {
-				return {
-					content: [{ type: "text", text: completeTaskResult.message }],
-					details: goalDetails(state.goal),
-				};
-			}
-			syncGoalTools();
-			updateUI(ctx);
-
-			const taskSummary = buildTaskSummary(state.goal.taskList!);
-			return {
-				content: [{ type: "text", text: `${params.taskId} complete. ${taskSummary}.` }],
-				details: goalDetails(state.goal),
-			};
-		},
-		renderCall(args, theme) {
-			return new Text(theme.fg("toolTitle", "complete_task ") + theme.fg("success", args?.taskId ?? ""), 0, 0);
-		},
-		renderResult(result, _options, theme) {
-			return renderGoalResult(result, theme);
-		},
-	}));
-
-	// ── skip_task ─────────────────────────────────────────────────────────
-	pi.registerTool(defineTool({
-		name: SKIP_TASK_TOOL_NAME,
-		label: "Skip Task",
-		description: "Skip a pending task in the current goal's task list. Does NOT stop the turn — the agent can continue working.",
-		promptSnippet: "Skip a task with a reason. Does not stop the turn.",
-promptGuidelines: [
-			"Use skip_task to mark a task as skipped with a required reason.",
-			"The turn does NOT stop after skip_task — you may continue with other work.",
-			"Only skip a task when the user explicitly asks you to, or when the task directly contradicts a hard constraint (e.g. an impossible requirement).",
-			"Do NOT autonomously skip tasks to avoid work, or because they look optional, inconvenient, or out of scope. When in doubt, ask the user first.",
-			"If skip_task is called on an already-skipped task, it toggles back to pending (unskip).",
-		],
-		parameters: Type.Object({
-			taskId: Type.String({ description: "Task id to skip" }),
-			reason: Type.String({ description: "Non-empty reason for skipping this task" }),
-		}),
-		executionMode: "sequential",
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			reconcileFocusedGoalFromDisk(ctx);
-			if (loadGoalSettings(ctx.cwd).disableTasks) {
-				return {
-					content: [{ type: "text", text: "skip_task is disabled by settings (disableTasks: true)." }],
-					details: goalDetails(state.goal),
-				};
-			}
-			const gate = validateTaskSkip({ goal: state.goal, taskId: params.taskId, reason: params.reason });
-			if (!gate.ok) {
-				return {
-					content: [{ type: "text", text: gate.message }],
-					details: goalDetails(state.goal),
-				};
-			}
-			if (!state.goal?.taskList) throw new Error("Task list disappeared during task skip.");
-			const now = nowIso();
-			const wasAlreadySkipped = findTaskInTree(state.goal.taskList.tasks, params.taskId)?.status === "skipped";
-
-			const updatedTasks = updateTaskInTree(state.goal.taskList.tasks, params.taskId, (t) => {
-				if (t.status === "skipped") {
-					// Toggle back to pending — clear skip state, do NOT cascade to subtasks
-					const { skippedAt, skipReason, ...rest } = t;
-					return { ...rest, status: "pending" as const };
-				}
-				// First-time skip: cascade to all subtasks (full subtasks only)
-				const base = { ...t, status: "skipped" as const, skippedAt: now, skipReason: params.reason.trim() };
-				if (t.subtasks && t.subtasks.length > 0 && !t.lightweightSubtasks) {
-					return skipAllSubtasks(base, now, params.reason.trim());
-				}
-				return base;
-			});
-			const skipTaskResult = goalService.apply(ctx, {
-				reconcile: false,
-				refreshFromDisk: true,
-				mutate: (g) => {
-					if (!g.taskList) throw new Error("Goal disappeared during task skip.");
-					return {
-						...g,
-						taskList: { ...g.taskList, blockCompletion: g.taskList.blockCompletion, tasks: updatedTasks },
-						updatedAt: now,
-					};
-				},
-				ledger: (written) => [{
-					type: "task_skipped",
-					goalId: written.id,
-					taskId: params.taskId,
-					reason: wasAlreadySkipped ? "unskipped (toggle via skip_task)" : params.reason.trim(),
-					at: written.updatedAt,
-				}],
-			});
-			if (!skipTaskResult.ok) {
-				return {
-					content: [{ type: "text", text: skipTaskResult.message }],
-					details: goalDetails(state.goal),
-				};
-			}
-			syncGoalTools();
-			updateUI(ctx);
-
-			const taskSummary = buildTaskSummary(state.goal.taskList!);
-			const action = wasAlreadySkipped ? "unsikpped" : "skipped";
-			return {
-				content: [{ type: "text", text: `${params.taskId} ${action}. ${taskSummary}.` }],
-				details: goalDetails(state.goal),
-			};
-		},
-		renderCall(args, theme) {
-			return new Text(theme.fg("toolTitle", "skip_task ") + theme.fg("warning", args?.taskId ?? ""), 0, 0);
-		},
-		renderResult(result, _options, theme) {
-			return renderGoalResult(result, theme);
-		},
-	}));
-
-	// ── set_goal_tasks: flat parent-linked structural task-tree tool (Stage 4) ──
+				// ── propose_task_list ──────────────────────────────────────────────────
+		// ── complete_task ─────────────────────────────────────────────────────
+		// ── skip_task ─────────────────────────────────────────────────────────
+		// ── set_goal_tasks: flat parent-linked structural task-tree tool ───────────
 	pi.registerTool(defineTool({
 		name: SET_GOAL_TASKS_TOOL_NAME,
 		label: "Set Goal Tasks",
@@ -3567,7 +2478,7 @@ promptGuidelines: [
 		},
 	}));
 
-	// ── update_goal_task: discriminated per-task status tool (Stage 4) ───────
+	// ── update_goal_task: discriminated per-task status tool ───────────────────
 	pi.registerTool(defineTool({
 		name: UPDATE_GOAL_TASK_TOOL_NAME,
 		label: "Update Goal Task",
@@ -3803,10 +2714,9 @@ promptGuidelines: [
 	// #4 + C9 fix + Phase 5 C3: gate in-turn tool calls based on lifecycle state.
 	pi.on("tool_call", async (event, ctx) => {
 		const stoppedGoalId = currentTurnStoppedGoalId();
-		// Post-stop in-turn block (C9 0ad8 fix): after pause_goal / abort_goal /
-		// complete_goal / propose_goal_tweak fires in this turn, block all subsequent tool calls except
-		// read-only inspection. Forces the agent to yield the turn instead of "fixing"
-		// the situation by creating extra files etc.
+		// Post-stop in-turn block: after update_goal / set_goal_tasks (or a user
+		// lifecycle command) fires in this turn, block all subsequent tool calls
+		// except read-only inspection.
 		if (stoppedGoalId !== null && runtime.isStaleCheckpointBlocked(event.toolName)) {
 			return {
 				block: true,
@@ -3839,7 +2749,6 @@ promptGuidelines: [
 
 	pi.on("turn_end", async (event, ctx) => {
 		const message = event.message as AssistantMessageLike;
-		if (confirmationIntent !== null || tweakDraftingFor !== null) return;
 		const tokens = assistantTurnTokens(message);
 		accountProgress(ctx, { completedTurnTokens: tokens });
 
@@ -3921,7 +2830,6 @@ promptGuidelines: [
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
-		if (confirmationIntent !== null || tweakDraftingFor !== null) return;
 		if (state.goal) persist(ctx);
 		beginAccounting();
 		// Arm a deterministic compaction summary for the next agent turn.
@@ -3944,22 +2852,6 @@ promptGuidelines: [
 		syncGoalTools();
 		const currentSystemPrompt = () => ctx.getSystemPrompt?.() || event.systemPrompt;
 		const incomingGoalId = extractGoalIdFromInjectedMessage(event.prompt ?? "");
-
-		if (confirmationIntent !== null) {
-			runtime.setCheckpoint(null);
-			clearContinuationState();
-			clearActiveAccounting();
-			runningGoalId = null;
-			return { systemPrompt: currentSystemPrompt() };
-		}
-
-		if (tweakDraftingFor !== null) {
-			runtime.setCheckpoint(null);
-			clearContinuationState();
-			clearActiveAccounting();
-			runningGoalId = null;
-			return { systemPrompt: currentSystemPrompt() };
-		}
 
 		// If this turn was triggered by a hidden goal checkpoint that no longer
 		// matches the active goal, abort the whole turn instead of letting the
@@ -4068,7 +2960,6 @@ promptGuidelines: [
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
-		if (confirmationIntent !== null || tweakDraftingFor !== null) return;
 		const endedGoalId = runningGoalId;
 		runningGoalId = null;
 

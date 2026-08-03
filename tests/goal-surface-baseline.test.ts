@@ -63,20 +63,9 @@ function createRecordingPi() {
  * create_goal real).
  */
 const EXPECTED_REGISTERED_TOOLS = [
-	"goal_question",
-	"goal_questionnaire",
 	"get_goal",
 	"create_goal",
-	"propose_goal_draft",
-	"propose_goal_tweak",
-	"complete_goal",
 	"update_goal",
-	"pause_goal",
-	"abort_goal",
-	"step_complete",
-	"propose_task_list",
-	"complete_task",
-	"skip_task",
 	"set_goal_tasks",
 	"update_goal_task",
 ] as const;
@@ -101,7 +90,7 @@ const EXPECTED_REGISTERED_COMMANDS = [
 	"goal-resume",
 ] as const;
 
-test("baseline: exactly 16 goal tools are registered, in pinned order", () => {
+test("baseline: exactly 5 goal tools are registered, in pinned order", () => {
 	const { pi, registeredTools } = createRecordingPi();
 	piGoalExtension(pi as never);
 
@@ -123,7 +112,7 @@ test("baseline: no duplicate tool or command registrations", () => {
 	assert.equal(new Set(registeredCommands).size, registeredCommands.length);
 });
 
-test("baseline: advertised tool sets are the Stage 3 three-core surface (+ legacy task shims)", () => {
+test("baseline: advertised tool sets are the Stage 6 five-tool surface", () => {
 	// Stage 3 installs the stable three-tool core (create_goal, get_goal,
 	// update_goal) without phase-dependent synchronization. The legacy task
 	// tools remain advertised until Stage 4 replaces them.
@@ -143,21 +132,10 @@ test("baseline: every registered tool name is referenced by goal-tool-names cons
 
 	// All 14 registered tools must be named by goal-tool-names.ts so the
 	// surface stays centralized.
-	const knownNames = new Set([
+	const knownNames = new Set<string>([
 		...ACTIVE_GOAL_TOOL_NAMES,
 		...PAUSED_GOAL_TOOL_NAMES,
 		...NO_FOCUSED_GOAL_TOOL_NAMES,
-		"goal_question",
-		"goal_questionnaire",
-		"propose_goal_draft",
-		"propose_goal_tweak",
-		"complete_goal",
-		"pause_goal",
-		"abort_goal",
-		"propose_task_list",
-		"complete_task",
-		"skip_task",
-		"step_complete",
 	]);
 	for (const tool of registeredTools) {
 		assert.ok(knownNames.has(tool), `registered tool ${tool} is not named in goal-tool-names.ts`);
