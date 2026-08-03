@@ -4,7 +4,6 @@ import { Text } from "@earendil-works/pi-tui";
 import { formatDuration, formatTokenValue, statusLabel, truncateText } from "./goal-core.ts";
 import { extractVerificationContract } from "./goal-draft.ts";
 import {
-	COMPLETE_STATUS,
 	GOAL_AUDIT_ENTRY,
 	detailedSummary,
 	goalDetails,
@@ -26,7 +25,6 @@ import {
 	validateGoalCompletion,
 	validateTaskCompletion,
 	validateTaskSkip,
-	validateVerificationSummary,
 } from "./goal-policy.ts";
 import { buildUnfocusedOpenGoalsSummary, otherOpenGoalCount } from "./goal-pool.ts";
 import { shouldAutoConfirmProposal, showProposalDialog } from "./goal-questionnaire.ts";
@@ -170,16 +168,10 @@ export function registerGoalTools(core: GoalCore): void {
 	// Schema gates enforce focus-vs-sisyphus consistency; draftId is ignored for
 	// one-release compatibility with older prompt residue.
 	// In headless mode (no UI), auto-confirms — harness-friendly.
-			async function runGoalCompletionFlow(ctx: ExtensionContext, opts: { completionSummary?: string; verificationSummary?: string; confirmBypassAuditor?: boolean; status?: string }): Promise<AgentToolResult<unknown>> {
+	async function runGoalCompletionFlow(ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
 		core.reconcileFocusedGoalFromDisk(ctx);
 
-		// -- Phase 2: Status validation --
-		const effectiveStatus = opts.status ?? COMPLETE_STATUS;
-		if (effectiveStatus !== COMPLETE_STATUS) {
-			throw new Error("update_goal(complete) requires status=complete when marking a goal complete.");
-		}
-
-		// -- Phase 3: Completion --
+		// -- Completion --
 		const completionGate = validateGoalCompletion({ goal: core.state.goal, runningGoalId: core.runningGoalId });
 		if (!completionGate.ok) {
 			return {
@@ -201,24 +193,6 @@ export function registerGoalTools(core: GoalCore): void {
 			}
 		}
 
-		// Verification contract gate: enforced only when the model supplied a
-		// verification summary. The new update_goal surface has no paperwork field
-		// — the independent auditor derives the requirements from the objective and
-		// contract and inspects actual state instead.
-		const disableContractsSettings = loadGoalSettings(ctx.cwd).disableContracts;
-		if (!disableContractsSettings && opts.verificationSummary !== undefined) {
-			const contractGate = validateVerificationSummary({
-				verificationContract: core.state.goal.verificationContract,
-				verificationSummary: opts.verificationSummary,
-			});
-			if (!contractGate.ok) {
-				return {
-					content: [{ type: "text", text: contractGate.message }],
-					details: goalDetails(core.state.goal),
-				};
-			}
-		}
-
 		const auditTarget = mergeGoalPromptFromDisk(ctx, core.state.goal);
 		const completionFocus = core.focusedOperationToken(auditTarget.id);
 		// Append ledger: completion requested
@@ -226,7 +200,6 @@ export function registerGoalTools(core: GoalCore): void {
 			core.goalService.appendEvents(ctx, [{
 				type: "completion_requested",
 				goalId: auditTarget.id,
-				summary: opts.completionSummary,
 				at: nowIso(),
 			}]);
 		} catch {
@@ -237,114 +210,104 @@ export function registerGoalTools(core: GoalCore): void {
 			? `${settings.provider ?? "default"}/${settings.model ?? "default"}${settings.thinkingLevel ? `:${settings.thinkingLevel}` : ""}`
 			: "default";
 
-		// Check if auditor is disabled per-goal (user toggled it off during goal confirmation)
-		if (auditTarget.skipAuditor) {
-			pi.sendMessage<GoalAuditEventDetails>({
-				customType: GOAL_AUDIT_ENTRY,
-				content: `Goal completed — per-goal auditor disabled.`,
-				display: true,
-				details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
-			});
-			try {
-				core.goalService.appendEvents(ctx, [{
-					type: "audit_skipped",
-					goalId: auditTarget.id,
-					reason: "disabled",
-					provider: settings.provider,
-					model: settings.model,
-					thinkingLevel: settings.thinkingLevel,
-					at: nowIso(),
-				}]);
-			} catch {
-				// Ledger append failure should not block completion
-			}
-			core.accountProgress(ctx);
-			core.auditProgress = null;
-			core.goalWidgetComponentRef.current?.invalidate();
-			const completeResult = core.goalService.apply(ctx, {
-				reconcile: false,
-				focusToken: completionFocus,
-				mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
-			});
-			if (completeResult.ok && completeResult.goal) core.runtime.markTurnStopped(completeResult.goal.id);
-			core.syncGoalTools();
-			core.updateUI(ctx);
-			return {
-				content: [{
-					type: "text",
-					text: buildCompletionReport({
-						detailedSummary: detailedSummary(core.state.goal),
-						completionSummary: opts.completionSummary,
-						auditSkippedReason: "per-goal auditor disabled",
-						taskSummary: core.state.goal?.taskList ? buildTaskSummary(core.state.goal.taskList) : null,
-					}),
-				}],
-				details: goalDetails(core.state.goal),
-				terminate: true,
-			};
-		}
+	/**
+	 * Single transaction for every successful completion commit — audit-approved,
+	 * globally disabled, legacy per-goal skipped, or user-bypassed via Escape.
+	 * Deferred archival: sets the goal complete in memory + writes the active
+	 * file WITHOUT archiving; archival happens at turn_end so the agent can
+	 * recognise the outcome before the goal is archived.
+	 */
+	function commitGoalCompletion(ctx: ExtensionContext, opts: {
+		goal: GoalRecord;
+		completionFocus: { goalId: string; revision: number };
+		auditorReport?: string | null;
+		auditSkippedReason?: string | null;
+		terminate?: boolean;
+		trailing?: string[];
+	}): AgentToolResult<unknown> {
+		core.accountProgress(ctx);
+		core.auditProgress = null;
+		core.goalWidgetComponentRef.current?.invalidate();
+		const completeResult = core.goalService.apply(ctx, {
+			reconcile: false,
+			focusToken: opts.completionFocus,
+			mutate: () => ({ ...opts.goal, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+		});
+		if (completeResult.ok && completeResult.goal) core.runtime.markTurnStopped(completeResult.goal.id);
+		core.syncGoalTools();
+		core.updateUI(ctx);
+		const text = buildCompletionReport({
+			detailedSummary: detailedSummary(core.state.goal),
+			auditorReport: opts.auditorReport,
+			auditSkippedReason: opts.auditSkippedReason,
+			taskSummary: core.state.goal?.taskList ? buildTaskSummary(core.state.goal.taskList) : null,
+		});
+		return {
+			content: [{ type: "text", text: opts.trailing?.length ? [text, "", ...opts.trailing].join("\n") : text }],
+			details: goalDetails(core.state.goal),
+			...(opts.terminate === false ? {} : { terminate: true }),
+		};
+	}
 
-		// Check if auditor is disabled in settings
-		if (settings.disabled === true) {
-			if (opts.confirmBypassAuditor !== true) {
-				return {
-					content: [{ type: "text", text: [
-						"The completion auditor is disabled in settings.",
-						"",
-						"The completion auditor is disabled in settings. There is no model-side bypass for update_goal; enable the auditor in /goal-settings or ask the user to complete via the TUI.",
-					].join("\n") }],
-					details: goalDetails(core.state.goal),
-				};
-			}
-			// Auditor disabled and confirmed — skip audit.
-			// Defer archival: set goal complete in-memory + write active file WITHOUT
-			// archiving. Archival happens at turn_end so the agent has a chance to
-			// recognise the skipped audit before the goal is archived.
-			pi.sendMessage<GoalAuditEventDetails>({
-				customType: GOAL_AUDIT_ENTRY,
-				content: `Goal completed — auditor disabled in settings.`,
-				display: true,
-				details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
-			});
-			try {
-				core.goalService.appendEvents(ctx, [{
-					type: "audit_skipped",
-					goalId: auditTarget.id,
-					reason: "disabled",
-					provider: settings.provider,
-					model: settings.model,
-					thinkingLevel: settings.thinkingLevel,
-					at: nowIso(),
-				}]);
-			} catch {
-				// Ledger append failure should not block completion
-			}
-			// Set goal complete in memory (defer archival to turn_end)
-			core.accountProgress(ctx);
-			core.auditProgress = null;
-			core.goalWidgetComponentRef.current?.invalidate();
-			const completeResult = core.goalService.apply(ctx, {
-				reconcile: false,
-				focusToken: completionFocus,
-				mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
-			});
-			if (completeResult.ok && completeResult.goal) core.runtime.markTurnStopped(completeResult.goal.id);
-			core.syncGoalTools();
-			core.updateUI(ctx);
-			return {
-				content: [{
-					type: "text",
-					text: buildCompletionReport({
-						detailedSummary: detailedSummary(core.state.goal),
-						completionSummary: opts.completionSummary,
-						auditSkippedReason: "auditor disabled in settings",
-						taskSummary: core.state.goal?.taskList ? buildTaskSummary(core.state.goal.taskList) : null,
-					}),
-				}],
-				details: goalDetails(core.state.goal),
-				terminate: true,
-			};
+	// Check if auditor is disabled per-goal (legacy persisted skipAuditor:true
+	// records remain readable and honored for compatibility; no model tool or
+	// task dialog creates new per-goal bypass state).
+	if (auditTarget.skipAuditor) {
+		pi.sendMessage<GoalAuditEventDetails>({
+			customType: GOAL_AUDIT_ENTRY,
+			content: `Goal completed — per-goal auditor disabled.`,
+			display: true,
+			details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
+		});
+		try {
+			core.goalService.appendEvents(ctx, [{
+				type: "audit_skipped",
+				goalId: auditTarget.id,
+				reason: "disabled",
+				provider: settings.provider,
+				model: settings.model,
+				thinkingLevel: settings.thinkingLevel,
+				at: nowIso(),
+			}]);
+		} catch {
+			// Ledger append failure should not block completion
 		}
+		return commitGoalCompletion(ctx, {
+			goal: auditTarget,
+			completionFocus,
+			auditSkippedReason: "per-goal auditor disabled",
+		});
+	}
+
+	// settings.disabled is an explicit user-owned setting: completion skips
+	// the auditor, records audit_skipped, and proceeds through the normal
+	// deferred-completion path. No model-side bypass flag is required.
+	if (settings.disabled === true) {
+		pi.sendMessage<GoalAuditEventDetails>({
+			customType: GOAL_AUDIT_ENTRY,
+			content: `Goal completed — auditor disabled in settings.`,
+			display: true,
+			details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
+		});
+		try {
+			core.goalService.appendEvents(ctx, [{
+				type: "audit_skipped",
+				goalId: auditTarget.id,
+				reason: "disabled",
+				provider: settings.provider,
+				model: settings.model,
+				thinkingLevel: settings.thinkingLevel,
+				at: nowIso(),
+			}]);
+		} catch {
+			// Ledger append failure should not block completion
+		}
+		return commitGoalCompletion(ctx, {
+			goal: auditTarget,
+			completionFocus,
+			auditSkippedReason: "auditor disabled in settings",
+		});
+	}
 
 		// Auditor is enabled — run the normal audit flow
 		await pi.sendMessage<GoalAuditEventDetails>({
@@ -353,7 +316,6 @@ export function registerGoalTools(core: GoalCore): void {
 				"Auditor: I am starting the independent completion audit.",
 				`Goal id: ${auditTarget.id}`,
 				`Auditor model: ${auditorLabel}`,
-				opts.completionSummary?.trim() ? `Completion claim: ${opts.completionSummary.trim()}` : undefined,
 			].filter((line): line is string => line !== undefined).join("\n"),
 			display: true,
 			details: { phase: "started", goalId: auditTarget.id, auditor: auditorLabel },
@@ -401,9 +363,7 @@ export function registerGoalTools(core: GoalCore): void {
 		const auditor = await (core.dependencies.runCompletionAuditor ?? runGoalCompletionAuditor)({
 			ctx,
 			goal: auditTarget,
-			completionSummary: opts.completionSummary,
 			detailedSummary: detailedSummary(auditTarget),
-			verificationSummary: opts.verificationSummary,
 			settings: loadGoalSettings(ctx.cwd),
 			signal: completionAuditController.signal,
 			onProgress: (progress) => {
@@ -459,27 +419,16 @@ export function registerGoalTools(core: GoalCore): void {
 				} catch {
 					// Ledger append failure should not block completion
 				}
-				// Set goal complete in memory (defer archival to turn_end)
-				core.accountProgress(ctx);
-				const completeResult = core.goalService.apply(ctx, {
-					reconcile: false,
-					focusToken: completionFocus,
-					mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+				// Deferred archival: set goal complete in memory + write the active file
+				// WITHOUT archiving; archival happens at turn_end so the agent can
+				// recognise the skipped audit before the goal is archived.
+				return commitGoalCompletion(ctx, {
+					goal: auditTarget,
+					completionFocus,
+					auditSkippedReason: "auditor bypassed (user pressed Escape during audit)",
+					terminate: false,
+					trailing: ["The goal is complete. Provide a final summary of what was accomplished."],
 				});
-				if (completeResult.ok && completeResult.goal) core.runtime.markTurnStopped(completeResult.goal.id);
-				core.syncGoalTools();
-				core.updateUI(ctx);
-				return {
-					content: [{
-						type: "text",
-						text: [
-							"User chose to mark the goal complete (bypassed audit via Escape).",
-							"",
-							"The goal is complete. Provide a final summary of what was accomplished.",
-						].join("\n"),
-					}],
-					details: goalDetails(core.state.goal),
-				};
 			} else {
 				// ── Continue working → pause the goal ──────────────
 				core.pauseActiveGoal(ctx);
@@ -552,33 +501,14 @@ export function registerGoalTools(core: GoalCore): void {
 			details: { phase: "approved", goalId: auditTarget.id, auditor: auditor.model },
 		});
 		// Account for any remaining elapsed time.
-		// Defer archival: set goal complete in-memory + write active file WITHOUT
-		// archiving. Archival happens at turn_end so the agent can see the auditor
-		// approval before the goal is archived.
-		core.accountProgress(ctx);
-		core.auditProgress = null;
-		core.goalWidgetComponentRef.current?.invalidate();
-		const completeResult = core.goalService.apply(ctx, {
-			reconcile: false,
-			focusToken: completionFocus,
-			mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+		// Deferred archival happens inside commitGoalCompletion; archival occurs at
+		// turn_end so the agent can see the auditor approval before the goal is
+		// archived.
+		return commitGoalCompletion(ctx, {
+			goal: auditTarget,
+			completionFocus,
+			auditorReport: auditor.output,
 		});
-		if (completeResult.ok && completeResult.goal) core.runtime.markTurnStopped(completeResult.goal.id);
-		core.syncGoalTools();
-		core.updateUI(ctx);
-		return {
-			content: [{
-				type: "text",
-				text: buildCompletionReport({
-					detailedSummary: detailedSummary(core.state.goal),
-					completionSummary: opts.completionSummary,
-					auditorReport: auditor.output,
-					taskSummary: core.state.goal?.taskList ? buildTaskSummary(core.state.goal.taskList) : null,
-				}),
-			}],
-			details: goalDetails(core.state.goal),
-			terminate: true,
-		};
 	}
 
 
@@ -651,7 +581,7 @@ export function registerGoalTools(core: GoalCore): void {
 			if (params.status === "blocked") {
 				return runGoalBlockedFlow(ctx);
 			}
-			return runGoalCompletionFlow(ctx, {});
+			return runGoalCompletionFlow(ctx);
 		},
 		renderCall(args, theme) {
 			return new Text(theme.fg("toolTitle", "update_goal ") + theme.fg("muted", args?.status ?? ""), 0, 0);

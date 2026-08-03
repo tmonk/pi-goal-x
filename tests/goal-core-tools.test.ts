@@ -21,9 +21,10 @@ import assert from "node:assert/strict";
 
 import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import goalExtension from "../extensions/goal.ts";
-import { createGoal, goalFocusDetails } from "../extensions/goal-record.ts";
+import { createGoal, goalFocusDetails, normalizeGoalRecord } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../extensions/goal-ledger.ts";
+import { STATE_ENTRY } from "../extensions/goal-format.ts";
 
 interface HarnessOptions {
 	cwd: string;
@@ -31,6 +32,8 @@ interface HarnessOptions {
 	hasUI?: boolean;
 	runCompletionAuditor?: (...args: any[]) => Promise<any>;
 	settings?: Record<string, unknown>;
+	uiCustom?: (...args: any[]) => Promise<any>;
+	onSendMessage?: (message: any, opts?: any) => void;
 }
 
 function createHarness(options: HarnessOptions) {
@@ -44,7 +47,7 @@ function createHarness(options: HarnessOptions) {
 		on: (event: string, handler: Function) => { handlers.set(event, handler); },
 		appendEntry: () => {},
 		registerMessageRenderer: () => {},
-		sendMessage: () => {},
+		sendMessage: (message: any, opts?: any) => { options.onSendMessage?.(message, opts); },
 		getActiveTools: () => [...activeTools],
 		setActiveTools: (names: string[]) => { activeTools = [...names]; },
 		hasUI: options.hasUI ?? false,
@@ -65,7 +68,7 @@ function createHarness(options: HarnessOptions) {
 			onTerminalInput: () => () => {},
 			select: async () => undefined,
 			confirm: async () => false,
-			custom: async () => undefined,
+			custom: options.uiCustom ?? (async () => undefined),
 		},
 		getSystemPrompt: () => "base prompt",
 		isIdle: () => true,
@@ -331,6 +334,164 @@ test("update_goal(blocked) is rejected from a non-active goal", async () => {
 		const parsed = parseGoalFile(path.join(f.cwd, ".pi", "goals", active[0]!));
 		assert.equal(parsed?.status, "paused", "goal unchanged");
 		assert.equal(ledgerEvents(f.cwd).filter((e) => e.type === "goal_blocked").length, 0, "no goal_blocked event");
+	} finally {
+		f.cleanup();
+	}
+});
+
+// ── Stage 1 hardening: lifecycle authority and completion paths ──────────────
+
+test("legacy paused record with autoContinue:true stays paused after session restore", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-core-pausedrestore-"));
+	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
+	// Legacy on-disk record: paused status with a stale true continuation flag.
+	const legacy = normalizeGoalRecord({
+		id: "legacy-paused",
+		objective: "=== Goal ===\nObjective: Legacy paused goal",
+		status: "paused",
+		autoContinue: true,
+		createdAt: "2026-08-03T09:00:00.000Z",
+		updatedAt: "2026-08-03T09:00:00.000Z",
+	})!;
+	const written = writeActiveGoalFile({ cwd }, legacy);
+	const sessionEntries = [
+		{ type: "custom", customType: STATE_ENTRY, data: { goal: written } },
+		{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(legacy.id, "created") },
+	];
+	try {
+		const h = createHarness({ cwd, sessionEntries });
+		await start(h);
+		const get = h.tools.get("get_goal")!;
+		const result = await (get.execute as any)("get-1", {}, undefined, undefined, h.ctx);
+		const text = result.content?.[0]?.text ?? "";
+		assert.ok(text.includes("paused"), `restored legacy goal must be paused, got: ${text.slice(0, 120)}`);
+		assert.ok(!text.includes("running"), "paused goal must not read as running");
+		// The on-disk file must also still say paused after the restore reads.
+		const parsed = parseGoalFile(path.join(cwd, written.activePath ?? "missing"));
+		assert.equal(parsed?.status, "paused", "disk record must stay paused after restore");
+		assert.equal(parsed?.autoContinue, true, "autoContinue flag survives as data");
+	} finally {
+		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
+});
+
+test("update_goal(complete) with auditor disabled in settings skips audit and records audit_skipped", async () => {
+	const f = makeFixture();
+	let auditorCalled = 0;
+	try {
+		writeFileSync(path.join(f.cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ disabled: true }));
+		const h = createHarness({
+			cwd: f.cwd,
+			sessionEntries: f.sessionEntries,
+			runCompletionAuditor: async () => { auditorCalled += 1; throw new Error("auditor must not run"); },
+		});
+		await start(h);
+		const update = h.tools.get("update_goal")!;
+		const result = await (update.execute as any)("update-5", { status: "complete" }, undefined, undefined, h.ctx);
+		assert.ok(result.terminate === true, "disabled-auditor completion terminates the turn");
+		const text = result.content?.[0]?.text ?? "";
+		assert.ok(text.includes("Goal audit skipped"), "report must state audit skipped");
+		assert.ok(text.includes("auditor disabled in settings"), "report must carry the settings reason");
+		assert.equal(auditorCalled, 0, "auditor must not run when globally disabled");
+		// Deferred archival at turn_end.
+		await h.handlers.get("turn_end")?.({ message: { role: "assistant", stopReason: "stop", usage: { input: 0, output: 0 } } }, h.ctx);
+		assert.equal(activeGoalFiles(f.cwd).length, 0, "disabled-auditor completion archives the goal");
+		const events = ledgerEvents(f.cwd);
+		const order = events.map((e) => e.type);
+		assert.ok(events.some((e) => e.type === "completion_requested"), "completion_requested first");
+		const skipped = events.find((e) => e.type === "audit_skipped") as Record<string, unknown> | undefined;
+		assert.ok(skipped, "audit_skipped recorded");
+		assert.equal(skipped!.reason, "disabled");
+		assert.ok(events.some((e) => e.type === "goal_completed"), "goal_completed recorded");
+		assert.ok(order.indexOf("completion_requested") < order.indexOf("audit_skipped"), "semantic order: completion_requested before audit_skipped");
+		assert.ok(order.indexOf("audit_skipped") < order.indexOf("goal_completed"), "semantic order: audit_skipped before deferred completion");
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("update_goal(complete) honors a legacy persisted skipAuditor:true record", async () => {
+	const f = makeFixture();
+	let auditorCalled = 0;
+	try {
+		// Simulate the legacy per-goal bypass record on disk.
+		const active = readdirSync(path.join(f.cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"))[0]!;
+		const filePath = path.join(f.cwd, ".pi", "goals", active);
+		const parsed = parseGoalFile(filePath)!;
+		writeActiveGoalFile({ cwd: f.cwd }, { ...parsed, skipAuditor: true });
+		const h = createHarness({
+			cwd: f.cwd,
+			sessionEntries: f.sessionEntries,
+			runCompletionAuditor: async () => { auditorCalled += 1; throw new Error("auditor must not run"); },
+		});
+		await start(h);
+		const update = h.tools.get("update_goal")!;
+		const result = await (update.execute as any)("update-6", { status: "complete" }, undefined, undefined, h.ctx);
+		const text = result.content?.[0]?.text ?? "";
+		assert.ok(text.includes("per-goal auditor disabled"), "legacy skipAuditor honored with its reason");
+		assert.equal(auditorCalled, 0, "auditor must not run for legacy per-goal skip");
+		const events = ledgerEvents(f.cwd);
+		const skipped = events.find((e) => e.type === "audit_skipped") as Record<string, unknown> | undefined;
+		assert.ok(skipped, "audit_skipped recorded for legacy skip");
+		assert.equal(skipped!.reason, "disabled");
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("aborted audit: Escape complete_without_audit commits with audit_skipped(user_aborted) without terminating", async () => {
+	const f = makeFixture();
+	let escapeDialogShown = false;
+	try {
+		const h = createHarness({
+			cwd: f.cwd,
+			sessionEntries: f.sessionEntries,
+			hasUI: true,
+			uiCustom: async () => { escapeDialogShown = true; return "complete_without_audit"; },
+			runCompletionAuditor: async () => ({ approved: false, disapproved: false, output: "Auditor aborted.", error: "Auditor aborted." }),
+		});
+		await start(h);
+		const update = h.tools.get("update_goal")!;
+		const result = await (update.execute as any)("update-7", { status: "complete" }, undefined, undefined, h.ctx);
+		assert.ok(escapeDialogShown, "Escape dialog must be shown after auditor abort");
+		assert.notEqual(result.terminate, true, "Esc-bypass completion must NOT terminate the turn (agent continues to summarize)");
+		const text = result.content?.[0]?.text ?? "";
+		assert.ok(text.includes("Goal audit skipped"), "report must state audit skipped");
+		assert.ok(text.includes("Provide a final summary"), "Esc path keeps the final-summary guidance");
+		const events = ledgerEvents(f.cwd);
+		const skipped = events.find((e) => e.type === "audit_skipped") as Record<string, unknown> | undefined;
+		assert.ok(skipped, "audit_skipped recorded for user abort");
+		assert.equal(skipped!.reason, "user_aborted");
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("focus changed while audit is dispatched cancels completion without modifying the goal", async () => {
+	const f = makeFixture();
+	let focusChanged = false;
+	try {
+		const h = createHarness({
+			cwd: f.cwd,
+			sessionEntries: f.sessionEntries,
+			runCompletionAuditor: async () => ({ approved: true, disapproved: false, output: "All good\n<approved/>" }),
+			onSendMessage: async (message: any) => {
+				// When the audit-start message is dispatched, the user switches
+				// focus away — invalidating the pending completion operation.
+				if (message?.details?.phase === "started" && !focusChanged) {
+					focusChanged = true;
+					await h.commands.get("goal-unfocus").handler("", h.ctx);
+				}
+			},
+		});
+		await start(h);
+		const update = h.tools.get("update_goal")!;
+		const result = await (update.execute as any)("update-8", { status: "complete" }, undefined, undefined, h.ctx);
+		const text = result.content?.[0]?.text ?? "";
+		assert.ok(text.includes("no longer focused"), `completion must be cancelled, got: ${text.slice(0, 120)}`);
+		assert.equal(activeGoalFiles(f.cwd).length, 1, "goal must remain open and unmodified");
+		const events = ledgerEvents(f.cwd);
+		assert.equal(events.some((e) => e.type === "audit_result"), false, "no audit result when focus changed mid-dispatch");
 	} finally {
 		f.cleanup();
 	}

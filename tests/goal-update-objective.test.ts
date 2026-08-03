@@ -88,14 +88,21 @@ test("update_goal schema has additionalProperties: false and no updatedObjective
 		"complete_goal tool registration must be removed");
 });
 
-test("update_goal(complete) requires status=complete in the shared completion flow", () => {
+test("update_goal routes complete directly to the shared completion flow with no options", () => {
 	const source = readFileSync("extensions/goal-tools.ts", "utf8");
-	// The completion flow (including the status validation) lives in the shared
-	// runGoalCompletionFlow helper used by update_goal.
+	// The completion flow is reached directly from the update_goal executor for
+	// status=complete; blocked routes to the blocked flow. The internal options
+	// type carries no paperwork fields: the public schema has only status.
 	assert.ok(!source.includes("params.updatedObjective"),
 		"Phase 1 updatedObjective handling must be removed");
-	assert.ok(source.includes('"update_goal(complete) requires status=complete when marking a goal complete."'),
-		"handler must throw error mentioning status=complete");
+	assert.ok(!source.includes("completionSummary?: string"),
+		"internal options type must not carry completionSummary");
+	assert.ok(!source.includes("verificationSummary?: string"),
+		"internal options type must not carry verificationSummary");
+	assert.ok(!source.includes("confirmBypassAuditor"),
+		"internal options type must not carry confirmBypassAuditor");
+	assert.ok(source.includes("return runGoalCompletionFlow(ctx);"),
+		"executor must route status=complete to the flow without an options object");
 	assert.ok(!source.includes("updatedObjective"),
 		"handler must not reference updatedObjective in error messages");
 });

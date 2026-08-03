@@ -219,6 +219,17 @@ export function normalizeTaskList(value: unknown): GoalTaskList | undefined {
 	};
 }
 
+/**
+ * Shared positive-safe-integer normalization for persisted numeric values such
+ * as tokenBudget. Non-finite, fractional, zero, negative, and unsafe numbers
+ * normalize to absent rather than silently changing meaning. Live tool input
+ * is validated separately (rejected with a user-facing message); this handles
+ * persisted legacy values.
+ */
+export function normalizePositiveSafeInteger(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 ? value : undefined;
+}
+
 export function normalizeGoalRecord(value: unknown): GoalRecord | null {
 	const raw = asRecord(value);
 	if (!raw) return null;
@@ -226,15 +237,22 @@ export function normalizeGoalRecord(value: unknown): GoalRecord | null {
 	if (!objective) return null;
 
 	const timestamp = nowIso();
+	// Persisted lifecycle status is authoritative. autoContinue is an execution
+	// preference only: it must never rewrite status during reads or migration.
 	const rawStatus = raw.status;
-	let status: GoalStatus = rawStatus === "complete" ? "complete" : rawStatus === "paused" ? "paused" : rawStatus === "budget_limited" ? "budget_limited" : rawStatus === "blocked" ? "blocked" : "active";
+	const status: GoalStatus = rawStatus === "complete"
+		? "complete"
+		: rawStatus === "paused"
+			? "paused"
+			: rawStatus === "budget_limited"
+				? "budget_limited"
+				: rawStatus === "blocked"
+					? "blocked"
+					: "active";
+	// autoContinue normalizes independently of status.
 	const autoContinue = typeof raw.autoContinue === "boolean" ? raw.autoContinue : true;
 	const usage = normalizeUsage(raw.usage);
 	const sisyphus = raw.sisyphus === true;
-
-	if (status === "paused" && autoContinue) {
-		status = "active";
-	}
 
 	return {
 		id: typeof raw.id === "string" && raw.id ? safeIdPart(raw.id) : newGoalId(),
@@ -251,7 +269,7 @@ export function normalizeGoalRecord(value: unknown): GoalRecord | null {
 		pauseReason: typeof raw.pauseReason === "string" && raw.pauseReason.trim() ? raw.pauseReason : undefined,
 		pauseSuggestedAction: typeof raw.pauseSuggestedAction === "string" && raw.pauseSuggestedAction.trim() ? raw.pauseSuggestedAction : undefined,
 		skipAuditor: raw.skipAuditor === true ? true : undefined,
-		tokenBudget: typeof raw.tokenBudget === "number" && Number.isFinite(raw.tokenBudget) ? Math.max(0, Math.floor(raw.tokenBudget)) : undefined,
+		tokenBudget: normalizePositiveSafeInteger(raw.tokenBudget),
 		taskList: normalizeTaskList(raw.taskList),
 		verificationContract: typeof raw.verificationContract === "string" ? raw.verificationContract : undefined,
 	};

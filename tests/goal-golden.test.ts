@@ -18,7 +18,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -203,17 +203,19 @@ test("golden: malformed or duplicate task items are dropped by normalization", (
 	assert.equal(normalizeTaskList(null), undefined);
 });
 
-test("golden: paused + legacy autoContinue:true normalizes to active today (pinned hazard)", () => {
-	// TECH.md flags this as a hazard to fix in Stage 2: status must become
-	// authoritative and paused must stay paused. This test pins the CURRENT
-	// behavior so the fix is deliberate.
+test("golden: paused + legacy autoContinue:true stays paused (status authoritative)", () => {
+	// TECH.md Stage 1: persisted lifecycle status is authoritative. autoContinue
+	// is an execution preference and must never rewrite status during reads or
+	// migration. The legacy case {status:"paused", autoContinue:true} must stay
+	// paused after normalization.
 	const pausedWithAutoContinue = normalizeGoalRecord({
 		id: "g1",
 		objective: "x",
 		status: "paused",
 		autoContinue: true,
 	});
-	assert.equal(pausedWithAutoContinue?.status, "active");
+	assert.equal(pausedWithAutoContinue?.status, "paused");
+	assert.equal(pausedWithAutoContinue?.autoContinue, true, "autoContinue normalizes independently");
 });
 
 test("golden: paused + autoContinue:false stays paused", () => {
@@ -224,6 +226,43 @@ test("golden: paused + autoContinue:false stays paused", () => {
 		autoContinue: false,
 	});
 	assert.equal(paused?.status, "paused");
+});
+
+test("golden: all five statuses survive normalization for both continuation flag values", () => {
+	// Persisted lifecycle status is authoritative and must survive every read
+	// and migration, regardless of the autoContinue execution preference.
+	const statuses = ["active", "paused", "blocked", "complete", "budget_limited"] as const;
+	for (const status of statuses) {
+		for (const autoContinue of [true, false]) {
+			const record = normalizeGoalRecord({ id: "g1", objective: "x", status, autoContinue });
+			assert.ok(record, `record must normalize for ${status} / autoContinue=${autoContinue}`);
+			assert.equal(record!.status, status, `${status} must survive with autoContinue=${autoContinue}`);
+			assert.equal(record!.autoContinue, autoContinue, `autoContinue must survive for ${status}`);
+		}
+	}
+});
+
+test("golden: legacy paused+autoContinue:true record stays paused through markdown parse", () => {
+	// The exact legacy on-disk case must survive the markdown-file read path,
+	// not only the pure normalizer. writeActiveGoalFile serializes a v3 file;
+	// parseGoalFile re-normalizes it, and the paused status must survive.
+	const cwd = tempCwd();
+	try {
+		const legacy = normalizeGoalRecord({
+			id: "legacy-paused",
+			objective: "Legacy paused goal",
+			status: "paused",
+			autoContinue: true,
+		});
+		assert.ok(legacy);
+		const written = writeActiveGoalFile({ cwd }, legacy);
+		const parsed = parseGoalFile(path.join(cwd, written.activePath ?? "missing"));
+		assert.ok(parsed, "legacy file must parse");
+		assert.equal(parsed.status, "paused", "parsed legacy record must stay paused");
+		assert.equal(parsed.autoContinue, true, "autoContinue flag survives as data");
+	} finally {
+		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
 });
 
 // ── Ledger format golden ─────────────────────────────────────────────────────
