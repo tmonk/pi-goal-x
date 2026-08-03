@@ -78,6 +78,7 @@ function expectedFixtureRecord(now: string): GoalRecord {
 		pauseReason: undefined,
 		pauseSuggestedAction: undefined,
 		skipAuditor: undefined,
+		tokenBudget: undefined,
 		taskList: {
 			blockCompletion: true,
 			proposedAt: "2026-08-03T09:05:00.000Z",

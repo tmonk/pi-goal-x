@@ -1,7 +1,7 @@
 import { statusLabel, type GoalDisplayRecordLike } from "./goal-core.ts";
 import type { GoalTask, GoalTaskList, TaskStatus } from "./goal-record.ts";
 
-export type GoalStatusLike = "active" | "paused" | "complete";
+export type GoalStatusLike = "active" | "paused" | "budget_limited" | "complete";
 export type StopReasonLike = "user" | "agent";
 
 export interface GoalPolicyRecordLike extends GoalDisplayRecordLike {
@@ -26,7 +26,9 @@ export function isRunnableStatus(status: GoalStatusLike): boolean {
 }
 
 export function isCompletableStatus(status: GoalStatusLike): boolean {
-	return status === "active" || status === "paused";
+	// A budget-limited goal is NOT completed by the transition itself, but the
+	// user (or the model on explicit evidence) may still complete it.
+	return status === "active" || status === "paused" || status === "budget_limited";
 }
 
 export function validateGoalCreationSlot(goal: Pick<GoalPolicyRecordLike, "status"> | null): PolicyValidation {

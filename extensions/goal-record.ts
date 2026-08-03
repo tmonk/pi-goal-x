@@ -1,4 +1,4 @@
-export type GoalStatus = "active" | "paused" | "complete";
+export type GoalStatus = "active" | "paused" | "budget_limited" | "complete";
 export type StopReason = "user" | "agent";
 export type GoalEventKind = "checkpoint" | "stale" | "drafting";
 export type DraftingFocus = "goal" | "sisyphus";
@@ -46,6 +46,8 @@ export interface GoalRecord {
 	pauseReason?: string;
 	pauseSuggestedAction?: string;
 	skipAuditor?: boolean;
+	/** Optional token budget (whole tokens). When accounted usage reaches it, the runtime marks the goal budget_limited. */
+	tokenBudget?: number;
 	taskList?: GoalTaskList;
 	/** Plain-text description of what verification evidence is required before completing this goal. */
 	verificationContract?: string;
@@ -225,7 +227,7 @@ export function normalizeGoalRecord(value: unknown): GoalRecord | null {
 
 	const timestamp = nowIso();
 	const rawStatus = raw.status;
-	let status: GoalStatus = rawStatus === "complete" ? "complete" : rawStatus === "paused" ? "paused" : "active";
+	let status: GoalStatus = rawStatus === "complete" ? "complete" : rawStatus === "paused" ? "paused" : rawStatus === "budget_limited" ? "budget_limited" : "active";
 	const autoContinue = typeof raw.autoContinue === "boolean" ? raw.autoContinue : true;
 	const usage = normalizeUsage(raw.usage);
 	const sisyphus = raw.sisyphus === true;
@@ -249,6 +251,7 @@ export function normalizeGoalRecord(value: unknown): GoalRecord | null {
 		pauseReason: typeof raw.pauseReason === "string" && raw.pauseReason.trim() ? raw.pauseReason : undefined,
 		pauseSuggestedAction: typeof raw.pauseSuggestedAction === "string" && raw.pauseSuggestedAction.trim() ? raw.pauseSuggestedAction : undefined,
 		skipAuditor: raw.skipAuditor === true ? true : undefined,
+		tokenBudget: typeof raw.tokenBudget === "number" && Number.isFinite(raw.tokenBudget) ? Math.max(0, Math.floor(raw.tokenBudget)) : undefined,
 		taskList: normalizeTaskList(raw.taskList),
 		verificationContract: typeof raw.verificationContract === "string" ? raw.verificationContract : undefined,
 	};

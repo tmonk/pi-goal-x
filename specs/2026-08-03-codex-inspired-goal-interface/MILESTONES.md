@@ -154,3 +154,47 @@ tests stayed green and 12 new tests were added.
 
 Validation: `npm run test:serial` 443 pass / 0 fail; `npm run check` (tsc) 0
 errors; `git diff --check` clean.
+
+### 2026-08-04 00:20:00 - Stage 2: runtime and accounting extraction + token budgets
+
+Behavior-preserving extraction of the runtime/accounting layers with additive
+token-budget support. All 443 prior tests stayed green; 16 new tests added.
+
+- `extensions/goal-accounting.ts` (new): `GoalAccounting` — serialized,
+  idempotent token/time accounting. `begin(goalId)` / `charge()` advances the
+  baseline so repeated calls never double-charge the same interval;
+  `liveSeconds()` is read-only display. Budget helpers `budgetRemaining` /
+  `budgetReached` / `budgetLine`.
+- `extensions/goal-runtime.ts` (new): `GoalRuntime` — continuation scheduling
+  state machine (queue/cancel/dedup, idle retry, follow-up dispatch via hooks),
+  turn-stop guard scoped by turn sequence, stale-checkpoint state + tool
+  blocking, and one-shot post-compaction / post-budget reminders.
+- `extensions/goal.ts`: the inline continuation/turn-guard/checkpoint/reminder
+  variables are replaced by a `GoalRuntime` instance and the accounting object
+  by `GoalAccounting`. `accountProgress` charges through
+  `accounting.charge()`, and after persisting usage runs the token-budget
+  transition: when `budgetReached`, the goal is marked `budget_limited` exactly
+  once via GoalService (status no longer active so accounting stops and the
+  transition cannot re-fire), the `goal_budget_limited` ledger event is written
+  with the budget/usage snapshot, the one-shot wrap-up steering is armed, and
+  pending continuations are cancelled. `before_agent_start` gained a
+  `budget_limited` prompt branch with a one-time `[TOKEN BUDGET REACHED]`
+  wrap-up block.
+- Record/ledger/policy additions (additive, no migration): `tokenBudget?` on
+  GoalRecord, `budget_limited` status + normalization, `statusLabel` "budget
+  limited", `isCompletableStatus` includes budget_limited (transition never
+  implies completion), `GoalToolStatus` widened, `goal_budget_limited` ledger
+  event type + validator + sanitizer.
+- Refactor bug found and fixed by the existing suite: the post-stop in-turn
+  tool_call block had an inverted `!` after routing through the runtime's
+  allowlist helper; goal-unfocus tests caught it.
+- Tests: `tests/goal-accounting-runtime.test.ts` (14 unit tests: charge
+  idempotency, no negative elapsed, exact-goal activation, read-only live
+  seconds, budget helpers, runtime queue guard, turn-stop scoping, stale
+  checkpoint blocking, one-shot reminders) and `tests/goal-budget.test.ts`
+  (2 integration tests: budget crossing marks budget_limited exactly once with
+  ledger event + one-shot steering on next agent start; no-budget goals never
+  transition).
+
+Validation: `npm run test:serial` 459 pass / 0 fail; `npm run check` (tsc) 0
+errors; `git diff --check` clean.

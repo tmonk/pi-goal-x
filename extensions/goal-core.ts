@@ -5,7 +5,7 @@ export interface GoalUsageLike {
 
 export interface GoalDisplayRecordLike {
 	objective: string;
-	status: "active" | "paused" | "complete";
+	status: "active" | "paused" | "budget_limited" | "complete";
 	autoContinue: boolean;
 	usage: GoalUsageLike;
 	sisyphus: boolean;
@@ -64,6 +64,7 @@ export function statusLabel(goal: Pick<GoalDisplayRecordLike, "sisyphus" | "stat
 	const prefix = goal.sisyphus ? "sisyphus " : "";
 	if (goal.status === "active" && goal.autoContinue) return `${prefix}running`;
 	if (goal.status === "paused" && goal.stopReason === "agent") return `${prefix}paused (agent)`;
+	if (goal.status === "budget_limited") return `${prefix}budget limited`;
 	return `${prefix}${goal.status}`;
 }
 
