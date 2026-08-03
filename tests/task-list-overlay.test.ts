@@ -351,17 +351,17 @@ test("dismisses on escape and enter", async () => {
 
 test("keybinding calls showTaskListOverlay with focusedGoalId", async () => {
 	const goalSource = readFileSync(
-		new URL("../extensions/goal.ts", import.meta.url),
+		new URL("../extensions/goal-widget.ts", import.meta.url),
 		"utf-8",
 	);
 
 	assert.ok(
 		goalSource.includes('matchesKey(data, "ctrl+shift+t")'),
-		"goal.ts contains the ctrl+shift+t keybinding",
+		"goal-widget.ts contains the ctrl+shift+t keybinding",
 	);
 	assert.ok(
-		goalSource.includes("showTaskListOverlay(ctx, goalsById, focusedGoalId)"),
-		"goal.ts calls showTaskListOverlay with focusedGoalId",
+		goalSource.includes("showTaskListOverlay(ctx, core.goalsById, core.focusedGoalId)"),
+		"goal-widget.ts calls showTaskListOverlay with focusedGoalId",
 	);
 	assert.ok(
 		goalSource.includes('return { consume: true }'),

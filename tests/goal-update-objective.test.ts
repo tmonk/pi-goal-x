@@ -74,7 +74,7 @@ test("validateGoalUpdate accepts paused goal", () => {
 // ─── updatedObjective schema rejection (removed from the model surface) ──────
 
 test("update_goal schema has additionalProperties: false and no updatedObjective", () => {
-	const source = readFileSync("extensions/goal.ts", "utf8");
+	const source = readFileSync("extensions/goal-tools.ts", "utf8");
 	const updateGoalIdx = source.indexOf('name: "update_goal"');
 	assert.ok(updateGoalIdx >= 0, "must find update_goal tool registration");
 	const registerBlock = source.substring(updateGoalIdx, updateGoalIdx + 4000);
@@ -83,13 +83,13 @@ test("update_goal schema has additionalProperties: false and no updatedObjective
 	assert.ok(!registerBlock.includes("updatedObjective"),
 		"update_goal schema must not contain updatedObjective");
 	assert.ok(!source.includes("updatedObjective"),
-		"updatedObjective must not appear anywhere in goal.ts");
+		"updatedObjective must not appear anywhere in goal-tools.ts");
 	assert.equal(source.includes('name: "complete_goal"'), false,
 		"complete_goal tool registration must be removed");
 });
 
 test("update_goal(complete) requires status=complete in the shared completion flow", () => {
-	const source = readFileSync("extensions/goal.ts", "utf8");
+	const source = readFileSync("extensions/goal-tools.ts", "utf8");
 	// The completion flow (including the status validation) lives in the shared
 	// runGoalCompletionFlow helper used by update_goal.
 	assert.ok(!source.includes("params.updatedObjective"),
