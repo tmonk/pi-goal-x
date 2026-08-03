@@ -115,3 +115,42 @@ Baseline corrections (mechanical, no behavior change):
 Validation: `npm run test:serial` 0 failures; `npm run check` (tsc) 0 errors;
 `git diff --check` clean. EMFILE from parallel test loading is a loader flake,
 not a product failure (documented in experiments/BASELINE.md §4).
+
+### 2026-08-03 23:50:00 - Stage 1: GoalService extracted as the sole mutation boundary
+
+Behavior-preserving extraction. No public command/tool changed; all 431 prior
+tests stayed green and 12 new tests were added.
+
+- `extensions/goal-service.ts` (new, ~250 lines): `GoalService` owns the ordered
+  mutation pipeline — (1) safe focused record reconciliation from disk,
+  (2) expected goal id + focus revision validation, (3) mutation on a clone,
+  (4) active-file write or archival, (5) best-effort ledger append,
+  (6) in-memory pool/focus commit, (7) returned runtime/UI effects via ref hooks.
+  A failed authoritative write throws before any memory/ledger/focus/archive
+  commit; a failed ledger append after the write keeps the transition and
+  reports diagnostics (matching existing best-effort ledger semantics).
+- `extensions/goal.ts` now contains zero direct calls to
+  writeActiveGoalFile/archiveGoalFile/atomicWriteGoalFile/appendGoalEvent/
+  ensureDirectory/safeUnlinkGoalFile:
+  - 8 mutation sites route through `goalService.apply` (archiveCurrentGoal,
+    stopActiveGoal, propose_goal_tweak apply with reconcile:false to avoid
+    clobbering the authoritative objective, the 4 completion writes, the 3 task
+    tool writes, turn_end deferred archival);
+  - creation routes through `goalService.create` (write → goal_created ledger →
+    focus commit);
+  - `persist()` and `reconcileFocusedGoalFromDisk()` delegate to the service;
+  - all 19 ledger appends route through `goalService.appendEvents`;
+  - debug widget file ops route through `goalService.writeDebugFile` /
+    `removeDebugFile`.
+- The service is constructed with a ref that binds the extension's closure state
+  (pool, focus, revision token, focus-entry, continuation/accounting/nudge glue).
+- Tests: `tests/goal-service.test.ts` (8 tests: write→ledger→memory ordering,
+  ledger-factory failure does not roll back, expected-id mismatch rejection,
+  stale focus-revision rejection, reconcile-first goal-loss abort, persist merges
+  the authoritative prompt body from disk, create ordering, archive mode with
+  commitFocused:false) and `tests/goal-mutation-boundary.test.ts` (4 source-level
+  tests asserting goal.ts never invokes or imports the mutation primitives and
+  always goes through GoalService).
+
+Validation: `npm run test:serial` 443 pass / 0 fail; `npm run check` (tsc) 0
+errors; `git diff --check` clean.

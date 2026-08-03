@@ -74,30 +74,23 @@ import {
 	type GoalTaskList,
 } from "./goal-record.ts";
 import {
-	appendGoalEvent,
 	latestAuditorResultForGoal,
 	readGoalLedger,
 	type GoalLedgerEvent,
 } from "./goal-ledger.ts";
 import { buildCompactionSummary } from "./goal-compaction.ts";
 import {
-	archiveGoalFile,
-	atomicWriteGoalFile,
-	ensureDirectory,
-	GOALS_DIR,
 	mergeGoalPromptFromDisk,
 	readActiveGoalPool,
-	safeUnlinkGoalFile,
 	sanitizeGoalPaths,
 	serializeGoalFile,
-	writeActiveGoalFile,
 } from "./storage/goal-files.ts";
+import { GoalService } from "./goal-service.ts";
 import {
 	buildGoalListText,
 	buildUnfocusedOpenGoalsSummary,
 	focusedGoalFromPool,
 	goalSelectorLabel,
-	mergeFocusedGoalWithDisk,
 	openGoalsFromPool,
 	otherOpenGoalCount,
 	resolveSessionFocus,
@@ -435,6 +428,44 @@ export default function goalExtension(
 			assignFocusedGoalId(null);
 		},
 	};
+
+	/**
+	 * Sole mutation boundary for goal records. All goal-file writes, ledger
+	 * appends, and ordered write→ledger→memory commits route through this
+	 * service; goal.ts handlers keep validation and runtime/UI effects.
+	 */
+	const goalService = new GoalService({
+		getFocused: () => state.goal,
+		setFocused: (goal) => {
+			state.goal = goal;
+		},
+		getPool: () => goalsById,
+		replacePool: (pool) => {
+			goalsById = pool;
+		},
+		getFocusedGoalId: () => focusedGoalId,
+		assignFocusedGoalId: (goalId) => assignFocusedGoalId(goalId),
+		focusToken: (goalId) => focusedOperationToken(goalId),
+		isTokenCurrent: (token) => isFocusedOperationCurrent(token),
+		appendFocusEntry: (goalId, reason) => appendFocusEntry(goalId, reason),
+		onFocusedGoalLost: (lostGoalId, ctx) => {
+			clearStoppedRuntimeState();
+			if (lostGoalId) resetGetGoalNudgeState(lostGoalId);
+			if (tweakDraftingFor !== null) tweakDraftingFor = null;
+			syncGoalTools();
+			updateUI(ctx as unknown as ExtensionContext);
+		},
+		onReconciled: (goal) => {
+			if (goal.status !== "active" || !goal.autoContinue) clearContinuationState();
+			if (goal.status !== "active") clearActiveAccounting();
+		},
+		onFocusChanged: (from, to) => {
+			clearContinuationState();
+			clearActiveAccounting();
+			resetGetGoalNudgeState(from);
+			resetGetGoalNudgeState(to);
+		},
+	});
 	let continuationQueuedFor: string | null = null;
 	let continuationScheduledFor: string | null = null;
 	let continuationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -547,7 +578,7 @@ export default function goalExtension(
 		goalWidgetComponent?.invalidate();
 		if (state.goal) {
 			try {
-				appendGoalEvent(ctx, {
+				goalService.appendEvents(ctx, [{
 					type: "audit_skipped",
 					goalId: state.goal.id,
 					reason: "user_aborted",
@@ -555,7 +586,7 @@ export default function goalExtension(
 					model: settings.model,
 					thinkingLevel: settings.thinkingLevel,
 					at: nowIso(),
-				});
+				}]);
 			} catch {
 				// Ledger append failure should not block skip
 			}
@@ -621,38 +652,7 @@ export default function goalExtension(
 	}
 
 	function reconcileFocusedGoalFromDisk(ctx: ExtensionContext, opts: { preserveMemoryUsage?: boolean } = {}): boolean {
-		const current = state.goal;
-		const fresh = readActiveGoalPool(ctx);
-		if (!focusedGoalId) {
-			goalsById = fresh;
-			return true;
-		}
-		const diskGoal = fresh.get(focusedGoalId) ?? null;
-		if (!diskGoal) {
-			if (current && !current.activePath) {
-				goalsById = fresh;
-				goalsById.set(current.id, current);
-				assignFocusedGoalId(current.id);
-				return true;
-			}
-			goalsById = fresh;
-			assignFocusedGoalId(null);
-			clearStoppedRuntimeState();
-			if (current) resetGetGoalNudgeState(current.id);
-			if (tweakDraftingFor !== null) tweakDraftingFor = null;
-			syncGoalTools();
-			updateUI(ctx);
-			return false;
-		}
-		const reconciled = current && opts.preserveMemoryUsage
-			? mergeFocusedGoalWithDisk({ memoryGoal: current, diskGoal })
-			: diskGoal;
-		goalsById = fresh;
-		goalsById.set(reconciled.id, reconciled);
-		assignFocusedGoalId(reconciled.id);
-		if (reconciled.status !== "active" || !reconciled.autoContinue) clearContinuationState();
-		if (reconciled.status !== "active") clearActiveAccounting();
-		return true;
+		return goalService.reconcileFocused(ctx, opts);
 	}
 
 	function appendFocusEntry(goalId: string | null, reason: GoalFocusReason): void {
@@ -679,9 +679,9 @@ export default function goalExtension(
 		// Append ledger event for focus changes
 		try {
 			if (opts.recordLedger !== false && focusedGoalId) {
-				appendGoalEvent(ctx, { type: "goal_focused", goalId: focusedGoalId, reason, at: nowIso() });
+				goalService.appendEvents(ctx, [{ type: "goal_focused", goalId: focusedGoalId, reason, at: nowIso() }]);
 			} else if (opts.recordLedger !== false && previousGoalId) {
-				appendGoalEvent(ctx, { type: "goal_unfocused", reason, at: nowIso() });
+				goalService.appendEvents(ctx, [{ type: "goal_unfocused", reason, at: nowIso() }]);
 			}
 		} catch {
 			// Ledger append failure should not crash focus change
@@ -778,14 +778,11 @@ export default function goalExtension(
 	}
 
 	function persist(ctx?: ExtensionContext): void {
-		const current = state.goal;
-		if (current) {
-			state.goal = { ...current, updatedAt: nowIso() };
-			if (ctx) {
-				syncGoalPromptFromDisk(ctx);
-				const next = state.goal;
-				if (next) state.goal = next.status === "complete" ? archiveGoalFile(ctx, next) : writeActiveGoalFile(ctx, next);
-			}
+		if (ctx) {
+			goalService.persist(ctx);
+		} else {
+			const current = state.goal;
+			if (current) state.goal = { ...current, updatedAt: nowIso() };
 		}
 		syncGoalTools();
 		if (ctx) updateUI(ctx);
@@ -963,30 +960,43 @@ export default function goalExtension(
 
 	function archiveCurrentGoal(ctx: ExtensionContext, reason: StopReason | undefined): GoalRecord | null {
 		if (!state.goal) return null;
-		let archived = mergeGoalPromptFromDisk(ctx, state.goal);
-		archived = { ...archived, status: archived.status === "complete" ? "complete" : "paused", stopReason: reason };
-		return archiveGoalFile(ctx, archived);
+		const result = goalService.apply(ctx, {
+			reconcile: false,
+			refreshFromDisk: true,
+			archive: true,
+			commitFocused: false,
+			mutate: (g) => {
+				const status = g.status === "complete" ? "complete" : "paused";
+				return { ...g, status, stopReason: reason };
+			},
+		});
+		return result.ok ? result.goal : null;
 	}
 
 	function stopActiveGoal(status: Exclude<GoalStatus, "active">, reason: StopReason | undefined, ctx: ExtensionContext): void {
 		if (!state.goal) return;
-		let next = mergeGoalPromptFromDisk(ctx, state.goal);
-		next = { ...next, status, stopReason: reason, updatedAt: nowIso() };
-		setGoal(next, ctx);
-		// Append ledger event for pauses (user or agent initiated)
-		if (status === "paused") {
-			try {
-				appendGoalEvent(ctx, {
+		const result = goalService.apply(ctx, {
+			reconcile: false,
+			refreshFromDisk: true,
+			mutate: (g) => ({ ...g, status, stopReason: reason, updatedAt: nowIso() }),
+			ledger: (written) => status === "paused"
+				? [{
 					type: "goal_paused",
-					goalId: next.id,
+					goalId: written.id,
 					reason: reason ?? "unknown",
-					suggestedAction: next.pauseSuggestedAction,
+					suggestedAction: written.pauseSuggestedAction,
 					status,
-					at: next.updatedAt,
-				});
-			} catch {
-				// Ledger append failure should not crash pause
-			}
+					at: written.updatedAt,
+				}]
+				: [],
+		});
+		if (result.ok) {
+			// setGoal() glue: a stopped goal can no longer queue continuations or
+			// accrue time, and the UI must reflect the new status immediately.
+			clearContinuationState();
+			clearActiveAccounting();
+			syncGoalTools();
+			updateUI(ctx);
 		}
 	}
 
@@ -1070,9 +1080,7 @@ export default function goalExtension(
 			if (prev && prev.id.startsWith("debug-")) {
 				// Toggle off — remove debug goal entirely (no archive, full delete)
 				const filePath = `${DEBUG_GOALS_DIR}/debug_goal.md`;
-				try {
-					safeUnlinkGoalFile({ cwd: ctx.cwd }, DEBUG_GOALS_DIR, filePath);
-				} catch {}
+				goalService.removeDebugFile(ctx, filePath);
 				const prevId = prev.id;
 				state.goal = null;
 				if (focusedGoalId === prevId) {
@@ -1097,9 +1105,7 @@ export default function goalExtension(
 			goal.createdAt = nowIso();
 			goal.updatedAt = nowIso();
 			goal.activePath = `${DEBUG_GOALS_DIR}/debug_goal.md`;
-			const gfc = { cwd: ctx.cwd };
-			ensureDirectory(gfc, DEBUG_GOALS_DIR);
-			atomicWriteGoalFile(gfc, DEBUG_GOALS_DIR, goal.activePath, serializeGoalFile(goal));
+			goalService.writeDebugFile(ctx, goal.activePath, serializeGoalFile(goal));
 			setGoal(goal, ctx, false, "created"); // no persist (we already wrote the file)
 			ctx.ui.notify(`Debug goal created: ${goal.id}`, "info");
 		}
@@ -1375,7 +1381,18 @@ Verification contract:
 	function replaceGoal(config: GoalCreationConfig, ctx: ExtensionContext, startNow = true, verificationContract?: string): void {
 		const goal = createGoal(config);
 		if (verificationContract) goal.verificationContract = verificationContract;
-		setGoal(goal, ctx, true, "created");
+		const result = goalService.create(ctx, {
+			goal,
+			ledger: [{
+				type: "goal_created",
+				goalId: goal.id,
+				objective: goal.objective,
+				sisyphus: goal.sisyphus,
+				autoContinue: goal.autoContinue,
+				at: goal.createdAt,
+			}],
+		});
+		if (result.focusChanged) appendFocusEntry(result.goalId, "created");
 		beginAccounting();
 		// Reset continuation nudge state — this is a fresh goal.
 		resetGetGoalNudgeState(state.goal?.id);
@@ -1383,22 +1400,6 @@ Verification contract:
 		confirmationIntent = null;
 		ctx.ui.notify(buildGoalRunningNotification(config), "info");
 		if (startNow && state.goal?.autoContinue) queueContinuation(ctx, true);
-		// Append ledger event for durable history
-		const created = state.goal;
-		if (created) {
-			try {
-				appendGoalEvent(ctx, {
-					type: "goal_created",
-					goalId: created.id,
-					objective: created.objective,
-					sisyphus: created.sisyphus,
-					autoContinue: created.autoContinue,
-					at: created.createdAt,
-				});
-			} catch {
-				// Ledger append failure should not crash creation
-			}
-		}
 	}
 
 	async function startGoalTweakDrafting(hint: string, ctx: ExtensionContext): Promise<void> {
@@ -1666,12 +1667,12 @@ Verification contract:
 		queueContinuation(ctx, true);
 		// Append ledger event for resumption
 		try {
-			appendGoalEvent(ctx, {
+			goalService.appendEvents(ctx, [{
 				type: "goal_resumed",
 				goalId: state.goal.id,
 				reason: "user",
 				at: nowIso(),
-			});
+			}]);
 		} catch {
 			// Ledger append failure should not crash resume
 		}
@@ -2163,13 +2164,13 @@ ${objective}` : objective,
 					setGoal(state.goal, ctx);
 					// Append ledger event for task list
 					try {
-						appendGoalEvent(ctx, {
+						goalService.appendEvents(ctx, [{
 							type: "task_list_set",
 							goalId: state.goal.id,
 							taskCount: tasksToCreate.length,
 							blockCompletion: false,
 							at: now,
-						});
+						}]);
 					} catch {
 						// Ledger failure should not block creation
 					}
@@ -2358,13 +2359,36 @@ ${objective}` : objective,
 				// syncGoalPromptFromDisk() which would RE-READ the stale objective
 				// from the still-old goal file on disk and clobber our new objective
 				// before writing. propose_goal_tweak is the authoritative source for
-				// objective changes — the disk is downstream, not upstream. Do the
-				// minimal state update manually:
-				//   1) write the new record to disk authoritatively
-				//   2) update in-memory `goal` to the canonical post-write record
-				//   3) re-sync tools
-				//   4) clear the tweak drafting gate so propose_goal_tweak can't be re-used
-				state.goal = writeActiveGoalFile(ctx, next);
+				// objective changes — the disk is downstream, not upstream. Route the
+				// write through the service WITHOUT reconciliation so the new
+				// objective is never clobbered, and append the tweak/task ledger
+				// events in the same ordered write.
+				const tweakResult = goalService.apply(ctx, {
+					reconcile: false,
+					focusToken: tweakFocus,
+					mutate: () => next,
+					ledger: (written) => {
+						const events: GoalLedgerEvent[] = [{
+							type: "goal_tweaked",
+							goalId: written.id,
+							changeSummary,
+							at: written.updatedAt,
+						}];
+						if (params.tasks && Array.isArray(params.tasks) && params.tasks.length > 0) {
+							events.push({
+								type: "task_list_set",
+								goalId: written.id,
+								taskCount: params.tasks.length,
+								blockCompletion: false,
+								at: written.updatedAt,
+							});
+						}
+						return events;
+					},
+				});
+				if (!tweakResult.ok) {
+					return focusedOperationCancelledResult("Goal tweak", tweakFocus);
+				}
 				tweakDraftingFor = null;
 				// Reset autoContinue counter — plan changed, agent gets a fresh chain.
 				resetGetGoalNudgeState(state.goal.id);
@@ -2373,31 +2397,6 @@ ${objective}` : objective,
 				syncGoalTools();
 				updateUI(ctx);
 				ctx.ui.notify(`Goal tweaked: ${truncateText(changeSummary, 160)}`, "info");
-				// Append ledger event for tweak
-				try {
-					appendGoalEvent(ctx, {
-						type: "goal_tweaked",
-						goalId: state.goal.id,
-						changeSummary,
-						at: state.goal.updatedAt,
-					});
-				} catch {
-					// Ledger append failure should not crash tweak
-				}
-				// Append ledger event for task list change if tasks were provided
-				if (params.tasks && Array.isArray(params.tasks) && params.tasks.length > 0) {
-					try {
-						appendGoalEvent(ctx, {
-							type: "task_list_set",
-							goalId: state.goal.id,
-							taskCount: params.tasks.length,
-							blockCompletion: false,
-							at: state.goal.updatedAt,
-						});
-					} catch {
-						// Ledger append failure should not crash tweak
-					}
-				}
 				return {
 					content: [{
 						type: "text",
@@ -2498,12 +2497,12 @@ ${objective}` : objective,
 			const completionFocus = focusedOperationToken(auditTarget.id);
 			// Append ledger: completion requested
 			try {
-				appendGoalEvent(ctx, {
+				goalService.appendEvents(ctx, [{
 					type: "completion_requested",
 					goalId: auditTarget.id,
 					summary: params.completionSummary,
 					at: nowIso(),
-				});
+				}]);
 			} catch {
 				// Ledger append failure should not block completion
 			}
@@ -2521,7 +2520,7 @@ ${objective}` : objective,
 					details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
 				});
 				try {
-					appendGoalEvent(ctx, {
+					goalService.appendEvents(ctx, [{
 						type: "audit_skipped",
 						goalId: auditTarget.id,
 						reason: "disabled",
@@ -2529,22 +2528,20 @@ ${objective}` : objective,
 						model: settings.model,
 						thinkingLevel: settings.thinkingLevel,
 						at: nowIso(),
-					});
+					}]);
 				} catch {
 					// Ledger append failure should not block completion
 				}
 				accountProgress(ctx);
 				auditProgress = null;
 				goalWidgetComponent?.invalidate();
-				state.goal = {
-					...auditTarget,
-					status: "complete",
-					stopReason: "agent",
-					updatedAt: nowIso(),
-				};
-				state.goal = writeActiveGoalFile(ctx, state.goal);
-				turnStoppedFor = state.goal ? { goalId: state.goal.id, turnSeq } : null;
-				resetGetGoalNudgeState(state.goal?.id);
+				const completeResult = goalService.apply(ctx, {
+					reconcile: false,
+					focusToken: completionFocus,
+					mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+				});
+				turnStoppedFor = completeResult.ok && completeResult.goal ? { goalId: completeResult.goal.id, turnSeq } : null;
+				resetGetGoalNudgeState(completeResult.ok ? completeResult.goal.id : undefined);
 				syncGoalTools();
 				updateUI(ctx);
 				return {
@@ -2586,7 +2583,7 @@ ${objective}` : objective,
 					details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
 				});
 				try {
-					appendGoalEvent(ctx, {
+					goalService.appendEvents(ctx, [{
 						type: "audit_skipped",
 						goalId: auditTarget.id,
 						reason: "disabled",
@@ -2594,7 +2591,7 @@ ${objective}` : objective,
 						model: settings.model,
 						thinkingLevel: settings.thinkingLevel,
 						at: nowIso(),
-					});
+					}]);
 				} catch {
 					// Ledger append failure should not block completion
 				}
@@ -2602,15 +2599,13 @@ ${objective}` : objective,
 				accountProgress(ctx);
 				auditProgress = null;
 				goalWidgetComponent?.invalidate();
-				state.goal = {
-					...auditTarget,
-					status: "complete",
-					stopReason: "agent",
-					updatedAt: nowIso(),
-				};
-				state.goal = writeActiveGoalFile(ctx, state.goal);
-				turnStoppedFor = state.goal ? { goalId: state.goal.id, turnSeq } : null;
-				resetGetGoalNudgeState(state.goal?.id);
+				const completeResult = goalService.apply(ctx, {
+					reconcile: false,
+					focusToken: completionFocus,
+					mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+				});
+				turnStoppedFor = completeResult.ok && completeResult.goal ? { goalId: completeResult.goal.id, turnSeq } : null;
+				resetGetGoalNudgeState(completeResult.ok ? completeResult.goal.id : undefined);
 				syncGoalTools();
 				updateUI(ctx);
 				return {
@@ -2645,14 +2640,14 @@ ${objective}` : objective,
 			}
 			// Append ledger: audit started
 			try {
-				appendGoalEvent(ctx, {
+				goalService.appendEvents(ctx, [{
 					type: "audit_started",
 					goalId: auditTarget.id,
 					provider: settings.provider,
 					model: settings.model,
 					thinkingLevel: settings.thinkingLevel,
 					at: nowIso(),
-				});
+				}]);
 			} catch {
 				// Ledger append failure should not block completion
 			}
@@ -2729,7 +2724,7 @@ ${objective}` : objective,
 						details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
 					});
 					try {
-						appendGoalEvent(ctx, {
+						goalService.appendEvents(ctx, [{
 							type: "audit_skipped",
 							goalId: auditTarget.id,
 							reason: "user_aborted",
@@ -2737,21 +2732,19 @@ ${objective}` : objective,
 							model: settings.model,
 							thinkingLevel: settings.thinkingLevel,
 							at: nowIso(),
-						});
+						}]);
 					} catch {
 						// Ledger append failure should not block completion
 					}
 					// Set goal complete in memory (defer archival to turn_end)
 					accountProgress(ctx);
-					state.goal = {
-						...auditTarget,
-						status: "complete",
-						stopReason: "agent",
-						updatedAt: nowIso(),
-					};
-					state.goal = writeActiveGoalFile(ctx, state.goal);
-					turnStoppedFor = state.goal ? { goalId: state.goal.id, turnSeq } : null;
-					resetGetGoalNudgeState(state.goal?.id);
+					const completeResult = goalService.apply(ctx, {
+						reconcile: false,
+						focusToken: completionFocus,
+						mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+					});
+					turnStoppedFor = completeResult.ok && completeResult.goal ? { goalId: completeResult.goal.id, turnSeq } : null;
+					resetGetGoalNudgeState(completeResult.ok ? completeResult.goal.id : undefined);
 					syncGoalTools();
 					updateUI(ctx);
 					return {
@@ -2790,13 +2783,13 @@ ${objective}` : objective,
 			// Append ledger: audit result
 			const verdict = auditor.approved ? "approved" : auditor.error ? "error" : "disapproved" as const;
 			try {
-				appendGoalEvent(ctx, {
+				goalService.appendEvents(ctx, [{
 					type: "audit_result",
 					goalId: auditTarget.id,
 					verdict,
 					report: auditor.output || "Auditor produced no output.",
 					at: nowIso(),
-				});
+				}]);
 			} catch {
 				// Ledger append failure should not block completion
 			}
@@ -2843,15 +2836,13 @@ ${objective}` : objective,
 			accountProgress(ctx);
 			auditProgress = null;
 			goalWidgetComponent?.invalidate();
-			state.goal = {
-				...auditTarget,
-				status: "complete",
-				stopReason: "agent",
-				updatedAt: nowIso(),
-			};
-			state.goal = writeActiveGoalFile(ctx, state.goal);
-			turnStoppedFor = state.goal ? { goalId: state.goal.id, turnSeq } : null;
-			resetGetGoalNudgeState(state.goal?.id);
+			const completeResult = goalService.apply(ctx, {
+				reconcile: false,
+				focusToken: completionFocus,
+				mutate: () => ({ ...auditTarget, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+			});
+			turnStoppedFor = completeResult.ok && completeResult.goal ? { goalId: completeResult.goal.id, turnSeq } : null;
+			resetGetGoalNudgeState(completeResult.ok ? completeResult.goal.id : undefined);
 			syncGoalTools();
 			updateUI(ctx);
 			return {
@@ -2986,13 +2977,13 @@ ${objective}` : objective,
 			);
 			// Append ledger event for abort
 			try {
-				appendGoalEvent(ctx, {
+				goalService.appendEvents(ctx, [{
 					type: "goal_aborted",
 					goalId: abortedGoalId,
 					reason,
 					archivePath: archived?.archivedPath,
 					at: nowIso(),
-				});
+				}]);
 			} catch {
 				// Ledger append failure should not crash abort
 			}
@@ -3161,32 +3152,26 @@ ${objective}` : objective,
 			}
 
 			// Apply
-			state.goal = mergeGoalPromptFromDisk(ctx, state.goal);
-			if (!state.goal) {
-				return {
-					content: [{ type: "text", text: "Goal disappeared during task list proposal." }],
-					details: goalDetails(null),
-				};
+			const taskListResult = goalService.apply(ctx, {
+				reconcile: false,
+				focusToken: taskListFocus,
+				refreshFromDisk: true,
+				mutate: (g) => ({ ...g, taskList, updatedAt: now }),
+				ledger: (written) => [{
+					type: "task_list_set",
+					goalId: written.id,
+					taskCount: taskList.tasks.length,
+					blockCompletion,
+					at: written.updatedAt,
+				}],
+			});
+			if (!taskListResult.ok) {
+				return focusedOperationCancelledResult("Task list proposal", taskListFocus);
 			}
-			state.goal = { ...state.goal, taskList, updatedAt: now };
-			setGoal(state.goal, ctx);
 			turnStoppedFor = { goalId: state.goal.id, turnSeq };
 			resetGetGoalNudgeState(state.goal.id);
 			syncGoalTools();
 			updateUI(ctx);
-
-			// Append ledger event
-			try {
-				appendGoalEvent(ctx, {
-					type: "task_list_set",
-					goalId: state.goal.id,
-					taskCount: taskList.tasks.length,
-					blockCompletion,
-					at: now,
-				});
-			} catch {
-				// Ledger failure should not block task list proposal
-			}
 
 			return {
 				content: [{ type: "text", text: `Task list proposed and confirmed. ${taskList.tasks.length} task${taskList.tasks.length === 1 ? "" : "s"} set.${gateLabel}` }],
@@ -3272,29 +3257,33 @@ ${objective}` : objective,
 				completedAt: now,
 				evidence,
 			}));
-			state.goal = mergeGoalPromptFromDisk(ctx, state.goal);
-			if (!state.goal || !state.goal.taskList) throw new Error("Goal disappeared during task completion.");
-			state.goal = {
-				...state.goal,
-				taskList: { ...state.goal.taskList, blockCompletion: state.goal.taskList.blockCompletion, tasks: updatedTasks },
-				updatedAt: now,
-			};
-			setGoal(state.goal, ctx);
-			syncGoalTools();
-			updateUI(ctx);
-
-			// Append ledger event
-			try {
-				appendGoalEvent(ctx, {
+			const completeTaskResult = goalService.apply(ctx, {
+				reconcile: false,
+				refreshFromDisk: true,
+				mutate: (g) => {
+					if (!g.taskList) throw new Error("Goal disappeared during task completion.");
+					return {
+						...g,
+						taskList: { ...g.taskList, blockCompletion: g.taskList.blockCompletion, tasks: updatedTasks },
+						updatedAt: now,
+					};
+				},
+				ledger: (written) => [{
 					type: "task_complete",
-					goalId: state.goal.id,
+					goalId: written.id,
 					taskId: params.taskId,
 					evidence,
-					at: now,
-				});
-			} catch {
-				// Ledger failure should not block task completion
+					at: written.updatedAt,
+				}],
+			});
+			if (!completeTaskResult.ok) {
+				return {
+					content: [{ type: "text", text: completeTaskResult.message }],
+					details: goalDetails(state.goal),
+				};
 			}
+			syncGoalTools();
+			updateUI(ctx);
 
 			const taskSummary = buildTaskSummary(state.goal.taskList!);
 			return {
@@ -3360,39 +3349,33 @@ promptGuidelines: [
 				}
 				return base;
 			});
-			state.goal = mergeGoalPromptFromDisk(ctx, state.goal);
-			if (!state.goal || !state.goal.taskList) throw new Error("Goal disappeared during task skip.");
-			state.goal = {
-				...state.goal,
-				taskList: { ...state.goal.taskList, blockCompletion: state.goal.taskList.blockCompletion, tasks: updatedTasks },
-				updatedAt: now,
-			};
-			setGoal(state.goal, ctx);
+			const skipTaskResult = goalService.apply(ctx, {
+				reconcile: false,
+				refreshFromDisk: true,
+				mutate: (g) => {
+					if (!g.taskList) throw new Error("Goal disappeared during task skip.");
+					return {
+						...g,
+						taskList: { ...g.taskList, blockCompletion: g.taskList.blockCompletion, tasks: updatedTasks },
+						updatedAt: now,
+					};
+				},
+				ledger: (written) => [{
+					type: "task_skipped",
+					goalId: written.id,
+					taskId: params.taskId,
+					reason: wasAlreadySkipped ? "unskipped (toggle via skip_task)" : params.reason.trim(),
+					at: written.updatedAt,
+				}],
+			});
+			if (!skipTaskResult.ok) {
+				return {
+					content: [{ type: "text", text: skipTaskResult.message }],
+					details: goalDetails(state.goal),
+				};
+			}
 			syncGoalTools();
 			updateUI(ctx);
-
-// Append ledger event
-			try {
-				if (wasAlreadySkipped) {
-					appendGoalEvent(ctx, {
-						type: "task_skipped",
-						goalId: state.goal.id,
-						taskId: params.taskId,
-	reason: "unskipped (toggle via skip_task)",
-						at: now,
-					});
-				} else {
-					appendGoalEvent(ctx, {
-						type: "task_skipped",
-						goalId: state.goal.id,
-						taskId: params.taskId,
-						reason: params.reason.trim(),
-						at: now,
-					});
-				}
-			} catch {
-				// Ledger failure should not block task skip
-			}
 
 			const taskSummary = buildTaskSummary(state.goal.taskList!);
 			const action = wasAlreadySkipped ? "unsikpped" : "skipped";
@@ -3518,23 +3501,26 @@ promptGuidelines: [
 		// This runs after the agent's turn ends — the agent has now seen the result.
 		if (state.goal?.status === "complete" && !state.goal?.archivedPath) {
 			const completedGoal = state.goal;
-			const archived = archiveGoalFile(ctx, completedGoal);
-			resetGetGoalNudgeState(completedGoal.id);
-			goalsById.delete(completedGoal.id);
-			assignFocusedGoalId(null);
-			appendFocusEntry(null, "completed");
-			syncGoalTools();
-			updateUI(ctx);
-			try {
-				appendGoalEvent(ctx, {
+			const archiveResult = goalService.apply(ctx, {
+				reconcile: false,
+				archive: true,
+				commitFocused: false,
+				mutate: () => completedGoal,
+				ledger: (written) => [{
 					type: "goal_completed",
 					goalId: completedGoal.id,
-					archivePath: archived.archivedPath,
+					archivePath: written.archivedPath,
 					at: nowIso(),
-				});
-			} catch {
-				// Ledger append failure should not crash completion
+				}],
+			});
+			if (archiveResult.ok) {
+				resetGetGoalNudgeState(completedGoal.id);
+				goalsById.delete(completedGoal.id);
+				assignFocusedGoalId(null);
+				appendFocusEntry(null, "completed");
 			}
+			syncGoalTools();
+			updateUI(ctx);
 		}
 
 		// If the assistant ended a turn without queuing more tool calls, push a continuation right away.
