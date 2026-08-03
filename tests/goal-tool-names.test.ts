@@ -16,8 +16,10 @@ import {
 	PROPOSE_TWEAK_TOOL_NAME,
 	QUESTIONNAIRE_TOOL_NAME,
 	QUESTION_TOOL_NAME,
+	SET_GOAL_TASKS_TOOL_NAME,
 	SISYPHUS_STEP_TOOL_NAME,
 	TASK_TOOL_NAMES,
+	UPDATE_GOAL_TASK_TOOL_NAME,
 	UPDATE_GOAL_TOOL_NAME,
 	isQuestionLikeToolName,
 	lifecycleToolNamesForGoalStatus,
@@ -36,8 +38,8 @@ test("goal tool names are centralized and preserve published agent-facing names"
 	assert.equal(UPDATE_GOAL_TOOL_NAME, "update_goal");
 	assert.equal(ABORT_GOAL_TOOL_NAME, "abort_goal");
 	assert.deepEqual(CORE_GOAL_TOOL_NAMES, ["create_goal", "get_goal", "update_goal"]);
-	assert.deepEqual(ACTIVE_GOAL_TOOL_NAMES, ["create_goal", "get_goal", "update_goal", "propose_task_list", "complete_task", "skip_task"]);
-	assert.deepEqual(PAUSED_GOAL_TOOL_NAMES, ["create_goal", "get_goal", "update_goal", "propose_task_list"]);
+	assert.deepEqual(ACTIVE_GOAL_TOOL_NAMES, ["create_goal", "get_goal", "update_goal", "set_goal_tasks", "update_goal_task"]);
+	assert.deepEqual(PAUSED_GOAL_TOOL_NAMES, ["create_goal", "get_goal", "update_goal", "set_goal_tasks"]);
 	assert.deepEqual(NO_FOCUSED_GOAL_TOOL_NAMES, ["get_goal", "create_goal"]);
 	assert.deepEqual(POST_STOP_ALLOWED_TOOLS, ["get_goal"]);
 });
@@ -47,15 +49,15 @@ test("lifecycle tool visibility keeps no-focus read-only and focused mutations s
 	assert.deepEqual(lifecycleToolNamesForGoalStatus("active", "drafting"), ["get_goal", "create_goal"]);
 	assert.deepEqual(lifecycleToolNamesForGoalStatus("paused", "tweakDrafting"), ["get_goal", "create_goal"]);
 	assert.deepEqual(lifecycleToolNamesForGoalStatus("complete"), ["get_goal", "create_goal"]);
-	assert.deepEqual(lifecycleToolNamesForGoalStatus("active"), ["create_goal", "get_goal", "update_goal", "propose_task_list", "complete_task", "skip_task"]);
-	assert.deepEqual(lifecycleToolNamesForGoalStatus("paused"), ["create_goal", "get_goal", "update_goal", "propose_task_list"]);
+	assert.deepEqual(lifecycleToolNamesForGoalStatus("active"), ["create_goal", "get_goal", "update_goal", "set_goal_tasks", "update_goal_task"]);
+	assert.deepEqual(lifecycleToolNamesForGoalStatus("paused"), ["create_goal", "get_goal", "update_goal", "set_goal_tasks"]);
 });
 
 test("progress tool set excludes read-only and drafting dialogue tools", () => {
 	for (const toolName of ["get_goal", QUESTION_TOOL_NAME, QUESTIONNAIRE_TOOL_NAME, PROPOSE_DRAFT_TOOL_NAME, PROPOSE_TWEAK_TOOL_NAME, CREATE_GOAL_TOOL_NAME]) {
 		assert.equal(GOAL_PROGRESS_TOOL_NAMES.includes(toolName as typeof GOAL_PROGRESS_TOOL_NAMES[number]), false, toolName);
 	}
-	for (const toolName of ["bash", "read", "write", UPDATE_GOAL_TOOL_NAME, "complete_task", "skip_task"]) {
+	for (const toolName of ["bash", "read", "write", UPDATE_GOAL_TOOL_NAME, UPDATE_GOAL_TASK_TOOL_NAME, "complete_task", "skip_task"]) {
 		assert.equal(GOAL_PROGRESS_TOOL_NAMES.includes(toolName as typeof GOAL_PROGRESS_TOOL_NAMES[number]), true, toolName);
 	}
 });
@@ -65,6 +67,8 @@ test("goal work tool set keeps lifecycle and workhorse tools visible to continua
 		PROPOSE_TWEAK_TOOL_NAME,
 		CREATE_GOAL_TOOL_NAME,
 		UPDATE_GOAL_TOOL_NAME,
+		SET_GOAL_TASKS_TOOL_NAME,
+		UPDATE_GOAL_TASK_TOOL_NAME,
 		GET_GOAL_TOOL_NAME,
 		PROPOSE_DRAFT_TOOL_NAME,
 		QUESTION_TOOL_NAME,
@@ -99,9 +103,9 @@ test("lifecycleToolNamesForGoalStatus covers all status x phase combinations", (
 			if (phase === "drafting" || phase === "tweakDrafting") {
 				assert.deepEqual(tools, ["get_goal", "create_goal"], `drafting phase should only expose read/create for status=${status}`);
 			} else if (status === "active") {
-				assert.deepEqual(tools, ["create_goal", "get_goal", "update_goal", "propose_task_list", "complete_task", "skip_task"]);
+				assert.deepEqual(tools, ["create_goal", "get_goal", "update_goal", "set_goal_tasks", "update_goal_task"]);
 			} else if (status === "paused") {
-				assert.deepEqual(tools, ["create_goal", "get_goal", "update_goal", "propose_task_list"]);
+				assert.deepEqual(tools, ["create_goal", "get_goal", "update_goal", "set_goal_tasks"]);
 			} else {
 				assert.deepEqual(tools, ["get_goal", "create_goal"]);
 			}
@@ -182,9 +186,12 @@ test("GOAL_PROGRESS_TOOL_NAMES excludes drafting and dialogue tools", () => {
 	}
 });
 
-test("TASK_TOOL_NAMES are the legacy three and separate from the core", () => {
-	assert.deepEqual(TASK_TOOL_NAMES, ["propose_task_list", "complete_task", "skip_task"]);
+test("TASK_TOOL_NAMES are the two consolidated tools and separate from the core", () => {
+	assert.deepEqual(TASK_TOOL_NAMES, ["set_goal_tasks", "update_goal_task"]);
 	for (const name of CORE) {
 		assert.equal(TASK_TOOL_NAMES.includes(name as any), false);
+	}
+	for (const name of ["propose_task_list", "complete_task", "skip_task"]) {
+		assert.equal(TASK_TOOL_NAMES.includes(name as any), false, "legacy task tools are shims, not advertised");
 	}
 });

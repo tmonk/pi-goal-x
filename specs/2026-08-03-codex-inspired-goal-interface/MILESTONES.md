@@ -248,3 +248,43 @@ updated to the new advertised sets and 9 new core-tool tests added (469 total).
 Validation: `npm run test:serial` 469 pass / 0 fail; `npm run check` (tsc) 0
 errors; `git diff --check` clean (one pre-existing trailing-space line in the
 extracted completion flow cleaned).
+
+### 2026-08-04 01:50:00 - Stage 4: task tools consolidated
+
+Full task/subtask/contract behavior now works through exactly two advertised
+task tools; all 469 prior tests stayed green and 10 new tests added (479).
+
+- `extensions/goal-task-tools.ts` (new): flat parent-linked conversion
+  (`convertFlatTasks`) with the same validation the recursive path enforced —
+  unique non-empty ids/titles, existing parents, acyclic relationships, ≤50
+  tasks, configured subtask depth, and `lightweight_subtasks` only on tasks
+  with children — plus `mergeTasksWithExisting` (matching ids preserve
+  status/evidence/timestamps).
+- `set_goal_tasks` (new, advertised): flat `{tasks:[{id,title,parent_id?,
+  verification_contract?,lightweight_subtasks?}], block_completion?,
+  change_summary?}` schema; converts, merges, shows the existing confirmation
+  dialog (with the headless auto-confirm path), applies through GoalService
+  with the `task_list_set` ledger event, and terminates the turn.
+- `update_goal_task` (new, advertised): discriminated
+  `{task_id, status: complete|skipped|pending}` union. complete requires
+  evidence for contracted tasks + completed children; skipped requires a
+  reason and cascades to non-lightweight subtasks; pending reopens skipped
+  tasks; completed tasks are immutable. Applies through GoalService with
+  task_complete/task_skipped ledger events, counts as progress, and does NOT
+  terminate the turn.
+- `propose_task_list`, `complete_task`, `skip_task` are removed from the active
+  model surface (TASK_TOOL_NAMES = [set_goal_tasks, update_goal_task];
+  LEGACY_TASK_TOOL_NAMES kept only as non-advertised shims until Stage 7).
+  GOAL_PROGRESS_TOOL_NAMES gains update_goal_task; GOAL_WORK_TOOL_NAMES gains
+  both new tools.
+- Tests: `tests/goal-task-tools.test.ts` (10 tests: flat tree conversion,
+  duplicate/missing-title/missing-parent rejection, cycle rejection, 50-cap +
+  depth + lightweight placement, id-stable merging, set_goal_tasks execution
+  with nested tree + block_completion + ledger, update_goal_task complete with
+  evidence + ledger, contracted-task evidence requirement, skipped reason +
+  subtask cascade, pending reopen + completed immutability). Surface tests
+  (goal-tool-names, goal-surface-baseline 16 tools, goal-tool-visibility)
+  updated to the two advertised task tools.
+
+Validation: `npm run test:serial` 479 pass / 0 fail; `npm run check` (tsc) 0
+errors; `git diff --check` clean.

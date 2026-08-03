@@ -39,13 +39,16 @@ import {
 	COMPLETE_TASK_TOOL_NAME,
 	CREATE_GOAL_TOOL_NAME,
 	GET_GOAL_TOOL_NAME,
+	LEGACY_TASK_TOOL_NAMES,
 	PROPOSE_DRAFT_TOOL_NAME,
 	PROPOSE_TASK_LIST_TOOL_NAME,
 	PROPOSE_TWEAK_TOOL_NAME,
 	QUESTIONNAIRE_TOOL_NAME,
 	QUESTION_TOOL_NAME,
+	SET_GOAL_TASKS_TOOL_NAME,
 	SISYPHUS_STEP_TOOL_NAME,
 	TASK_TOOL_NAMES,
+	UPDATE_GOAL_TASK_TOOL_NAME,
 	UPDATE_GOAL_TOOL_NAME,
 	GOAL_PROGRESS_TOOL_NAMES,
 	SKIP_TASK_TOOL_NAME,
@@ -86,6 +89,7 @@ import {
 	serializeGoalFile,
 } from "./storage/goal-files.ts";
 import { GoalService } from "./goal-service.ts";
+import { convertFlatTasks, mergeTasksWithExisting, type FlatTaskInput } from "./goal-task-tools.ts";
 import { GoalAccounting, budgetLine, budgetReached } from "./goal-accounting.ts";
 import { GoalRuntime } from "./goal-runtime.ts";
 import {
@@ -519,9 +523,8 @@ export default function goalExtension(
 				UPDATE_GOAL_TOOL_NAME,
 				PROPOSE_TWEAK_TOOL_NAME,
 				PROPOSE_DRAFT_TOOL_NAME,
-				PROPOSE_TASK_LIST_TOOL_NAME,
-				COMPLETE_TASK_TOOL_NAME,
-				SKIP_TASK_TOOL_NAME,
+				...LEGACY_TASK_TOOL_NAMES,
+				...TASK_TOOL_NAMES,
 				SISYPHUS_STEP_TOOL_NAME,
 			]) {
 				active.delete(name);
@@ -534,14 +537,14 @@ export default function goalExtension(
 			if (state.goal && state.goal.status !== "complete") {
 				active.add(UPDATE_GOAL_TOOL_NAME);
 			}
-			// Task tools are advertised only when tasks are enabled and a goal is
-			// focused: all three for active goals, propose_task_list for paused
-			// (Stage 4 replaces them with set_goal_tasks / update_goal_task).
+			// The two consolidated task tools are advertised only when tasks are
+			// enabled and a goal is focused: both for active goals, set_goal_tasks
+			// for paused (Stage 4).
 			if (tasksEnabled && state.goal) {
 				if (state.goal.status === "active") {
 					for (const name of TASK_TOOL_NAMES) active.add(name);
 				} else if (state.goal.status === "paused") {
-					active.add(PROPOSE_TASK_LIST_TOOL_NAME);
+					active.add(SET_GOAL_TASKS_TOOL_NAME);
 				}
 			}
 			// Drafting/tweak/question flows keep their existing shim visibility
@@ -3452,6 +3455,327 @@ promptGuidelines: [
 		},
 		renderCall(args, theme) {
 			return new Text(theme.fg("toolTitle", "skip_task ") + theme.fg("warning", args?.taskId ?? ""), 0, 0);
+		},
+		renderResult(result, _options, theme) {
+			return renderGoalResult(result, theme);
+		},
+	}));
+
+	// ── set_goal_tasks: flat parent-linked structural task-tree tool (Stage 4) ──
+	pi.registerTool(defineTool({
+		name: SET_GOAL_TASKS_TOOL_NAME,
+		label: "Set Goal Tasks",
+		description: "Create or structurally replace the task tree for the focused active or paused goal. Takes a flat parent-linked task list (id, title, optional parent_id, optional verification_contract, optional lightweight_subtasks) plus block_completion. Matching ids retain status and evidence. Structural changes use the existing confirmation dialog.",
+		promptSnippet: "Set the goal task tree with confirmation. Stops the turn after confirmation.",
+		promptGuidelines: [
+			"Use set_goal_tasks after a goal is confirmed, on the first continuation turn, if the objective naturally decomposes into trackable milestones. Do not add a task list for simple single-step goals.",
+			"If a task list already exists, only call set_goal_tasks to restructure it when (a) the user explicitly asks, or (b) the goal objective or requirements have structurally changed. Do not restructure autonomously.",
+			"Existing tasks with matching ids preserve their status/evidence/timestamps; new ids start as pending; removed ids are gone.",
+			"After confirmation the turn stops; the next continuation will arrive automatically.",
+			"Validation is enforced at runtime: unique non-empty ids/titles, existing parents, acyclic relationships, at most 50 tasks, configured depth, and lightweight_subtasks only on tasks that have children.",
+		],
+		parameters: Type.Object({
+			tasks: Type.Array(Type.Object({
+				id: Type.String({ description: "Short stable slug e.g. 'task-1'" }),
+				title: Type.String({ description: "Human-readable task title" }),
+				parent_id: Type.Optional(Type.String({ description: "Optional id of the parent task in this same input; roots omit it." })),
+				verification_contract: Type.Optional(Type.String({ description: "Optional evidence requirement for completing this task." })),
+				lightweight_subtasks: Type.Optional(Type.Boolean({ description: "If true, this task's subtasks are lightweight (no completion enforcement). Only valid when the task has children." })),
+			}), { description: "Flat parent-linked task list" }),
+			block_completion: Type.Optional(Type.Boolean({ description: "If true, warns when pending tasks remain during completion. Default false." })),
+			change_summary: Type.Optional(Type.String({ description: "Optional summary of the task list change" })),
+		}, { additionalProperties: false }),
+		executionMode: "sequential",
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			reconcileFocusedGoalFromDisk(ctx);
+			if (!state.goal) {
+				return {
+					content: [{ type: "text", text: "No goal is set; set_goal_tasks requires a focused active or paused goal." }],
+					details: goalDetails(state.goal),
+				};
+			}
+			if (loadGoalSettings(ctx.cwd).disableTasks) {
+				return {
+					content: [{ type: "text", text: "set_goal_tasks is disabled by settings (disableTasks: true)." }],
+					details: goalDetails(state.goal),
+				};
+			}
+			if (state.goal.status !== "active" && state.goal.status !== "paused") {
+				return {
+					content: [{ type: "text", text: `set_goal_tasks applies to an active or paused goal; this goal is ${statusLabel(state.goal)}.` }],
+					details: goalDetails(state.goal),
+				};
+			}
+			const settings = loadGoalSettings(ctx.cwd);
+			const converted = convertFlatTasks(params.tasks as FlatTaskInput[], { maxSubtaskDepth: settings.subtaskDepth });
+			if (!converted.ok) {
+				return {
+					content: [{ type: "text", text: converted.message }],
+					details: goalDetails(state.goal),
+				};
+			}
+			const mergedTasks = mergeTasksWithExisting(state.goal.taskList?.tasks, converted.tasks);
+			const blockCompletion = params.block_completion === true;
+			const now = nowIso();
+			const taskList: GoalTaskList = {
+				tasks: mergedTasks,
+				blockCompletion,
+				proposedAt: now,
+			};
+
+			// Render the proposed tree for the confirmation dialog.
+			function renderTaskLines(tasks: GoalTask[], indent = 0): string[] {
+				const prefix = "  ".repeat(indent);
+				const lines: string[] = [];
+				for (const t of tasks) {
+					const marker = t.status === "complete" ? "[x]" : t.status === "skipped" ? "[~]" : "[ ]";
+					const lw = t.lightweightSubtasks ? " (lightweight)" : "";
+					lines.push(`${prefix}${marker} ${t.id}: ${t.title}${lw}`);
+					if (t.subtasks && t.subtasks.length > 0) {
+						lines.push(...renderTaskLines(t.subtasks, indent + 1));
+					}
+				}
+				return lines;
+			}
+			const taskLines = renderTaskLines(taskList.tasks);
+			const gateLabel = blockCompletion ? " (blockCompletion enabled)" : "";
+			const proposalText = [`Proposed task list${gateLabel}:`, "", ...taskLines].join("\n");
+			const taskListFocus = focusedOperationToken(state.goal.id);
+			const headless = shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM });
+			let dialogResult: { decision: "confirm" | "continue"; auditorEnabled: boolean };
+			if (headless) {
+				dialogResult = { decision: "confirm", auditorEnabled: state.goal?.skipAuditor ? false : true };
+			} else {
+				dialogResult = await showProposalDialog(ctx, proposalText, "goal", !state.goal?.skipAuditor);
+			}
+			if (!isFocusedOperationCurrent(taskListFocus)) {
+				return focusedOperationCancelledResult("Task list proposal", taskListFocus);
+			}
+			if (dialogResult.decision !== "confirm") {
+				return {
+					content: [{ type: "text", text: "Task list proposal declined." }],
+					details: goalDetails(state.goal),
+				};
+			}
+			if (state.goal) {
+				state.goal = { ...state.goal, skipAuditor: !dialogResult.auditorEnabled };
+			}
+			const applyResult = goalService.apply(ctx, {
+				reconcile: false,
+				focusToken: taskListFocus,
+				refreshFromDisk: true,
+				mutate: (g) => ({ ...g, taskList, updatedAt: now }),
+				ledger: (written) => [{
+					type: "task_list_set",
+					goalId: written.id,
+					taskCount: taskList.tasks.length,
+					blockCompletion,
+					at: written.updatedAt,
+				}],
+			});
+			if (!applyResult.ok) {
+				return focusedOperationCancelledResult("Task list proposal", taskListFocus);
+			}
+			runtime.markTurnStopped(state.goal.id);
+			syncGoalTools();
+			updateUI(ctx);
+			return {
+				content: [{ type: "text", text: `Task list set and confirmed. ${taskList.tasks.length} task${taskList.tasks.length === 1 ? "" : "s"}.${gateLabel}` }],
+				details: goalDetails(state.goal),
+				terminate: true,
+			};
+		},
+		renderCall(args, theme) {
+			const summary = args?.change_summary ? truncateText(args.change_summary, 80) : `${args?.tasks?.length ?? 0} tasks`;
+			return new Text(theme.fg("toolTitle", "set_goal_tasks ") + theme.fg("muted", summary), 0, 0);
+		},
+		renderResult(result, _options, theme) {
+			return renderGoalResult(result, theme);
+		},
+	}));
+
+	// ── update_goal_task: discriminated per-task status tool (Stage 4) ───────
+	pi.registerTool(defineTool({
+		name: UPDATE_GOAL_TASK_TOOL_NAME,
+		label: "Update Goal Task",
+		description: "Update one task in the focused goal's task tree without stopping the turn: status \"complete\" (with optional evidence; requires evidence when the task has a verification contract and enforces completed children), \"skipped\" (requires a reason; restricted to explicit user direction or a hard contradiction), or \"pending\" (reopens a skipped task). Completed tasks are immutable through this tool.",
+		promptSnippet: "Mark one task complete, skipped, or reopened. Does not stop the turn.",
+		promptGuidelines: [
+			"Use update_goal_task to update exactly one task; the turn does NOT stop so you may continue with other work.",
+			"status=complete requires evidence when the task has a verification contract, and requires all non-lightweight children to be complete first.",
+			"status=skipped requires a concrete reason and is restricted to explicit user direction or a hard contradiction (e.g. an impossible requirement). Do not skip to avoid work.",
+			"status=pending reopens a skipped task (clears its skip state). Completed tasks cannot be reopened through this tool.",
+		],
+		parameters: Type.Object({
+			task_id: Type.String({ description: "Task id to update" }),
+			status: StringEnum(["complete", "skipped", "pending"] as const, { description: "complete (with optional evidence), skipped (requires reason), or pending (reopens a skipped task)." }),
+			evidence: Type.Optional(Type.String({ description: "Evidence note for complete (max 200 characters). Required when the task has a verification contract." })),
+			reason: Type.Optional(Type.String({ description: "Reason for skipped. Required when status=skipped." })),
+		}, { additionalProperties: false }),
+		executionMode: "sequential",
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			reconcileFocusedGoalFromDisk(ctx);
+			if (loadGoalSettings(ctx.cwd).disableTasks) {
+				return {
+					content: [{ type: "text", text: "update_goal_task is disabled by settings (disableTasks: true)." }],
+					details: goalDetails(state.goal),
+				};
+			}
+			const gate = validateTaskCompletion({ goal: state.goal, taskId: params.task_id });
+			// The completion gate rejects skipped/complete tasks; for status=pending
+			// (reopen) we intentionally bypass it — the reopen rules are enforced in
+			// the pending branch below.
+			if (!gate.ok && params.status !== "pending") {
+				return {
+					content: [{ type: "text", text: gate.message }],
+					details: goalDetails(state.goal),
+				};
+			}
+			if (!state.goal?.taskList) throw new Error("Task list disappeared during task update.");
+			const taskToUpdate = findTaskInTree(state.goal.taskList.tasks, params.task_id);
+			if (!taskToUpdate) throw new Error(`Task ${params.task_id} not found.`);
+			const settings = loadGoalSettings(ctx.cwd);
+			const now = nowIso();
+
+			if (params.status === "complete") {
+				if (!settings.disableContracts && taskToUpdate.verificationContract && !params.evidence?.trim()) {
+					return {
+						content: [{ type: "text", text: `Task "${params.task_id}" has a verification contract; provide evidence to complete it.` }],
+						details: goalDetails(state.goal),
+					};
+				}
+				const subtaskGate = checkSubtasksComplete(taskToUpdate);
+				if (subtaskGate) {
+					return {
+						content: [{ type: "text", text: subtaskGate }],
+						details: goalDetails(state.goal),
+					};
+				}
+				const evidence = params.evidence?.trim().slice(0, 200) || undefined;
+				const updatedTasks = updateTaskInTree(state.goal.taskList.tasks, params.task_id, (t) => ({
+					...t,
+					status: "complete" as const,
+					completedAt: now,
+					evidence,
+				}));
+				const result = goalService.apply(ctx, {
+					reconcile: false,
+					refreshFromDisk: true,
+					mutate: (g) => {
+						if (!g.taskList) throw new Error("Task list disappeared during task update.");
+						return { ...g, taskList: { ...g.taskList, tasks: updatedTasks }, updatedAt: now };
+					},
+					ledger: (written) => [{
+						type: "task_complete",
+						goalId: written.id,
+						taskId: params.task_id,
+						evidence,
+						at: written.updatedAt,
+					}],
+				});
+				if (!result.ok) {
+					return { content: [{ type: "text", text: result.message }], details: goalDetails(state.goal) };
+				}
+				syncGoalTools();
+				updateUI(ctx);
+				return {
+					content: [{ type: "text", text: `${params.task_id} complete. ${buildTaskSummary(state.goal.taskList!)}.` }],
+					details: goalDetails(state.goal),
+				};
+			}
+
+			if (params.status === "skipped") {
+				const reason = params.reason?.trim();
+				if (!reason) {
+					return {
+						content: [{ type: "text", text: "update_goal_task(status=skipped) requires a non-empty reason." }],
+						details: goalDetails(state.goal),
+					};
+				}
+				const skipGate = validateTaskSkip({ goal: state.goal, taskId: params.task_id, reason });
+				if (!skipGate.ok) {
+					return {
+						content: [{ type: "text", text: skipGate.message }],
+						details: goalDetails(state.goal),
+					};
+				}
+				const updatedTasks = updateTaskInTree(state.goal.taskList.tasks, params.task_id, (t) => {
+					const base = { ...t, status: "skipped" as const, skippedAt: now, skipReason: reason };
+					if (t.subtasks && t.subtasks.length > 0 && !t.lightweightSubtasks) {
+						return skipAllSubtasks(base, now, reason);
+					}
+					return base;
+				});
+				const result = goalService.apply(ctx, {
+					reconcile: false,
+					refreshFromDisk: true,
+					mutate: (g) => {
+						if (!g.taskList) throw new Error("Task list disappeared during task update.");
+						return { ...g, taskList: { ...g.taskList, tasks: updatedTasks }, updatedAt: now };
+					},
+					ledger: (written) => [{
+						type: "task_skipped",
+						goalId: written.id,
+						taskId: params.task_id,
+						reason,
+						at: written.updatedAt,
+					}],
+				});
+				if (!result.ok) {
+					return { content: [{ type: "text", text: result.message }], details: goalDetails(state.goal) };
+				}
+				syncGoalTools();
+				updateUI(ctx);
+				return {
+					content: [{ type: "text", text: `${params.task_id} skipped. ${buildTaskSummary(state.goal.taskList!)}.` }],
+					details: goalDetails(state.goal),
+				};
+			}
+
+			// status === "pending": reopen a skipped task; completed tasks are immutable.
+			if (taskToUpdate.status === "complete") {
+				return {
+					content: [{ type: "text", text: `Task "${params.task_id}" is complete and cannot be reopened through update_goal_task.` }],
+					details: goalDetails(state.goal),
+				};
+			}
+			if (taskToUpdate.status !== "skipped") {
+				return {
+					content: [{ type: "text", text: `Task "${params.task_id}" is not skipped; only skipped tasks can be reopened with status=pending.` }],
+					details: goalDetails(state.goal),
+				};
+			}
+			const updatedTasks = updateTaskInTree(state.goal.taskList.tasks, params.task_id, (t) => {
+				const { skippedAt, skipReason, ...rest } = t;
+				return { ...rest, status: "pending" as const };
+			});
+			const result = goalService.apply(ctx, {
+				reconcile: false,
+				refreshFromDisk: true,
+				mutate: (g) => {
+					if (!g.taskList) throw new Error("Task list disappeared during task update.");
+					return { ...g, taskList: { ...g.taskList, tasks: updatedTasks }, updatedAt: now };
+				},
+				ledger: (written) => [{
+					type: "task_skipped",
+					goalId: written.id,
+					taskId: params.task_id,
+					reason: "unskipped (toggle via update_goal_task status=pending)",
+					at: written.updatedAt,
+				}],
+			});
+			if (!result.ok) {
+				return { content: [{ type: "text", text: result.message }], details: goalDetails(state.goal) };
+			}
+			syncGoalTools();
+			updateUI(ctx);
+			return {
+				content: [{ type: "text", text: `${params.task_id} reopened. ${buildTaskSummary(state.goal.taskList!)}.` }],
+				details: goalDetails(state.goal),
+			};
+		},
+		renderCall(args, theme) {
+			return new Text(theme.fg("toolTitle", "update_goal_task ") + theme.fg("muted", `${args?.task_id ?? ""} ${args?.status ?? ""}`), 0, 0);
 		},
 		renderResult(result, _options, theme) {
 			return renderGoalResult(result, theme);

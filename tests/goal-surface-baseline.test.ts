@@ -77,6 +77,8 @@ const EXPECTED_REGISTERED_TOOLS = [
 	"propose_task_list",
 	"complete_task",
 	"skip_task",
+	"set_goal_tasks",
+	"update_goal_task",
 ] as const;
 
 /**
@@ -103,7 +105,7 @@ const EXPECTED_REGISTERED_COMMANDS = [
 	"goal-resume",
 ] as const;
 
-test("baseline: exactly 14 goal tools are registered, in pinned order", () => {
+test("baseline: exactly 16 goal tools are registered, in pinned order", () => {
 	const { pi, registeredTools } = createRecordingPi();
 	piGoalExtension(pi as never);
 
@@ -131,10 +133,10 @@ test("baseline: advertised tool sets are the Stage 3 three-core surface (+ legac
 	// tools remain advertised until Stage 4 replaces them.
 	assert.deepEqual(ACTIVE_GOAL_TOOL_NAMES, [
 		"create_goal", "get_goal", "update_goal",
-		"propose_task_list", "complete_task", "skip_task",
+		"set_goal_tasks", "update_goal_task",
 	]);
 	assert.deepEqual(PAUSED_GOAL_TOOL_NAMES, [
-		"create_goal", "get_goal", "update_goal", "propose_task_list",
+		"create_goal", "get_goal", "update_goal", "set_goal_tasks",
 	]);
 	assert.deepEqual(NO_FOCUSED_GOAL_TOOL_NAMES, ["get_goal", "create_goal"]);
 });
@@ -156,6 +158,9 @@ test("baseline: every registered tool name is referenced by goal-tool-names cons
 		"complete_goal",
 		"pause_goal",
 		"abort_goal",
+		"propose_task_list",
+		"complete_task",
+		"skip_task",
 		"step_complete",
 	]);
 	for (const tool of registeredTools) {

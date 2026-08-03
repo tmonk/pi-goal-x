@@ -77,11 +77,11 @@ function testFixture() {
 
 const ACTIVE_LIFECYCLE_TOOLS = [
 	"create_goal", "get_goal", "update_goal",
-	"propose_task_list", "complete_task", "skip_task",
+	"set_goal_tasks", "update_goal_task",
 ];
 
 const PAUSED_LIFECYCLE_TOOLS = [
-	"create_goal", "get_goal", "update_goal", "propose_task_list",
+	"create_goal", "get_goal", "update_goal", "set_goal_tasks",
 ];
 
 const NO_GOAL_TOOLS = ["get_goal", "create_goal"];
@@ -639,7 +639,7 @@ describe("Tool visibility integration", () => {
 	});
 
 	// ── Progressive task completion keeps tools stable ───────────────────
-	it("complete_task tool executes and stays active after marking tasks done", async () => {
+	it("update_goal_task tool executes and stays active after marking tasks done", async () => {
 		const f = testFixture();
 		try {
 			// Set up a goal WITH a task list
@@ -694,17 +694,17 @@ describe("Tool visibility integration", () => {
 				systemPromptOptions: {},
 			}, taskCtx);
 
-			// Verify complete_task is in the active set
-			assert.ok(activeToolNames.includes("complete_task"),
-				"complete_task must be active before task completion");
+			// Verify update_goal_task is in the active set
+			assert.ok(activeToolNames.includes("update_goal_task"),
+				"update_goal_task must be active before task completion");
 
-			// Call complete_task tool execute handler
-			const completeTaskTool = registeredTools.find((t) => t.name === "complete_task");
-			assert.ok(completeTaskTool, "complete_task tool must be registered");
+			// Call update_goal_task tool execute handler
+			const updateTaskTool = registeredTools.find((t) => t.name === "update_goal_task");
+			assert.ok(updateTaskTool, "update_goal_task tool must be registered");
 
-			const result1 = await (completeTaskTool.execute as Function)(
+			const result1 = await (updateTaskTool.execute as Function)(
 				"call-task-1",
-				{ taskId: "t1", evidence: "Done" },
+				{ task_id: "t1", status: "complete", evidence: "Done" },
 				new AbortController().signal,
 				undefined,
 				taskCtx,
@@ -714,16 +714,16 @@ describe("Tool visibility integration", () => {
 			assert.ok(text1.includes("t1 complete") || text1.includes("1/2"),
 				`complete_task should report t1 complete. Got: ${text1}`);
 
-			// After executing complete_task, all lifecycle tools should still be present
+			// After executing update_goal_task, all lifecycle tools should still be present
 			for (const tool of ALL_LIFECYCLE_TOOLS) {
 				assert.ok(activeToolNames.includes(tool),
 					`after completing t1, should still have tool "${tool}". Active: ${JSON.stringify(activeToolNames)}`);
 			}
 
 			// Complete the second task
-			const result2 = await (completeTaskTool.execute as Function)(
+			const result2 = await (updateTaskTool.execute as Function)(
 				"call-task-2",
-				{ taskId: "t2", evidence: "Done too" },
+				{ task_id: "t2", status: "complete", evidence: "Done too" },
 				new AbortController().signal,
 				undefined,
 				taskCtx,
