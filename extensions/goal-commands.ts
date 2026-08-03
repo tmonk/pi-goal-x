@@ -3,6 +3,7 @@ import { extractVerificationContract } from "./goal-draft.ts";
 import { detailedSummary, oneLineSummary } from "./goal-format.ts";
 import {
 	goalSettingsPath,
+	loadGoalSettings,
 	loadGoalSettingsFileConfig,
 	saveGoalSettingsFileConfig,
 	type GoalSettings,
@@ -122,7 +123,6 @@ export function registerGoalCommands(core: GoalCore): void {
 		const { objective, verificationContract } = extractVerificationContract(raw);
 		core.clearContinuationState();
 		core.clearActiveAccounting();
-		core.syncGoalTools();
 		core.replaceGoal({ objective, autoContinue: true, sisyphus: focus === "sisyphus" }, ctx, true, verificationContract);
 	}
 
@@ -233,6 +233,17 @@ export function registerGoalCommands(core: GoalCore): void {
 			return;
 		}
 		const editorKeys = ["disabled", "provider", "model", "thinking_level", "subtaskDepth", "autoSelectSingleGoal"] as const;
+		// Fixed-profile hook: if a settings change toggles disableTasks, the
+		// three/five goal-tool profile is reinstalled exactly once. Lifecycle
+		// transitions never touch the profile.
+		const tasksEnabledAtMenuStart = !loadGoalSettings(ctx.cwd).disableTasks;
+		const saveSettings = (next: GoalSettings): void => {
+			saveSettings(next);
+			const tasksEnabledNow = !loadGoalSettings(ctx.cwd).disableTasks;
+			if (tasksEnabledNow !== tasksEnabledAtMenuStart) {
+				core.installGoalToolProfile(tasksEnabledNow);
+			}
+		};
 		while (true) {
 			const config = loadGoalSettingsFileConfig(ctx.cwd);
 			const options = settingsLines(config).map((line) => `  ${line}`);
@@ -250,13 +261,13 @@ export function registerGoalCommands(core: GoalCore): void {
 			const key = editorKey as keyof GoalSettings;
 			if (key === "disabled") {
 				const next = { ...config, disabled: !config.disabled };
-				saveGoalSettingsFileConfig(ctx.cwd, next);
+				saveSettings(next);
 				ctx.ui.notify(`Settings saved:\n${settingsLines(loadGoalSettingsFileConfig(ctx.cwd)).join("\n")}`, "info");
 				continue;
 			}
 			if (key === "autoSelectSingleGoal") {
 				const next = { ...config, autoSelectSingleGoal: config.autoSelectSingleGoal !== true };
-				saveGoalSettingsFileConfig(ctx.cwd, next);
+				saveSettings(next);
 				ctx.ui.notify(`Settings saved:\n${settingsLines(loadGoalSettingsFileConfig(ctx.cwd)).join("\n")}`, "info");
 				continue;
 			}
@@ -269,7 +280,7 @@ export function registerGoalCommands(core: GoalCore): void {
 					continue;
 				}
 				const next = { ...config, subtaskDepth: n };
-				saveGoalSettingsFileConfig(ctx.cwd, next);
+				saveSettings(next);
 				ctx.ui.notify(`Settings saved:\n${settingsLines(loadGoalSettingsFileConfig(ctx.cwd)).join("\n")}`, "info");
 				continue;
 			}
@@ -289,7 +300,7 @@ export function registerGoalCommands(core: GoalCore): void {
 			} else if (key === "provider" || key === "model") {
 				next[key] = inputTrimmed;
 			}
-			saveGoalSettingsFileConfig(ctx.cwd, next);
+			saveSettings(next);
 			ctx.ui.notify(`Settings saved:\n${settingsLines(loadGoalSettingsFileConfig(ctx.cwd)).join("\n")}`, "info");
 		}
 	}
@@ -303,7 +314,6 @@ export function registerGoalCommands(core: GoalCore): void {
 		const archived = core.archiveCurrentGoal(ctx, "user");
 		const didArchive = !!archived;
 		core.setGoal(null, ctx, true, "cleared");
-		core.syncGoalTools();
 		const msg = clearGoalCommandMessage({ archived: didArchive, wasDrafting: false });
 		ctx.ui.notify(msg, didArchive ? "info" : "warning");
 	}
@@ -370,7 +380,6 @@ export function registerGoalCommands(core: GoalCore): void {
 		}
 		core.runtime.markTurnStopped(result.goal.id);
 		core.clearContinuationState();
-		core.syncGoalTools();
 		core.updateUI(ctx);
 		ctx.ui.notify("Goal objective updated.", "info");
 	}

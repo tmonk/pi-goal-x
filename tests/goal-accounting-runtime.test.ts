@@ -105,7 +105,6 @@ function makeRuntime(overrides: Partial<{
 		sendFollowUp: (content, details) => { sent.push({ content, details }); },
 		getGoal: () => overrides.getGoal?.() ?? null,
 		isActionable: (id) => overrides.isActionable ? overrides.isActionable(id) : false,
-		syncTools: () => {},
 	});
 	return { runtime, sent };
 }

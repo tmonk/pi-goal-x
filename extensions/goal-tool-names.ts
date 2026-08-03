@@ -19,6 +19,15 @@ export const CORE_GOAL_TOOL_NAMES = [CREATE_GOAL_TOOL_NAME, GET_GOAL_TOOL_NAME, 
 /** The two consolidated task tools advertised when tasks are enabled (Stage 4). */
 export const TASK_TOOL_NAMES = [SET_GOAL_TASKS_TOOL_NAME, UPDATE_GOAL_TASK_TOOL_NAME] as const;
 
+/** Fixed task-enabled profile: all five registered goal tools. */
+export const FIVE_GOAL_TOOLS = [...CORE_GOAL_TOOL_NAMES, ...TASK_TOOL_NAMES] as const;
+
+/** Fixed task-disabled profile: the three core tools. */
+export const CORE_GOAL_TOOLS = CORE_GOAL_TOOL_NAMES;
+
+/** Every goal tool this extension registers (used by installGoalToolProfile). */
+export const ALL_REGISTERED_GOAL_TOOLS = [...FIVE_GOAL_TOOLS] as const;
+
 /** Legacy task tools kept only as non-advertised compatibility shims until Stage 7. */
 export const LEGACY_TASK_TOOL_NAMES = [PROPOSE_TASK_LIST_TOOL_NAME, COMPLETE_TASK_TOOL_NAME, SKIP_TASK_TOOL_NAME] as const;
 

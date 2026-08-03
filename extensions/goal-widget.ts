@@ -97,7 +97,6 @@ export function syncTerminalInputPause(core: GoalCore, ctx: ExtensionContext): v
 					core.assignFocusedGoalId(null);
 				}
 				core.clearStoppedRuntimeState();
-				core.syncGoalTools();
 				core.updateUI(ctx);
 				ctx.ui.notify("Debug goal removed", "info");
 				return;

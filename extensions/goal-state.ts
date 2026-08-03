@@ -1,14 +1,11 @@
 import { type AgentToolResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { footerStatus } from "./goal-core.ts";
-import { FOCUS_ENTRY, STATE_ENTRY, COMPLETE_STATUS, GOAL_EVENT_ENTRY, goalDetails } from "./goal-format.ts";
+import { FOCUS_ENTRY, STATE_ENTRY, GOAL_EVENT_ENTRY, goalDetails } from "./goal-format.ts";
 import { loadGoalSettings, loadGoalSettingsFileConfig } from "./goal-settings.ts";
 import {
-	CREATE_GOAL_TOOL_NAME,
-	GET_GOAL_TOOL_NAME,
-	SET_GOAL_TASKS_TOOL_NAME,
-	TASK_TOOL_NAMES,
-	UPDATE_GOAL_TASK_TOOL_NAME,
-	UPDATE_GOAL_TOOL_NAME,
+	ALL_REGISTERED_GOAL_TOOLS,
+	CORE_GOAL_TOOLS,
+	FIVE_GOAL_TOOLS,
 } from "./goal-tool-names.ts";
 import { budgetReached } from "./goal-accounting.ts";
 import {
@@ -46,7 +43,7 @@ import { GoalWidgetComponent, type AuditorWidgetProgress } from "./widgets/goal-
 import { runGoalCompletionAuditor } from "./goal-auditor.ts";
 
 const GOAL_WIDGET_KEY = "goal";
-const goalExecutionWorkTools = ["read", "bash", "edit", "write"] as const;
+
 
 /**
  * The shared mutable core of the goal extension. All state lives here; the
@@ -80,7 +77,7 @@ export interface GoalCore {
 	focusedOperationToken(goalId: string): { goalId: string; revision: number };
 	isFocusedOperationCurrent(token: { goalId: string; revision: number }): boolean;
 	focusedOperationCancelledResult(action: string, token: { goalId: string; revision: number }): AgentToolResult<unknown>;
-	syncGoalTools(): void;
+	installGoalToolProfile(tasksEnabled: boolean): void;
 	stopAuditAnimation(): void;
 	abortAudit(ctx: ExtensionContext): void;
 	clearContinuationTimer(): void;
@@ -184,7 +181,6 @@ export function createGoalCore(
 		appendFocusEntry: (goalId, reason) => appendFocusEntry(goalId, reason),
 		onFocusedGoalLost: (lostGoalId, ctx) => {
 			clearStoppedRuntimeState();
-			syncGoalTools();
 			updateUI(ctx as unknown as ExtensionContext);
 		},
 		onReconciled: (goal) => {
@@ -226,7 +222,6 @@ export function createGoalCore(
 		},
 		getGoal: () => state.goal,
 		isActionable: (goalId) => isActionableContinuationGoal(goalId),
-		syncTools: () => syncGoalTools(),
 	});
 	const accounting = new GoalAccounting();
 
@@ -234,39 +229,28 @@ export function createGoalCore(
 	// settings (disableTasks). Stage 4 replaces them with the two task tools.
 	let tasksEnabled = true;
 
-	function syncGoalTools(): void {
+	/**
+	 * Install the fixed three/five goal-tool profile. Called only after session
+	 * initialization and after a settings change that toggles disableTasks.
+	 * Lifecycle transitions, focus changes, status changes, and compaction never
+	 * add/remove/restore goal tools, and this never mutates the host's ordinary
+	 * work-tool selection.
+	 */
+	/**
+	 * Install the fixed three/five goal-tool profile. Called only after session
+	 * initialization and after a settings change that toggles disableTasks.
+	 * Lifecycle transitions, focus changes, status changes, and compaction never
+	 * add/remove/restore goal tools, and this never mutates the host's ordinary
+	 * work-tool selection.
+	 */
+	function installGoalToolProfile(tasksEnabled: boolean): void {
 		try {
-			const initialTools = pi.getActiveTools();
-			if (!Array.isArray(initialTools)) {
-				console.error("[pi-goal] syncGoalTools: pi.getActiveTools() did not return an array, got", typeof initialTools);
-				return;
-			}
-			// Static install (Stage 6): the five model tools are the only goal
-			// tools. get_goal is always present; create_goal too; update_goal
-			// appears whenever a non-complete goal is focused; the two task tools
-			// are gated on tasksEnabled (decided at session start) and status.
-			const active = new Set(initialTools);
-			for (const name of goalExecutionWorkTools) active.add(name);
-			// Remove the state-dependent goal tools first, then add back per state,
-			// so stale tools from a prior focus never leak into the active set.
-			active.delete(UPDATE_GOAL_TOOL_NAME);
-			active.delete(SET_GOAL_TASKS_TOOL_NAME);
-			active.delete(UPDATE_GOAL_TASK_TOOL_NAME);
-			active.add(GET_GOAL_TOOL_NAME);
-			active.add(CREATE_GOAL_TOOL_NAME);
-			if (state.goal && state.goal.status !== COMPLETE_STATUS) {
-				active.add(UPDATE_GOAL_TOOL_NAME);
-			}
-			if (tasksEnabled && state.goal) {
-				if (state.goal.status === "active") {
-					for (const name of TASK_TOOL_NAMES) active.add(name);
-				} else if (state.goal.status === "paused") {
-					active.add(SET_GOAL_TASKS_TOOL_NAME);
-				}
-			}
-			pi.setActiveTools(Array.from(active));
+			const current = new Set(pi.getActiveTools());
+			for (const knownGoalTool of ALL_REGISTERED_GOAL_TOOLS) current.delete(knownGoalTool);
+			for (const goalTool of tasksEnabled ? FIVE_GOAL_TOOLS : CORE_GOAL_TOOLS) current.add(goalTool);
+			pi.setActiveTools([...current]);
 		} catch (err) {
-			console.error("[pi-goal] syncGoalTools error:", err instanceof Error ? err.message : String(err));
+			console.error("[pi-goal] installGoalToolProfile error:", err instanceof Error ? err.message : String(err));
 		}
 	}
 
@@ -371,7 +355,6 @@ export function createGoalCore(
 		} catch {
 			// Ledger append failure should not crash focus change
 		}
-		syncGoalTools();
 		updateUI(ctx);
 	}
 
@@ -379,7 +362,6 @@ export function createGoalCore(
 		goalsById.set(next.id, next);
 		assignFocusedGoalId(next.id);
 		if (shouldPersist) persist(ctx);
-		else syncGoalTools();
 		updateUI(ctx);
 	}
 
@@ -393,7 +375,6 @@ export function createGoalCore(
 		assignFocusedGoalId(null);
 		clearStoppedRuntimeState();
 		appendFocusEntry(null, reason);
-		syncGoalTools();
 		updateUI(ctx);
 	}
 
@@ -456,7 +437,6 @@ export function createGoalCore(
 				runtime.armPostBudgetReminder();
 				runtime.clearContinuationState();
 				accounting.clear();
-				syncGoalTools();
 				updateUI(ctx);
 			}
 		}
@@ -476,7 +456,6 @@ export function createGoalCore(
 			const current = state.goal;
 			if (current) state.goal = { ...current, updatedAt: nowIso() };
 		}
-		syncGoalTools();
 		if (ctx) updateUI(ctx);
 	}
 
@@ -485,7 +464,6 @@ export function createGoalCore(
 		if (syncGoalPromptFromDisk(ctx)) {
 			state.goal = { ...state.goal, updatedAt: nowIso() };
 		}
-		syncGoalTools();
 		updateUI(ctx);
 	}
 
@@ -521,6 +499,7 @@ export function createGoalCore(
 	 *   ├─ Blocker: cannot find the tests directory
 	 *   └─ Suggested: ask the user for the test location
 	 */
+
 	function updateUI(ctx: ExtensionContext): void {
 		if (!ctx.hasUI) return;
 		const totalOpen = openGoals().length;
@@ -640,7 +619,6 @@ export function createGoalCore(
 			clearActiveAccounting();
 		}
 		if (shouldPersist) persist(ctx);
-		else syncGoalTools();
 		updateUI(ctx);
 	}
 
@@ -681,7 +659,6 @@ export function createGoalCore(
 			// accrue time, and the UI must reflect the new status immediately.
 			clearContinuationState();
 			clearActiveAccounting();
-			syncGoalTools();
 			updateUI(ctx);
 		}
 	}
@@ -802,7 +779,7 @@ export function createGoalCore(
 		focusedOperationToken,
 		isFocusedOperationCurrent,
 		focusedOperationCancelledResult,
-		syncGoalTools,
+		installGoalToolProfile,
 		stopAuditAnimation,
 		abortAudit,
 		clearContinuationTimer,

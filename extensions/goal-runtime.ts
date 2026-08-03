@@ -25,8 +25,6 @@ export interface GoalRuntimeHooks {
 	getGoal(): GoalRecord | null;
 	/** Whether a checkpointed goal id is still actionable (active + autoContinue). */
 	isActionable(goalId: string | null | undefined): boolean;
-	/** Restore the active tool set before a continuation fires. */
-	syncTools(): void;
 }
 
 export class GoalRuntime {
@@ -103,7 +101,6 @@ export class GoalRuntime {
 	private sendQueuedContinuation(ctx: ExtensionContext, goalId: string): void {
 		this.continuationTimer = null;
 		this.continuationScheduledFor = null;
-		this.hooks.syncTools();
 		if (!this.hooks.isActionable(goalId)) {
 			if (this.continuationQueuedFor === goalId) this.continuationQueuedFor = null;
 			return;

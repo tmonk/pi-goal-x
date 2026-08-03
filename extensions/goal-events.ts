@@ -74,7 +74,6 @@ export function registerGoalEvents(core: GoalCore): void {
 		// Per-turn flag resets (#4 + C9 fix).
 		core.advanceTurnSeq();
 		core.goalWorkToolCalledThisTurn = false;
-		core.syncGoalTools();
 		core.beginAccounting();
 		core.updateUI(ctx);
 	});
@@ -148,7 +147,6 @@ export function registerGoalEvents(core: GoalCore): void {
 				core.assignFocusedGoalId(null);
 				core.appendFocusEntry(null, "completed");
 			}
-			core.syncGoalTools();
 			core.updateUI(ctx);
 		}
 
@@ -174,9 +172,8 @@ export function registerGoalEvents(core: GoalCore): void {
 	});
 
 	pi.on("session_start", async (event, ctx) => {
-		core.syncGoalTools();
 		core.loadState(ctx);
-		core.syncGoalTools();
+		core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
 		syncTerminalInputPause(core, ctx);
 		if (event.reason === "resume" && !core.state.goal && !core.hasExplicitSessionFocus && core.openGoals().length > 1 && ctx.hasUI) {
 			// Prompt the user to pick which open goal to focus (mirrors /goal-focus).
@@ -226,7 +223,6 @@ export function registerGoalEvents(core: GoalCore): void {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		core.advanceTurnSeq();
-		core.syncGoalTools();
 		const currentSystemPrompt = () => ctx.getSystemPrompt?.() || event.systemPrompt;
 		const incomingGoalId = extractGoalIdFromInjectedMessage(event.prompt ?? "");
 

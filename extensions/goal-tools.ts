@@ -62,7 +62,6 @@ export function registerGoalTools(core: GoalCore): void {
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			core.reconcileFocusedGoalFromDisk(ctx);
 			if (core.state.goal) core.syncGoalPromptFromDisk(ctx);
-			core.syncGoalTools();
 			const view = core.goalForDisplay() ?? core.state.goal;
 			const otherCount = otherOpenGoalCount(core.goalsById, core.focusedGoalId);
 			if (!view) {
@@ -234,7 +233,6 @@ export function registerGoalTools(core: GoalCore): void {
 			mutate: () => ({ ...opts.goal, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
 		});
 		if (completeResult.ok && completeResult.goal) core.runtime.markTurnStopped(completeResult.goal.id);
-		core.syncGoalTools();
 		core.updateUI(ctx);
 		const text = buildCompletionReport({
 			detailedSummary: detailedSummary(core.state.goal),
@@ -549,7 +547,6 @@ export function registerGoalTools(core: GoalCore): void {
 			core.clearContinuationState();
 			core.clearActiveAccounting();
 			if (result.goal) core.runtime.markTurnStopped(result.goal.id);
-			core.syncGoalTools();
 			core.updateUI(ctx);
 		}
 		return {
@@ -708,7 +705,6 @@ export function registerGoalTools(core: GoalCore): void {
 				return core.focusedOperationCancelledResult("Task list proposal", taskListFocus);
 			}
 			core.runtime.markTurnStopped(core.state.goal.id);
-			core.syncGoalTools();
 			core.updateUI(ctx);
 			return {
 				content: [{ type: "text", text: `Task list set and confirmed. ${taskList.tasks.length} task${taskList.tasks.length === 1 ? "" : "s"}.${gateLabel}` }],
@@ -807,7 +803,6 @@ export function registerGoalTools(core: GoalCore): void {
 				if (!result.ok) {
 					return { content: [{ type: "text", text: result.message }], details: goalDetails(core.state.goal) };
 				}
-				core.syncGoalTools();
 				core.updateUI(ctx);
 				return {
 					content: [{ type: "text", text: `${params.task_id} complete. ${buildTaskSummary(core.state.goal.taskList!)}.` }],
@@ -855,7 +850,6 @@ export function registerGoalTools(core: GoalCore): void {
 				if (!result.ok) {
 					return { content: [{ type: "text", text: result.message }], details: goalDetails(core.state.goal) };
 				}
-				core.syncGoalTools();
 				core.updateUI(ctx);
 				return {
 					content: [{ type: "text", text: `${params.task_id} skipped. ${buildTaskSummary(core.state.goal.taskList!)}.` }],
@@ -898,7 +892,6 @@ export function registerGoalTools(core: GoalCore): void {
 			if (!result.ok) {
 				return { content: [{ type: "text", text: result.message }], details: goalDetails(core.state.goal) };
 			}
-			core.syncGoalTools();
 			core.updateUI(ctx);
 			return {
 				content: [{ type: "text", text: `${params.task_id} reopened. ${buildTaskSummary(core.state.goal.taskList!)}.` }],
