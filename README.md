@@ -84,6 +84,7 @@ If the objective is already final and should start immediately, use:
 /goal-status            Show focused goal state
 /goal-list              List all open goals in .pi/goals/
 /goal-focus             Choose this session's focused goal
+/goal-unfocus           Unfocus this session without modifying the shared goal
 /goal-tweak <change>    Draft a revision to the focused active/paused goal
 /goal-pause             Pause the focused active goal
 /goal-resume            Resume a paused goal
@@ -104,7 +105,7 @@ Pressing `Esc` or aborting an active run pauses the goal so it does not remain f
 - **Branch-local focus**: because focus is reconstructed from the current session branch, `/tree` navigation can restore a different focus for a different branch.
 - **One continuation chain**: auto-continue only schedules work for the focused goal in the current session.
 
-Creating a goal with `/goals`, `/sisyphus`, `/goals-set`, or `/sisyphus-set` no longer clears other open goals. It creates a new active goal file and focuses it. Use `/goal-list` to inspect open goals and `/goal-focus` to switch the session focus. If the latest focus entry explicitly clears focus, or points at a missing/stale goal, a remaining single open goal is not auto-focused. By default (`autoSelectSingleGoal: false`) sessions start unfocused so goals stay session-scoped — useful when multiple sessions share the same `.pi/goals/` directory. Set `autoSelectSingleGoal: true` to restore the old behavior where a single open goal is auto-focused when no focus entry exists at all. If multiple open goals exist and the session has no valid focus, `/goal-resume`, `/goal-clear`, `/goal-abort`, `/goal-pause`, and `/goal-tweak` ask the user to choose a goal instead of acting on all of them.
+Creating a goal with `/goals`, `/sisyphus`, `/goals-set`, or `/sisyphus-set` no longer clears other open goals. It creates a new active goal file and focuses it. Use `/goal-list` to inspect open goals, `/goal-focus` to switch the session focus, and `/goal-unfocus` to detach the current session without pausing, modifying, or archiving the shared goal. If the latest focus entry explicitly clears focus, or points at a missing/stale goal, a remaining single open goal is not auto-focused. By default (`autoSelectSingleGoal: false`) sessions start unfocused so focus stays session-scoped — useful when multiple sessions share the same `.pi/goals/` directory. Set `autoSelectSingleGoal: true` to restore the old behavior where a single open goal is auto-focused when no focus entry exists at all. If multiple open goals exist and the session has no valid focus, `/goal-resume`, `/goal-clear`, `/goal-abort`, `/goal-pause`, and `/goal-tweak` ask the user to choose a goal instead of acting on all of them.
 
 ## Agent tools
 

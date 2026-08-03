@@ -140,6 +140,7 @@ ledger append 是 best-effort：写入失败不应该让用户的生命周期动
 | `/sisyphus-set <objective>` | 直接创建并启动 Sisyphus goal，不进入 draft discussion。 |
 | `/goal-list` | 列出 `.pi/goals/` 下所有 open goals。 |
 | `/goal-focus` | 让用户选择当前 session focus。 |
+| `/goal-unfocus` | 只清除当前 session focus 和 continuation state，不暂停、修改或归档共享 goal。 |
 | `/goal-status` / `/goal` | 显示 focused goal 状态和其他 open goals 提示。 |
 | `/goal-tweak <change>` | 修改 focused goal，但也要先走 tweak drafting。 |
 | `/goal-pause` | 用户暂停 focused active goal。 |

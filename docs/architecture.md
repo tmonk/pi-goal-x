@@ -68,6 +68,7 @@ Reusable logic is split into smaller modules:
   ├─ multiple open goals
   │    ├─ /goal-list shows the project goal pool
   │    ├─ /goal-focus chooses the session focus
+  │    ├─ /goal-unfocus clears only the session focus and leaves the shared goal open
   │    └─ unfocused sessions guide the user to choose instead of letting the agent decide
   │
   └─ /goal-clear or /goal-abort archives the focused goal or cancels drafting
@@ -89,7 +90,7 @@ Session focus is separate. Focus changes append a custom session entry:
 {
   version: 1,
   focusedGoalId: string | null,
-  reason: "created" | "selected" | "resumed" | "completed" | "cleared" | "aborted" | "migrated"
+  reason: "created" | "selected" | "unfocused" | "resumed" | "completed" | "cleared" | "aborted" | "migrated"
 }
 ```
 
@@ -98,8 +99,8 @@ Because this is stored with `pi.appendEntry("pi-goal-focus", ...)`, it is sessio
 1. Use a valid focused id from the latest focus entry.
 2. If the latest focus entry explicitly has `focusedGoalId: null`, or points at a missing/stale goal, remain unfocused.
 3. If no focus entry exists, merge a compatible legacy `pi-goal-state { version: 3, goal }` goal and focus it. If disk already has the same id, the disk record wins and the legacy session record only supplies focus.
-4. If no focus entry exists and exactly one open goal exists, auto-focus it for compatibility.
-5. If multiple open goals exist and no valid focus exists, remain unfocused until `/goal-focus`, `/goal-resume`, `/goal-clear`, `/goal-abort`, `/goal-pause`, or `/goal-tweak` asks the user to choose.
+4. If no focus entry exists and `autoSelectSingleGoal` is enabled, auto-focus the sole open goal for compatibility. The default is disabled.
+5. Otherwise remain unfocused until the user explicitly selects a goal. `/goal-unfocus` appends a null focus entry so the current session stays detached without modifying the shared goal.
 
 Focus is human-owned. No agent tool can switch focus. Lifecycle tools operate only on the focused goal.
 
@@ -137,6 +138,7 @@ A deprecated optional `draftId` parameter is accepted for compatibility but igno
 - `/goals-set` and `/sisyphus-set` directly create and focus a new open goal from the supplied objective.
 - `/goal-list` prints all open goals with id, status, mode, usage, objective title, path, and a focus marker.
 - `/goal-focus` uses `ctx.ui.select` when multiple goals are open and updates only session focus.
+- `/goal-unfocus` writes a null session focus entry, clears that session's continuation/runtime state, and leaves the shared active goal file unchanged.
 - `/goal-status` and `/goal` show the focused goal plus an `other open goals` hint.
 - `/goal-resume` resumes the focused paused goal; when unfocused with multiple open goals, it asks the user to choose. Choosing an already active goal only focuses it.
 - `/goal-clear` and `/goal-abort` archive only the focused/selected goal and never clear the whole pool at once.

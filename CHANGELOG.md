@@ -8,6 +8,19 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`/goal-unfocus` command:** Detaches the current session from its focused goal,
+  stops that session's continuation state, and records a session-local cleared focus
+  without pausing, modifying, or archiving the shared goal in `.pi/goals/`.
+
+### Documentation
+
+- Clarified that `autoSelectSingleGoal: false` keeps focus—not the shared project goal
+  files—session-scoped.
+
 ## [0.20.1] — 2026-08-03
 
 ### Fixed

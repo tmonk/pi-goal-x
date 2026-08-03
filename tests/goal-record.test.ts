@@ -168,11 +168,21 @@ test("goal focus entries persist only session focus metadata", () => {
 		focusedGoalId: null,
 		reason: "cleared",
 	});
+	assert.deepEqual(goalFocusDetails(null, "unfocused"), {
+		version: 1,
+		focusedGoalId: null,
+		reason: "unfocused",
+	});
 
 	assert.deepEqual(normalizeGoalFocusEntry({ version: 1, focusedGoalId: "abc/def", reason: "resumed" }), {
 		version: 1,
 		focusedGoalId: "abc_def",
 		reason: "resumed",
+	});
+	assert.deepEqual(normalizeGoalFocusEntry({ version: 1, focusedGoalId: null, reason: "unfocused" }), {
+		version: 1,
+		focusedGoalId: null,
+		reason: "unfocused",
 	});
 	assert.deepEqual(normalizeGoalFocusEntry({ version: 1, focusedGoalId: "", reason: "unknown" }), {
 		version: 1,

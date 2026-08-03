@@ -1503,6 +1503,21 @@ Verification contract:
 		ctx.ui.notify(`Focused goal: ${oneLineSummary(state.goal)}`, "info");
 	}
 
+	function unfocusGoalCommand(ctx: ExtensionContext): void {
+		reconcileFocusedGoalFromDisk(ctx);
+		const current = state.goal;
+		if (!current) {
+			const openCount = openGoals().length;
+			ctx.ui.notify(openCount > 0 ? buildUnfocusedOpenGoalsSummary(openCount) : detailedSummary(null), "info");
+			return;
+		}
+		setFocusedGoalId(null, ctx, "unfocused");
+		runningGoalId = null;
+		checkpointGoalId = null;
+		postCompactReminderPending = false;
+		ctx.ui.notify(`Goal unfocused for this session. It remains open in .pi/goals: ${current.id}`, "info");
+	}
+
 	async function handleGoalCommandTopic(rawTopic: string, ctx: ExtensionContext, focus: DraftingFocus, opts: { replace: boolean }): Promise<void> {
 		const topic = rawTopic.trim();
 		if (opts.replace) {
@@ -1761,7 +1776,7 @@ Verification contract:
 		},
 	};
 	pi.registerCommand("goal", {
-		description: "Show focused goal status. Discuss with /goals or /sisyphus; direct-start with /goals-set or /sisyphus-set; manage with /goal-list, /goal-focus, /goal-settings, /goal-tweak, /goal-clear, /goal-abort, /goal-pause, /goal-resume.",
+		description: "Show focused goal status. Discuss with /goals or /sisyphus; direct-start with /goals-set or /sisyphus-set; manage with /goal-list, /goal-focus, /goal-unfocus, /goal-settings, /goal-tweak, /goal-clear, /goal-abort, /goal-pause, /goal-resume.",
 		handler: statusCommand.handler,
 	});
 	pi.registerCommand("goal-status", statusCommand);
@@ -1777,6 +1792,12 @@ Verification contract:
 		description: "Choose which open goal this session should focus on.",
 		handler: async (_rawArgs, ctx) => {
 			await focusGoalCommand(ctx);
+		},
+	});
+	pi.registerCommand("goal-unfocus", {
+		description: "Stop focusing the current goal in this session without modifying or archiving the shared goal.",
+		handler: async (_rawArgs, ctx) => {
+			unfocusGoalCommand(ctx);
 		},
 	});
 	pi.registerCommand("goal-settings", {
