@@ -316,3 +316,70 @@ tests stayed green and 4 command-palette tests added (483).
 
 Validation: `npm run test:serial` 483 pass / 0 fail; `npm run check` (tsc) 0
 errors; `git diff --check` clean.
+
+### 2026-08-04 04:10:00 - Stage 6: steering cleanup + C20-C26 + goal.ts module split
+
+Stage 6 completed. Summary of the three workstreams:
+
+- Bounded steering prompts (earlier milestone 4718b33): rewrote
+  `extensions/prompts/goal-prompts.ts` with the bounded five-tool templates
+  (10k fragment cap, objective escaping/truncation, no removed tool names,
+  three-turn blocker policy, objectiveEditedPrompt); deleted the 9 shim tool
+  registrations and the question tools; `syncGoalTools` is now a static
+  install; `/goal-tweak` reimplemented as a direct user-owned objective edit.
+- C20-C26 experiment cases (39574f1): seven new cases with mechanical
+  rejection rubrics (tool-not-called for removed tools, tool-args-jq for the
+  new tools, sandbox-file/jq checks): C20 core tool selection, C21 user
+  lifecycle ownership, C22 blocked three turns, C23 audit without paperwork,
+  C24 multi-goal focus, C25 task tool consolidation, C26 budget limit.
+- goal.ts module split (9729c5e + c5348bf + 1392322): goal.ts is now a
+  33-line thin installer. Modules behind a shared GoalCore (goal-state.ts):
+  goal-format.ts (pure helpers, extracted first), goal-state.ts (state +
+  GoalService/runtime/accounting wiring + persistence/UI closures), goal-tools.ts
+  (five tools + shared runGoalCompletionFlow/runGoalBlockedFlow), goal-commands.ts
+  (ten-command palette + handlers), goal-events.ts (13 lifecycle handlers),
+  goal-widget.ts (terminal keybindings + hidden debug helpers). Each extraction
+  landed with the serial suite green (459 tests). Five source-inspection tests
+  were repointed at the new module layout, and the dead
+  statusCommand/handleGoalAbort leftovers (removed /goal-status, /goal-abort)
+  plus the dormant registerQuestionnaireTools shims were deleted.
+
+Setback: the first extraction attempt put runGoalBlockedFlow twice in
+goal-tools.ts (once from the header, once from the moved region), which broke
+brace balance; fixed by removing the header duplicate. The `runningGoalId`
+shorthand-property replacement produced `{ goal: ..., core.runningGoalId }`
+invalid syntax in two validators; fixed with explicit
+`runningGoalId: core.runningGoalId`. Both were caught by tsc before tests.
+
+Validation: `npm run test:serial` 459 pass / 0 fail; `npm run check` (tsc) 0
+errors; `git diff --check` clean. `extensions/goal.ts` = 33 lines (< 500).
+
+### 2026-08-04 04:55:00 - Stage 7: compatibility removal
+
+Stage 7 completed (user elected to include it now rather than after one minor
+release):
+
+- Hidden shims deleted: `registerQuestionnaireTools` (goal_question /
+  goal_questionnaire registrations) removed from goal-questionnaire.ts
+  (1392322); grep confirms zero `name: "complete_goal" | "pause_goal" |
+  "abort_goal" | "propose_goal_draft" | "propose_goal_tweak" |
+  "propose_task_list" | "complete_task" | "skip_task" | "step_complete" |
+  "goal_question" | "goal_questionnaire"` registrations remain in
+  extensions/.
+- Legacy command routing deleted: the dead statusCommand const (removed
+  /goal-status) and handleGoalAbort handler (removed /goal-abort) were
+  dropped during the module split (c5348bf); grep confirms no
+  registerCommand("goal-status"|"goals"|"goals-set"|"sisyphus-set"|
+  "goal-abort") remains.
+- Old readers retained and verified in use: readActiveGoalPool,
+  mergeGoalPromptFromDisk (goal-service.ts, goal-state.ts), readGoalLedger +
+  latestAuditorResultForGoal (goal-events.ts, goal-compaction.ts),
+  normalizeGoalRecord (goal-state.ts loadState legacy migration).
+- Model-visible text purged of removed tool names: paused-goal steering
+  prompt now references update_goal(complete) and /goal-clear; policy
+  validator messages name update_goal instead of complete_goal/skip_task.
+- Removal documented: CHANGELOG 0.22.0 "Removed" section and a new README
+  "Tool migration" table (alongside the existing "Command migration" table).
+
+Validation: `npm run test:serial` 459 pass / 0 fail; `npm run check` (tsc) 0
+errors; `git diff --check` clean.

@@ -8,6 +8,50 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 ---
 
+## [0.22.0] — 2026-08-04
+
+### Added
+
+- **Codex-inspired five-tool model surface:** `create_goal` (objective 1–4000 chars,
+  mode, optional `token_budget`), `get_goal` (stable snapshot, no nudge map), and
+  `update_goal` (accepts only `complete` — audited from actual evidence with no
+  paperwork field — or `blocked`, set only after the same blocker recurs on three
+  consecutive goal turns), plus the two consolidated task tools `set_goal_tasks`
+  (flat parent-linked task-tree definition with confirmation) and `update_goal_task`
+  (per-task `complete`/`skipped`/`pending` status updates without stopping the turn).
+- **Token-budget support:** optional `token_budget` on creation; when accounted usage
+  reaches the budget the goal transitions to a distinct `budget_limited` status
+  exactly once, emits a `goal_budget_limited` ledger event, and injects one-time
+  wrap-up steering (summarize, do not start new work, do not claim completion).
+- **Curated ten-command palette:** `/goal` and `/sisyphus` are direct creation paths
+  (bare `/goal` shows status); `/goal-list`, `/goal-focus`, `/goal-unfocus`,
+  `/goal-settings`, `/goal-tweak`, `/goal-clear`, `/goal-pause`, `/goal-resume`.
+- **GoalService/runtime/accounting extraction:** `goal.ts` is now a thin installer;
+  state lives in a shared `GoalCore` (goal-state.ts) with tools/commands/events/
+  widget/format split into dedicated modules.
+- **Experiment cases C20–C26** with mechanical rubrics that reject removed tool
+  names.
+
+### Changed
+
+- Bounded five-tool steering prompts (10k fragment cap, objective escaping,
+  three-turn blocker policy).
+- `/goal-tweak` is now a direct user-owned objective edit through GoalService
+  (preserves usage/tasks/mode/budget, reactivates `budget_limited` goals).
+
+### Removed
+
+- **Hidden tool shims and legacy command routing deleted** (Stage 7): the
+  `complete_goal`, `pause_goal`, `abort_goal`, `propose_goal_draft`,
+  `propose_goal_tweak`, `propose_task_list`, `complete_task`, `skip_task`,
+  `step_complete`, `goal_question`, and `goal_questionnaire` tool registrations
+  are gone from the active surface; the `/goal-status`, `/goals`, `/goals-set`,
+  `/sisyphus-set`, and `/goal-abort` command registrations are gone. Old
+  goal-file and ledger readers (`readActiveGoalPool`, `readGoalLedger`,
+  `mergeGoalPromptFromDisk`, `latestAuditorResultForGoal`, `normalizeGoalRecord`)
+  remain for backward-compatible reads of existing data. See the README
+  “Command migration” and “Tool migration” tables.
+
 ## [0.21.0] — 2026-08-03
 
 ### Added

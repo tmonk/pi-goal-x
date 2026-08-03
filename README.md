@@ -107,6 +107,24 @@ Pressing `Esc` or aborting an active run pauses the goal so it does not remain f
 `/goal-tweak`, `/goal-pause`, `/goal-resume`, `/goal-clear`, `/goal-list`,
 `/goal-focus`, `/goal-unfocus`, and `/goal-settings` are retained unchanged.
 
+### Tool migration
+
+| Legacy tool (removed) | Replacement |
+|---|---|
+| `complete_goal` | `update_goal({status: "complete"})` — audited from actual evidence, no verification-summary field |
+| `pause_goal` | `/goal-pause` (user-owned); `update_goal({status: "blocked"})` only after the same blocker recurs on three consecutive turns |
+| `abort_goal` | `/goal-clear` (user-owned abandonment) |
+| `propose_goal_draft` | `create_goal` (direct creation when the user explicitly asks) |
+| `propose_goal_tweak` | `/goal-tweak <new objective>` (user-owned direct edit) |
+| `propose_task_list` | `set_goal_tasks` (structural, with confirmation) |
+| `complete_task` / `skip_task` | `update_goal_task` (`complete`/`skipped`/`pending` on one task) |
+| `step_complete` | Sisyphus completion is checked against the objective's numbered steps; no separate tool |
+| `goal_question` / `goal_questionnaire` | Normal conversation (drafting orchestration removed) |
+
+Old goal-file and ledger readers (`readActiveGoalPool`, `readGoalLedger`,
+`mergeGoalPromptFromDisk`, `latestAuditorResultForGoal`, `normalizeGoalRecord`)
+remain so existing `.pi/goals/` files and ledgers stay readable.
+
 ## Multiple open goals and focus
 
 `pi-goal` separates durable goals from session focus:
