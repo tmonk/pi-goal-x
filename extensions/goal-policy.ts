@@ -44,7 +44,7 @@ export function validateGoalCompletion(args: {
 	const { goal, runningGoalId } = args;
 	if (!goal) return { ok: false, message: "No goal is set." };
 	if (runningGoalId && goal.id !== runningGoalId) return { ok: false, message: "The active goal changed during this run; not marking it complete." };
-	if (!isCompletableStatus(goal.status)) return { ok: false, message: `Goal is ${statusLabel(goal)}; complete_goal does not apply.` };
+	if (!isCompletableStatus(goal.status)) return { ok: false, message: `Goal is ${statusLabel(goal)}; update_goal(complete) does not apply.` };
 	return { ok: true };
 }
 
@@ -62,10 +62,10 @@ export function validateGoalAbort(args: {
 	reason: string;
 }): PolicyValidation {
 	const { goal, runningGoalId } = args;
-	if (!goal) return { ok: false, message: "No goal is set; abort_goal is a no-op." };
+	if (!goal) return { ok: false, message: "No goal is set; goal abandonment is a no-op." };
 	if (runningGoalId && goal.id !== runningGoalId) return { ok: false, message: "The active goal changed during this run; not aborting." };
-	if (goal.status === "complete") return { ok: false, message: "Goal is complete; abort_goal does not apply." };
-	if (!args.reason.trim()) return { ok: false, message: "abort_goal requires a non-empty reason." };
+	if (goal.status === "complete") return { ok: false, message: "Goal is complete; abandonment does not apply." };
+	if (!args.reason.trim()) return { ok: false, message: "Abandonment requires a non-empty reason." };
 	return { ok: true };
 }
 
@@ -88,10 +88,10 @@ export function validatePauseGoal(args: {
 	reason: string;
 }): PolicyValidation {
 	const { goal, runningGoalId } = args;
-	if (!goal) return { ok: false, message: "No goal is set; pause_goal is a no-op." };
+	if (!goal) return { ok: false, message: "No goal is set; pausing is a no-op." };
 	if (runningGoalId && goal.id !== runningGoalId) return { ok: false, message: "The active goal changed during this run; not pausing." };
-	if (!isRunnableStatus(goal.status)) return { ok: false, message: `Goal is ${statusLabel(goal)}; pause_goal does not apply.` };
-	if (!args.reason.trim()) return { ok: false, message: "pause_goal requires a non-empty reason." };
+	if (!isRunnableStatus(goal.status)) return { ok: false, message: `Goal is ${statusLabel(goal)}; pausing does not apply.` };
+	if (!args.reason.trim()) return { ok: false, message: "Pausing requires a non-empty reason." };
 	return { ok: true };
 }
 
@@ -220,7 +220,7 @@ export function validateTaskSkip(args: {
 	if (task.status === "complete") return { ok: false, message: `Task "${args.taskId}" is already complete.` };
 	// Skipped tasks toggle via the executor; reason is only required for first-time skips.
 	if (task.status === "skipped") return { ok: true };
-	if (!args.reason.trim()) return { ok: false, message: "skip_task requires a non-empty reason." };
+	if (!args.reason.trim()) return { ok: false, message: "Skipping requires a non-empty reason." };
 	return { ok: true };
 }
 

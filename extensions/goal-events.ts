@@ -279,8 +279,8 @@ export function registerGoalEvents(core: GoalCore): void {
 			const pauseExtras: string[] = [];
 			if (current.stopReason === "agent") {
 				pauseExtras.push("");
-				pauseExtras.push(`Pause reason (you set this in a prior turn via pause_goal): ${current.pauseReason ?? "(unknown)"}`);
-				if (current.pauseSuggestedAction) pauseExtras.push(`You suggested: ${current.pauseSuggestedAction}`);
+				pauseExtras.push(`Pause reason: ${current.pauseReason ?? "(unknown)"}`);
+				if (current.pauseSuggestedAction) pauseExtras.push(`Suggested action: ${current.pauseSuggestedAction}`);
 			}
 			// Inject durable auditor feedback if available
 			let auditorExtra = "";
@@ -294,7 +294,7 @@ export function registerGoalEvents(core: GoalCore): void {
 				// Ledger read failure should not break the prompt
 			}
 			return {
-				systemPrompt: `${currentSystemPrompt()}\n\n[PI GOAL PAUSED goalId=${current.id}]\n${untrustedObjectiveBlock(current)}${pauseExtras.join("\n")}${auditorExtra}\n\nThe goal is paused. Do not autonomously continue substantive work unless the user resumes it with /goal-resume. If the user explicitly asks to finish or abandon the paused goal, or the objective is already satisfied based on available evidence, you may call complete_goal or abort_goal without resuming. Do not call pause_goal again.`,
+				systemPrompt: `${currentSystemPrompt()}\n\n[PI GOAL PAUSED goalId=${current.id}]\n${untrustedObjectiveBlock(current)}${pauseExtras.join("\n")}${auditorExtra}\n\nThe goal is paused. Do not autonomously continue substantive work unless the user resumes it with /goal-resume. If the user explicitly asks to finish the paused goal and the objective is already satisfied based on available evidence, you may call update_goal({status: "complete"}). To abandon a goal, the user runs /goal-clear. Do not report the goal blocked in response to a pause.`,
 			};
 		}
 		// Token-budget-limited goals get one-time wrap-up steering: summarize,

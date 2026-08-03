@@ -219,7 +219,7 @@ export function syncTerminalInputPause(core: GoalCore, ctx: ExtensionContext): v
 			debugMockAuditTimer.unref?.();
 		}
 
-		/** Render task lines exactly like propose_task_list does */
+		/** Render task lines for the debug proposal dialog. */
 		function renderDebugTaskLines(tasks: GoalTask[], indent = 0): string[] {
 			const prefix = "  ".repeat(indent);
 			const lines: string[] = [];
