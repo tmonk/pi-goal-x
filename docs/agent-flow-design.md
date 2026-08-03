@@ -32,14 +32,14 @@ Core principle:
 User command
   -> pi-goal command handler (/goal, /sisyphus, /goal-*)
   -> direct creation, or focus/lifecycle state update
-  -> runtime reconciles from disk, re-computes prompts and the tool surface
+  -> runtime reconciles from disk, re-computes prompts and the active tool subset
   -> executing agent works on the focused goal
   -> tool call / turn events update accounting and the ledger
   -> update_goal(complete) triggers the independent auditor
   -> approved -> goal archived at turn_end; rejected -> goal stays open
 ```
 
-The five model tools are installed statically:
+Five model tools are registered:
 
 | Tool | Role |
 |---|---|
@@ -81,8 +81,8 @@ these files.
 
 ### 4.2 Ledger files
 
-The ledger is an append-only JSONL file per goal
-(`.pi/goals/ledger/goal_<id>.jsonl`). The 15 event types cover creation,
+The ledger is one project-level append-only JSONL file
+(`.pi/goals/goal_events.jsonl`). Its 17 event types cover creation,
 tweaks, focus changes, pause/resume/block/clear, completion requests, audit
 start/result/skip, budget limits, and task-list changes. The runtime reads it
 for auditor-rejection memory and compaction summaries; it is never rewritten
@@ -118,12 +118,16 @@ of 1–4000 characters, an optional `mode` (regular/sisyphus), and an optional
 
 ## 7. Tool surface and runtime gates
 
-Tool visibility is recomputed statically on state changes:
+Tool visibility is recomputed dynamically on state changes in 0.22:
 
 - `get_goal` and `create_goal` are always present.
 - `update_goal` appears whenever a non-complete goal is focused.
 - `set_goal_tasks` and `update_goal_task` appear for active goals when tasks
   are enabled (and `set_goal_tasks` for paused goals).
+
+The synchronizer also force-adds `read`, `write`, `edit`, and `bash`. Both
+behaviors are known deviations from the target fixed three/five profile and
+are scheduled for removal in the 2026-08-04 hardening plan.
 
 The `tool_call` interceptor:
 
@@ -154,8 +158,10 @@ checkpoint runs, the checkpoint becomes stale and cannot drive task work.
 
 `update_goal({status: "complete"})` has no verification-summary parameter. The
 runtime validates that the goal is in a completable status, optionally warns
-about pending tasks (blockCompletion), appends a `completion_requested` ledger
-event, and starts the auditor unless it is disabled.
+about pending tasks (`blockCompletion`), appends a `completion_requested`
+ledger event, and starts the auditor. The global disabled-auditor branch is
+currently defective in 0.22: it still requires a removed model bypass field
+and therefore rejects completion.
 
 ### 9.2 The audit appears in the conversation
 
@@ -253,3 +259,12 @@ goal.ts (thin installer)
 - **Disk is authoritative.** Reconciliation before every focused action means
   external edits and multi-session use stay consistent; old readers keep
   existing data readable.
+
+## 15. Current hardening plan
+
+This document describes 0.22 as implemented, including the deviations called
+out above. The prioritized correction plan is
+[`specs/2026-08-04-goal-simplification-hardening`](../specs/2026-08-04-goal-simplification-hardening/TECH.md).
+It also addresses paused-record resurrection, stale task-tree overwrites,
+task-confirmation audit coupling, budget validation, ledger semantics, legacy
+runtime code, and unsupported E2E/experiment assets.

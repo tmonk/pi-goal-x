@@ -1,6 +1,6 @@
 # pi-goal-x
 
-`pi-goal-x` is a long-running goal extension for [pi](https://github.com/earendil-works/pi-coding-agent). It gives the agent a durable objective, a visible lifecycle, and schema-gated tools for drafting, executing, pausing, resuming, and completing work.
+`pi-goal-x` is a long-running goal extension for [pi](https://github.com/earendil-works/pi-coding-agent). It gives the agent a durable objective, a visible lifecycle, five schema-gated model tools, structured tasks, and independently audited completion.
 
 The extension is designed around one rule: **the user owns intent; the agent executes only after the goal is explicit and confirmed**.
 
@@ -14,13 +14,13 @@ The extension is designed around one rule: **the user owns intent; the agent exe
 - **Structured task lists with subtasks** — Break goals into trackable tasks. Agents can mark individual tasks or subtasks complete without stopping the turn. Subtask IDs are validated for uniqueness and depth.
 - **Verification contracts** — Attach plain-text requirements to a goal or task (e.g. "Run npm test, zero failures"). The independent auditor verifies them from actual evidence; per-task contracts require evidence on `update_goal_task`.
 - **Independent completion auditor** — When a goal is marked complete, a separate pi agent inspects the workspace, verifies every success criterion, and approves or rejects before the goal is archived. You can press Escape during an audit to abort it. Configure the auditor model via `/goal-settings`.
-- **Stable five-tool surface** — Agents see exactly `create_goal`, `get_goal`, `update_goal`, and (when tasks are enabled) `set_goal_tasks` / `update_goal_task`, installed statically without phase-dependent synchronization.
+- **Compact five-tool vocabulary** — The extension registers `create_goal`, `get_goal`, `update_goal`, and (when tasks are enabled) `set_goal_tasks` / `update_goal_task`. The current 0.22 implementation still advertises a state-dependent subset; the hardening plan below makes the three/five profile truly stable.
 - **Immutable objective** — The agent cannot silently change your goal. Objective updates happen through user-owned `/goal-tweak`.
 - **User-owned lifecycle** — Pause, resume, clear, focus, and settings are immediate user commands; the model reports only complete/blocked outcomes.
 - **Disk-backed state** — Active and archived goals persist in `.pi/goals/`. Goal state survives session compaction, workspace switches, and context churn.
 - **Configurable settings** — Tune the auditor model, disable the task system or contracts, and set subtask depth through `/goal-settings` or `.pi/pi-goal-x-settings.json`.
 
-> **Fork of [@capyup/pi-goal](https://github.com/capyup/pi-goal)** — pi-goal-x preserves all upstream features and adds: verification contracts (per-goal and per-task), unified goal+task acceptance in a single confirmation dialog, recursive task lists with subtasks, an immutable objective enforced by tools, deferred archival with cleaner lifecycle hooks, an improved completion auditor with configurable model and progress widget, drafting UX refinements, and lifecycle reliability fixes.
+> **Fork of [@capyup/pi-goal](https://github.com/capyup/pi-goal)** — pi-goal-x is now maintained independently. It adds verification contracts, recursive task lists, multiple durable goals with session-local focus, an immutable objective, deferred archival, a configurable completion auditor, token budgets, compaction recovery, and a live progress widget.
 
 ## Install
 
@@ -139,8 +139,11 @@ Creating a goal with `/goal <objective>` or `/sisyphus <objective>` never clears
 
 ## Agent tools
 
-The extension exposes a stable five-tool model surface (installed statically,
-no phase-dependent synchronization):
+The extension registers five model tools. In 0.22, the active subset is still
+recomputed from focus and lifecycle state: `create_goal` and `get_goal` are
+always active; `update_goal` requires a focused non-complete goal; task tools
+are further gated by task settings and status. This is a known implementation
+gap against the intended stable three/five profile.
 
 | Tool | Purpose |
 |---|---|
@@ -150,7 +153,9 @@ no phase-dependent synchronization):
 | `set_goal_tasks` | Create or structurally replace the task tree (flat parent-linked input, confirmation dialog, matching ids keep status/evidence). |
 | `update_goal_task` | Update one task without stopping the turn: complete (evidence for contracted tasks), skipped (reason), pending (reopens skipped). |
 
-Plus the ordinary Pi work tools (write/read/bash/edit). Lifecycle actions the
+Plus ordinary Pi work tools. The 0.22 synchronizer currently force-enables
+`write`, `read`, `bash`, and `edit`; the hardening plan changes this so the
+extension preserves the user's host-tool selection. Lifecycle actions the
 model does not own (pause, resume, clear, focus, tweak, settings) are
 user-owned slash commands. When `disableTasks` is enabled, only the three core
 tools are advertised.
@@ -281,7 +286,7 @@ Configured interactively via `/goal-settings`, or edited directly:
 | `provider` | system default | Provider name for the auditor agent |
 | `model` | system default | Model name for the auditor agent |
 | `thinkingLevel` | system default | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
-| `disabled` | `false` | When `true`, skip the completion audit entirely |
+| `disabled` | `false` | Intended to skip completion audit. In 0.22 this setting exposes a known bug: `update_goal(complete)` is rejected because a removed internal bypass flag is still required. Keep it `false` until the hardening fix lands. |
 
 **Env var overrides:**
 - `PI_GOAL_DISABLE_TASKS=1` — disable task features (takes precedence over file)
@@ -292,7 +297,7 @@ Configured interactively via `/goal-settings`, or edited directly:
 
 | Variable | Default | Purpose |
 |---|---:|---|
-| `PI_GOAL_AUTO_CONFIRM` | unset | When `1`, auto-confirms drafts in headless/test contexts |
+| `PI_GOAL_AUTO_CONFIRM` | unset | When `1`, auto-confirms task-list proposals in headless/test contexts |
 | `PI_GOAL_DISABLE_TASKS` | — | When `1`, disable task features (overrides settings file) |
 | `PI_GOAL_DISABLE_CONTRACTS` | — | When `1`, disable contract enforcement (overrides settings file) |
 | `PI_GOAL_SETTINGS_FILE` | `.pi/pi-goal-x-settings.json` | Alternative settings file path (relative to cwd or absolute) |
@@ -306,9 +311,17 @@ npm run check
 npm pack --dry-run
 ```
 
-The fast unit suite uses Node's built-in test runner and covers core parsing, drafting gates, lifecycle policy, abort policy, questionnaire formatting, centralized tool names, Sisyphus prompt-style behavior, completion reporting, and display helpers.
+The fast suite uses Node's built-in test runner and covers records/storage,
+lifecycle policy, the service/runtime/accounting split, the five tool handlers,
+the ten commands, tasks/contracts, auditing, compaction, prompts, and widgets.
+Use `npm run test:serial` in low-file-descriptor environments. The legacy
+`tests/e2e/` runner is not included by `npm test` and is currently unsupported;
+it is scheduled for replacement in the hardening plan.
 
-The experiment harness under `experiments/` runs full pi sessions against real model calls and mechanical rubrics.
+The experiment harness under `experiments/` runs full pi sessions against real
+model calls and mechanical rubrics. C20-C26 target the five-tool interface;
+C1-C19 are historical pre-simplification cases until migrated. Experiments are
+opt-in because they incur model usage.
 
 ```bash
 cd experiments
@@ -320,17 +333,26 @@ bash harness/run.sh C1-vague-goal-set --count 3 --grade --no-smoke
 The npm package ships only the runtime extension, docs, and package metadata. The extension is split into small modules:
 
 ```text
-extensions/goal.ts                 orchestration, commands, tools, events, timers
+extensions/goal.ts                 thin installer for renderers, commands, tools, and events
+extensions/goal-state.ts           shared GoalCore state and service/runtime wiring
+extensions/goal-tools.ts           five tool registrations and completion/task flows
+extensions/goal-commands.ts        ten slash-command handlers
+extensions/goal-events.ts          lifecycle event handlers
+extensions/goal-service.ts         ordered goal mutation boundary
+extensions/goal-runtime.ts         continuation, stale-checkpoint, and turn-stop state
+extensions/goal-accounting.ts      idempotent usage accounting and budget helpers
+extensions/goal-format.ts          result formatting and message introspection
 extensions/goal-record.ts          goal record types, normalization, creation helpers
 extensions/goal-pool.ts            open-goal pool, focus resolution, list/selector text helpers
 extensions/goal-core.ts            display helpers
-extensions/goal-draft.ts           lightweight confirmation prompt, proposal validation, drafting tool gate
-extensions/goal-policy.ts          lifecycle, pause/resume/complete, and Sisyphus policy
+extensions/goal-draft.ts           legacy module; only contract extraction remains in active use
+extensions/goal-policy.ts          lifecycle, completion, task, and compaction policy
 extensions/goal-auditor.ts         independent pi auditor agent for completion approval, config, and progress tracking
-extensions/goal-ledger.ts         event append, read, validation, sanitization, and reconstruction
-extensions/goal-questionnaire.ts   built-in question UI and question tool registration
-extensions/goal-tool-names.ts      centralized published tool names and allowlists
-extensions/prompts/goal-prompts.ts active, continuation, tweak, and stale prompts
+extensions/goal-ledger.ts          event append, read, validation, sanitization, and reconstruction
+extensions/goal-questionnaire.ts   legacy module; proposal dialog helpers remain in active use
+extensions/goal-task-tools.ts      flat task conversion and id-stable merge helpers
+extensions/goal-tool-names.ts      public names plus remaining legacy classifications
+extensions/prompts/goal-prompts.ts active, continuation, stale, unfocused, and budget prompts
 extensions/storage/goal-files.ts   goal file paths, serialization, parsing, archive IO
 extensions/widgets/goal-widget.ts  above-editor goal beacon component
 extensions/widgets/goal-notifications.ts widget-style notification text
@@ -338,13 +360,23 @@ extensions/widgets/goal-notifications.ts widget-style notification text
 
 ## Design principles
 
-- **User owns intent**: only the user starts, replaces, resumes, clears, or confirms goals; the agent may only pause, complete, or abort through schema-gated lifecycle tools with evidence/reason.
-- **One commit path**: normal goal creation goes through drafting and confirmation.
+- **User owns mutable intent**: the user controls objective changes, pause/resume, clear, focus, and settings; the agent may create only on explicit request and may report only complete or repeatedly blocked outcomes.
+- **Direct explicit creation**: `/goal`, `/sisyphus`, or an explicit conversational request creates the durable goal without a second drafting protocol.
 - **Schema beats prompt walls**: recurring failure modes are handled by validators and tool-call interceptors.
-- **Visible contracts**: confirmed goals and completion reports are printed fully into the conversation.
-- **Lifecycle-shaped tool surface**: the agent sees only tools appropriate to the current phase.
+- **Visible contracts**: created goals and completion reports are printed fully into the conversation.
+- **Small stable target surface**: three core model tools plus two task tools; lifecycle validity belongs in handlers, not phase-specific tool rebuilding.
 - **Disk-backed continuity**: goal state survives context churn and can be audited from `.pi/goals/`.
 - **Human-owned focus**: the agent may work on the focused goal, but only user commands/UI selection switch focus.
+
+## Known 0.22 hardening gaps
+
+The implementation assessment found two release-blocking bugs and several
+simplification gaps: paused legacy records can reactivate during normalization;
+disabled-auditor completion is unreachable; the advertised tool subset remains
+phase-dependent; task confirmation still owns an unrelated auditor toggle; and
+the legacy E2E/experiment surfaces are stale. The complete prioritized repair
+plan is in
+[`specs/2026-08-04-goal-simplification-hardening`](specs/2026-08-04-goal-simplification-hardening/PRODUCT.md).
 
 ## Relationship to pi-goal
 

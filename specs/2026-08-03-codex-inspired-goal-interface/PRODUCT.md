@@ -1,5 +1,10 @@
 # Product Spec: Codex-inspired goal interface simplification
 
+> **Implementation assessment (2026-08-04):** the public five-tool and
+> ten-command vocabulary landed, but success criteria 1-2 are not fully met and
+> two lifecycle regressions remain. See the focused
+> [goal simplification hardening spec](../2026-08-04-goal-simplification-hardening/PRODUCT.md).
+
 ## Summary
 
 `pi-goal-x` should adopt Codex Goal mode's small, stable model interface without

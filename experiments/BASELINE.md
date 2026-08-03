@@ -1,5 +1,11 @@
 # pi-goal Experiment Baselines — Stage 0 snapshot
 
+> **Historical baseline.** This intentionally freezes the interface before the
+> 0.22 simplification. Its tool and command lists are not current product
+> documentation and its cases are not part of the supported release gate unless
+> migrated. See [README.md](README.md) and the
+> [hardening plan](../specs/2026-08-04-goal-simplification-hardening/TECH.md).
+
 This file is the Stage 0 characterization baseline for the Codex-inspired goal interface
 simplification (`specs/2026-08-03-codex-inspired-goal-interface`). It pins the CURRENT
 (unchanged) interface surface, maps the behavioral scenarios covered by the case suite,

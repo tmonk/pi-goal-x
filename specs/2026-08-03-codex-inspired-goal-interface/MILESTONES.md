@@ -1,5 +1,12 @@
 # Milestones: Codex-inspired goal interface simplification
 
+> **Post-implementation correction (2026-08-04):** later assessment found that
+> the claimed static tool surface still used state-dependent synchronization,
+> paused legacy records could reactivate, and disabled-auditor completion was
+> unreachable. These findings supersede the affected validation claims below;
+> remediation is tracked in
+> [`2026-08-04-goal-simplification-hardening`](../2026-08-04-goal-simplification-hardening/MILESTONES.md).
+
 Free-form implementation log for meaningful milestones, failed attempts,
 setbacks, fixes, validation, and decisions.
 

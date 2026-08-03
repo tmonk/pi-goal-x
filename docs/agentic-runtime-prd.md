@@ -1,5 +1,12 @@
 # PRD: Agentic Goal Runtime
 
+> **Historical proposal (partly implemented, superseded 2026-08-03).** Tool
+> names, drafting flow, and non-goals below describe the design at the time and
+> are not the current 0.22 API. Current behavior is documented in
+> [`docs/architecture.md`](architecture.md); remaining corrections are planned
+> in the
+> [2026-08-04 hardening spec](../specs/2026-08-04-goal-simplification-hardening/PRODUCT.md).
+
 ## 1. Summary
 
 `pi-goal` currently behaves like a growing workflow state machine: drafting gates, focus gates, continuation gates, tool visibility gates, lifecycle gates, completion auditing, compaction recovery, and multi-goal focus rules all interact inside the extension runtime. This has improved safety, but it also increases hidden coupling and makes the system brittle as more multi-agent behavior is added.

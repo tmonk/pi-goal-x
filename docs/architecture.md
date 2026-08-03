@@ -27,7 +27,7 @@ handlers from their dedicated modules:
 | `goal-draft.ts` | Objective edit/verification-contract extraction |
 | `goal-policy.ts` | Lifecycle policy and validation (completion/blocked/resume/task gates), compaction policy, result reports |
 | `goal-auditor.ts` | Independent pi auditor agent prompt/config/decision parsing and completion audit execution |
-| `goal-ledger.ts` | Goal ledger read/reconstruction (15 event types) |
+| `goal-ledger.ts` | Single-file goal ledger append/read/reconstruction (17 event types) |
 | `goal-questionnaire.ts` | Proposal confirmation dialog helpers (question-tool registrations removed) |
 | `goal-tool-names.ts` | Published tool-name constants and active-tool lists |
 | `prompts/goal-prompts.ts` | Bounded five-tool steering prompts (active-goal, continuation, stale-checkpoint, unfocused, budget-limited) |
@@ -57,14 +57,16 @@ reconcile (disk wins over stale memory)
   → expected-id / focus-revision validation (async operations invalidated on focus change)
   → mutate a clone (never the live object)
   → write or archive the active file
-  → append ledger events (best-effort; failure is diagnostic, never fatal)
+  → append ledger events (best-effort; failure is currently silent)
   → commit to memory + focus
   → return effects (ok, goal, focusChanged, messages)
 ```
 
 If the write fails, nothing commits and nothing is appended. If the ledger
-append fails after a successful write, the transition still stands and the
-failure is surfaced as a diagnostic. Handlers keep validation and
+append fails after a successful write, the transition still stands. The 0.22
+implementation silently drops that append failure despite older documentation
+claiming a surfaced diagnostic; the hardening plan adds an observable service
+diagnostic. Handlers keep validation and
 runtime/UI effects; they never touch storage directly. `goal.ts` has zero
 direct write or ledger calls.
 
@@ -182,8 +184,7 @@ confirmation intent state, and no model-side objective mutation.
 
 ## Tool surface
 
-The extension exposes a stable five-tool model surface, installed statically
-with no phase-dependent synchronization:
+The extension registers a five-tool model vocabulary:
 
 | Tool | Purpose |
 |---|---|
@@ -193,10 +194,14 @@ with no phase-dependent synchronization:
 | `set_goal_tasks` | Create or structurally replace the task tree (flat parent-linked input, confirmation dialog, id-stable merge). |
 | `update_goal_task` | Update one task without stopping the turn: complete (evidence for contracted tasks), skipped (reason), pending (reopens skipped). |
 
-`get_goal` and `create_goal` are always present; `update_goal` appears whenever
-a non-complete goal is focused; the two task tools are gated on
-`tasksEnabled` (decided from settings at session start) and status. When
-`disableTasks` is enabled, exactly the three core tools are advertised.
+The 0.22 active subset is still phase-dependent. `get_goal` and `create_goal`
+are always present; `update_goal` appears whenever a non-complete goal is
+focused; both task tools appear for active goals, and only `set_goal_tasks`
+appears for paused goals. Blocked/budget-limited/no-focus states therefore do
+not expose the intended fixed three/five set. `syncGoalTools()` is called from
+commands, tools, events, runtime effects, and UI paths and also force-adds
+`read`, `write`, `edit`, and `bash`. This is an implementation gap, not the
+target design; see the 2026-08-04 hardening spec.
 
 The `tool_call` interceptor blocks work tools after a stop tool has fired in
 the same turn, and blocks work tools when the checkpoint that triggered the
@@ -238,7 +243,9 @@ The auditor uses the current/default model unless
 `.pi/pi-goal-x-settings.json` overrides `provider`, `model`, or `thinkingLevel`.
 The user can Escape an in-flight audit to choose "complete without audit" or
 "continue working". Archival is deferred to `turn_end` so the agent can see the
-auditor result before the goal is archived.
+auditor result before the goal is archived. The global `disabled` setting is
+intended to skip this audit, but 0.22 currently rejects completion because the
+flow still requires a removed internal bypass flag.
 
 ## Disk format and old-data reads
 
@@ -264,8 +271,20 @@ npm run check
 ```
 
 They cover: surface baselines (exactly the five tools and ten commands
-registered), golden file/ledger fixtures, stale-continuation behavior,
+registered), the current dynamic visibility behavior, golden file/ledger
+fixtures, stale-continuation behavior,
 GoalService mutation boundary, runtime/accounting, token-budget transitions,
 task-tool consolidation, verification contracts, the independent auditor,
-compaction recovery, and the bounded steering prompts. The `experiments/`
-harness provides end-to-end cases (C1–C26, B1–B2) with mechanical rubrics.
+compaction recovery, and the bounded steering prompts. The separate
+`tests/e2e/` directory is not included by the package test glob and still uses
+removed signatures. In `experiments/`, C20-C26 target the current interface;
+C1-C19 and B1-B2 remain historical until migrated.
+
+## Assessed implementation gaps
+
+The complete remediation plan lives in
+[`specs/2026-08-04-goal-simplification-hardening`](../specs/2026-08-04-goal-simplification-hardening/TECH.md).
+In addition to the tool and audit gaps above, it covers paused-status
+normalization, disk-fresh task transactions, structural-field clearing, token
+budget integer validation, ledger reopen semantics/diagnostics, legacy module
+removal, and supported E2E/experiment coverage.

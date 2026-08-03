@@ -1,5 +1,5 @@
 version: 1
-focused: 2026-08-03-codex-inspired-goal-interface
+focused: 2026-08-04-goal-simplification-hardening
 status_vocabulary:
   - draft
   - ready_for_review
@@ -27,6 +27,13 @@ specs:
     path: specs/2026-08-03-codex-inspired-goal-interface
     title: Codex-inspired goal interface simplification
     status: ready_for_review
-    focused: true
+    focused: false
     last_audit: null
     updated: 2026-08-03
+  - id: 2026-08-04-goal-simplification-hardening
+    path: specs/2026-08-04-goal-simplification-hardening
+    title: Goal simplification hardening
+    status: ready_for_review
+    focused: true
+    last_audit: null
+    updated: 2026-08-04

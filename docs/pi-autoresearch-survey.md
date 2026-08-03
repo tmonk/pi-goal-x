@@ -1,5 +1,10 @@
 # Implemented Borrowed Patterns
 
+> **Historical document (superseded 2026-08-03).** This survey describes the
+> earlier drafting interface and is retained as design provenance, not current
+> product documentation. See [`docs/architecture.md`](architecture.md) and the
+> [2026-08-04 hardening plan](../specs/2026-08-04-goal-simplification-hardening/TECH.md).
+
 This document records external patterns that are actually implemented in `pi-goal` today.
 
 ## From pi-codex-goal

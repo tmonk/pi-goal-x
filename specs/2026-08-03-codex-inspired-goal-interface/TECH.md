@@ -1,5 +1,10 @@
 # Technical Spec: Codex-inspired goal interface simplification
 
+> **Implementation assessment (2026-08-04):** this plan is the accepted design
+> record, not a guarantee that every stage landed correctly. The full code and
+> documentation audit, deviations, and remediation sequence are in the
+> [goal simplification hardening plan](../2026-08-04-goal-simplification-hardening/TECH.md).
+
 Product spec: `specs/2026-08-03-codex-inspired-goal-interface/PRODUCT.md`
 
 ## Executive technical direction
