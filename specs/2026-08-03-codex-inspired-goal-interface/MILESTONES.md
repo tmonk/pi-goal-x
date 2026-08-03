@@ -383,3 +383,30 @@ release):
 
 Validation: `npm run test:serial` 459 pass / 0 fail; `npm run check` (tsc) 0
 errors; `git diff --check` clean.
+
+### 2026-08-04 06:10:00 - Final validation, docs, and completion checklist
+
+- docs/architecture.md and docs/agent-flow-design.md rewritten to the current
+  architecture (the previous versions described the removed
+  propose_goal_draft/goal_question/pause_goal surface and were partly Chinese).
+- package version bumped 0.21.0 -> 0.22.0; CHANGELOG 0.22.0 section added.
+- Model-visible text purged of removed names: post-compaction instruction,
+  resume-validation messages, goal-list/unfocused summaries now reference
+  /goal and /sisyphus (golden tests updated).
+- Test wording cleanup: titles/comments referencing complete_goal and
+  propose_goal_tweak renamed to the current tools; negative removal
+  assertions retained.
+- PRODUCT success criteria 1-8 and TECH test-strategy items verified against
+  the suite: disableTasks -> exactly 3 advertised tools (goal-core-tools
+  :123); budget_limited transition fires exactly once (goal-budget :96/136/141);
+  exactly ten commands registered (goal-command-palette :75); C20-C26
+  mechanical rejection rubrics (author-only per user decision).
+- Full validation: npm run check 0 errors; npm run test:serial 459 pass /
+  0 fail; npm pack --dry-run clean (pi-goal-x-0.22.0.tgz, 36 files);
+  git diff --check clean.
+- CJK sweep: zero CJK in produced files; the only hits are pre-existing
+  functional Chinese-objective handling (goal-core.ts / goal-draft.ts /
+  goal-questionnaire.ts regexes) and CJK width/objective test fixtures,
+  allowed by the goal's no-Chinese tweak as data.
+- Branch audit: 17 commits, all with clear conventional messages
+  (feat/refactor/test/docs/chore); no rewrites needed.
