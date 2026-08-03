@@ -13,8 +13,9 @@ with the `0.x` prefix indicating pre-1.0 development.
 ### Added
 
 - **`/goal-unfocus` command:** Detaches the current session from its focused goal,
-  stops that session's continuation state, and records a session-local cleared focus
-  without pausing, modifying, or archiving the shared goal in `.pi/goals/`.
+  stops that session's continuation state, and records a session-local null focus entry
+  with reason `unfocused` without pausing, modifying, or archiving the shared goal in
+  `.pi/goals/`.
 
 ### Documentation
 

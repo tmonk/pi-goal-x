@@ -1506,15 +1506,15 @@ Verification contract:
 	function unfocusGoalCommand(ctx: ExtensionContext): void {
 		reconcileFocusedGoalFromDisk(ctx);
 		const current = state.goal;
+		setFocusedGoalId(null, ctx, "unfocused");
+		runningGoalId = null;
+		checkpointGoalId = null;
+		postCompactReminderPending = false;
 		if (!current) {
 			const openCount = openGoals().length;
 			ctx.ui.notify(openCount > 0 ? buildUnfocusedOpenGoalsSummary(openCount) : detailedSummary(null), "info");
 			return;
 		}
-		setFocusedGoalId(null, ctx, "unfocused");
-		runningGoalId = null;
-		checkpointGoalId = null;
-		postCompactReminderPending = false;
 		ctx.ui.notify(`Goal unfocused for this session. It remains open in .pi/goals: ${current.id}`, "info");
 	}
 

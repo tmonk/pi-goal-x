@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -19,6 +19,8 @@ test("/goal-unfocus clears only session focus and leaves the shared goal open", 
 
 	const goal = createGoal({ objective: "Keep this shared goal open", autoContinue: true, sisyphus: false });
 	const written = writeActiveGoalFile({ cwd } as ExtensionContext, goal);
+	const activePath = path.join(cwd, written.activePath!);
+	const originalGoalFile = readFileSync(activePath);
 	const sessionEntries = [
 		{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") },
 	];
@@ -74,8 +76,20 @@ test("/goal-unfocus clears only session focus and leaves the shared goal open", 
 			focusedGoalId: null,
 			reason: "unfocused",
 		});
-		assert.equal(existsSync(path.join(cwd, written.activePath!)), true, "shared active goal file must remain");
+		assert.equal(existsSync(activePath), true, "shared active goal file must remain");
+		assert.deepEqual(readFileSync(activePath), originalGoalFile, "shared active goal file must remain unchanged");
 		assert.match(notifications.at(-1) ?? "", /remains open in \.pi\/goals/);
+
+		const focusEntryCount = appendedEntries.filter((entry) => entry.customType === "pi-goal-focus").length;
+		await command.handler("", ctx);
+		const repeatedFocusEntries = appendedEntries.filter((entry) => entry.customType === "pi-goal-focus");
+		assert.equal(repeatedFocusEntries.length, focusEntryCount + 1, "repeated unfocus must persist explicit null focus");
+		assert.deepEqual(repeatedFocusEntries.at(-1)?.data, {
+			version: 1,
+			focusedGoalId: null,
+			reason: "unfocused",
+		});
+		assert.deepEqual(readFileSync(activePath), originalGoalFile, "repeated unfocus must not modify the shared goal");
 
 		const promptResult = await handlers.get("before_agent_start")?.(
 			{ systemPrompt: "base prompt", prompt: "ordinary user request" },
