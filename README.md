@@ -330,7 +330,7 @@ extensions/widgets/goal-notifications.ts widget-style notification text
 
 ## Relationship to pi-goal
 
-pi-goal-x started as a fork of [@capyup/pi-goal](https://github.com/capyup/pi-goal), but it is maintained as an independent project and does **not** track an `upstream` remote. There is no sync workflow with the original repository; bug reports, feature requests, and contributions target this repository directly.
+pi-goal-x started as a fork of [@capyup/pi-goal](https://github.com/capyup/pi-goal), but it is maintained as an independent project with a single `origin` remote at `github.com/tmonk/pi-goal-x`. Bug reports, feature requests, and contributions target this repository directly.
 
 ## Release policy
 
