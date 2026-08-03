@@ -1,11 +1,11 @@
 # C12 — B1 focus consistency gate
 
-## 被测行为
+## Behavior under test
 
-用户用 `/goal-set` (非-sisyphus drafting focus)，但在 topic 里描述了一个"按顺序的多步任务"，agent 可能想自作主张设 sisyphus=true。B1 schema gate REJECT 此提案，强制 agent 用 sisyphus=false。
+The user uses `/goal-set` (non-sisyphus drafting focus) but describes a "sequential multi-step task" in the topic; the agent might try to set sisyphus=true on its own. The B1 schema gate REJECTS that proposal, forcing the agent to use sisyphus=false.
 
-预期：最终成功的 propose_goal_draft 一定是 sisyphus=false。如果 agent 第一次试图 sisyphus=true 会被 schema 拒绝，agent 必须重试。
+Expected: the final successful propose_goal_draft must be sisyphus=false. If the agent first tries sisyphus=true, the schema rejects it and the agent must retry.
 
 ## Prompts
 
-TURN: /goal-set 我要做一个按部就班的工作：先在当前目录创建 file1.txt 写 'one'，然后创建 file2.txt 写 'two'。autoContinue: true。
+TURN: /goal-set I want to do a step-by-step task: first create file1.txt in the current directory with 'one', then create file2.txt with 'two'. autoContinue: true.

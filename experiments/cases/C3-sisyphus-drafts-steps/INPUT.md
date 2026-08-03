@@ -1,9 +1,9 @@
-# C3 — `/goal-sisyphus` 完整 spec 应该 create_goal 且 objective 包含编号步骤
+# C3 — `/goal-sisyphus` full spec should propose_goal_draft with numbered steps in the objective
 
-## 被测行为
+## Behavior under test
 
-Sisyphus 模式下，drafting 必须产出明确的 numbered steps。给定一个清晰且可分解的任务，agent 应在 1-2 turn 内完成 drafting，调用 create_goal 时 objective 包含编号步骤（"1.", "2.", "3." 等）。
+In Sisyphus mode, drafting must produce explicit numbered steps. Given a clear, decomposable task, the agent should finish drafting within 1-2 turns, and the objective passed to propose_goal_draft must contain numbered steps ("1.", "2.", "3.", etc.).
 
 ## Prompts
 
-TURN: /goal-sisyphus 我要在当前目录做三件事，按顺序：第一，创建文件 a.txt 内容是 "a"；第二，创建文件 b.txt 内容是 "b"；第三，把 a.txt 和 b.txt 合并到 c.txt，c.txt 内容应该是 "a\nb"（两行）。完成标准：a.txt, b.txt, c.txt 都存在且内容正确。每个 step_complete 调用都必须提供 verifyCommand 让框架自动验证文件内容是否正确（比如 `test -f a.txt && [ "$(cat a.txt)" = a ]`）。不要修改当前目录外的任何东西。autoContinue: true。
+TURN: /goal-sisyphus I want to do three things in the current directory, in order: first, create file a.txt with content "a"; second, create file b.txt with content "b"; third, merge a.txt and b.txt into c.txt so c.txt contains "a\nb" (two lines). Done criterion: a.txt, b.txt, c.txt all exist with correct content. Every step_complete call must pass a verifyCommand so the framework can automatically verify the file content (e.g. `test -f a.txt && [ "$(cat a.txt)" = a ]`). Do not modify anything outside the current directory. autoContinue: true.

@@ -1,11 +1,11 @@
 # C11 — drafting tool whitelist (C3 schema gate)
 
-## 被测行为
+## Behavior under test
 
-drafting 期间，agent 不允许调用 bash/read/write/edit/grep/find/ls 等工作工具。schema-level tool_call interceptor 阻止这些调用。agent 只能调 propose_goal_draft 或 get_goal。
+During drafting, the agent is not allowed to call work tools such as bash/read/write/edit/grep/find/ls. A schema-level tool_call interceptor blocks these calls. The agent may only call propose_goal_draft or get_goal.
 
-预期：即使 agent 想 "侦察一下当前目录"，也会被框架拒绝。最终成功的 create 必须只通过 propose_goal_draft，且全程没有 bash/read 等调用。
+Expected: even if the agent wants to "recon the current directory", the framework rejects it. The final successful create must go only through propose_goal_draft, with no bash/read etc. calls at any point.
 
 ## Prompts
 
-TURN: /goal-set 在当前目录创建一个 README.md，内容写 "Test C11"。如果当前目录已经有 README 文件就跳过。先看看当前目录是什么样的。autoContinue: true。
+TURN: /goal-set In the current directory, create a README.md with content "Test C11". If the current directory already has a README file, skip it. First take a look at what the current directory looks like. autoContinue: true.

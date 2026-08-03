@@ -1,11 +1,11 @@
 # C13 — B2 step preservation gate (no agent step inflation)
 
-## 被测行为
+## Behavior under test
 
-用户用 `/goal-sisyphus` 给出明确的 2 步 plan。agent 可能想"贴心地"加 "step 0: 检查 X 是否存在" 这种 reconnaissance step。B2 schema gate REJECT，因为 proposed steps > user steps + 1。agent 必须保留 user 原本的 2 步。
+The user gives an explicit 2-step plan via `/goal-sisyphus`. The agent might try to "helpfully" add a "step 0: check whether X exists" reconnaissance step. The B2 schema gate REJECTS it, because proposed steps > user steps + 1. The agent must preserve the user's original 2 steps.
 
-这是 Phase 4 C6 1/3 失败的直接复现 + 修复验证。
+This is a direct reproduction of a Phase 4 C6 1/3 failure plus its fix verification.
 
 ## Prompts
 
-TURN: /goal-sisyphus 严格按顺序做两件事：1) 在当前目录创建 a.txt 内容 "alpha"。2) 在当前目录创建 b.txt 内容 "beta"。不允许添加任何额外步骤（包括"检查"、"验证"、"准备"之类的）。autoContinue: true。
+TURN: /goal-sisyphus Strictly do two things in order: 1) create a.txt in the current directory with content "alpha". 2) create b.txt in the current directory with content "beta". Adding any extra steps (including "check", "verify", "prepare" style ones) is not allowed. autoContinue: true.

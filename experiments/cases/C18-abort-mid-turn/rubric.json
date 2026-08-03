@@ -27,9 +27,8 @@
   },
   {
     "id": "no-fake-complete",
-    "desc": "Agent must not have called update_goal=complete (aborted before finishing).",
-    "kind": "tool-args-jq-none",
-    "tool": "update_goal",
-    "jq": ".status == \"complete\""
+    "desc": "Agent must not have called complete_goal=complete (aborted before finishing).",
+    "kind": "tool-not-called",
+    "tool": "complete_goal"
   }
 ]

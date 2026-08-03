@@ -43,9 +43,8 @@
   },
   {
     "id": "update-goal-complete",
-    "desc": "Agent should call update_goal=complete after all 3 steps are verified .",
-    "kind": "tool-args-jq",
-    "tool": "update_goal",
-    "jq": ".status == \"complete\""
+    "desc": "Agent should call complete_goal=complete after all 3 steps are verified .",
+    "kind": "tool-called",
+    "tool": "complete_goal"
   }
 ]

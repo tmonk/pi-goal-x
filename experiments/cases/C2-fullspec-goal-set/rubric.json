@@ -27,10 +27,9 @@
   },
   {
     "id": "update-goal-complete-called",
-    "desc": "Because autoContinue=true and the task is small, agent should finish and call update_goal(complete).",
-    "kind": "tool-args-jq",
-    "tool": "update_goal",
-    "jq": ".status == \"complete\""
+    "desc": "Because autoContinue=true and the task is small, agent should finish and call complete_goal(complete).",
+    "kind": "tool-called",
+    "tool": "complete_goal"
   },
   {
     "id": "no-get-goal-loop",

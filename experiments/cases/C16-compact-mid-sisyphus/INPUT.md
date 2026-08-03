@@ -1,11 +1,11 @@
 # C16 — compaction-then-resume mid sisyphus (B3)
 
-## 被测行为
+## Behavior under test
 
-5-step sisyphus 跑过程中触发自动 compaction（compaction.json 启用 threshold=4000）。验证 Phase 4 加的 `postCompactReminderPending` 机制：
-- compaction 后 next agent_start 注入「POST-COMPACTION RESYNC」block，告知权威 step counter
-- agent 继续完成剩余 steps（不会因 compaction summary 漂移而失败）
-- 最终所有 5 个 step 完成 + update_goal=complete
+While a 5-step sisyphus run is in progress, automatic compaction triggers (compaction.json enabled, threshold=4000). Verify the `postCompactReminderPending` mechanism added in Phase 4:
+- after compaction, the next agent_start injects a "POST-COMPACTION RESYNC" block informing the authoritative step counter
+- the agent continues and completes the remaining steps (does not fail due to compaction summary drift)
+- finally all 5 steps complete + complete_goal
 
 ## Prompts
 

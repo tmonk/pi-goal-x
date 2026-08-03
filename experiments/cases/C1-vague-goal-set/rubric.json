@@ -7,9 +7,9 @@
   },
   {
     "id": "no-update-goal",
-    "desc": "Agent must NOT call update_goal",
+    "desc": "Agent must NOT call complete_goal",
     "kind": "tool-not-called",
-    "tool": "update_goal"
+    "tool": "complete_goal"
   },
   {
     "id": "no-pause-goal",
@@ -33,7 +33,7 @@
     "id": "final-text-has-question",
     "desc": "Final assistant text should contain a question (drafting interview)",
     "kind": "final-text-matches",
-    "pattern": "[?？]"
+    "pattern": "[?]"
   },
   {
     "id": "no-active-goal-on-disk",

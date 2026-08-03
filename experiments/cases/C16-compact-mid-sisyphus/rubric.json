@@ -50,8 +50,7 @@
   {
     "id": "update-goal-complete",
     "desc": "Final completion after all 5 verified steps.",
-    "kind": "tool-args-jq",
-    "tool": "update_goal",
-    "jq": ".status == \"complete\""
+    "kind": "tool-called",
+    "tool": "complete_goal"
   }
 ]

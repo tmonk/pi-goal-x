@@ -1,9 +1,9 @@
 # C1 — `/goal-set` vague topic should enter drafting interview
 
-## 被测行为
+## Behavior under test
 
-`/goal-set <模糊主题>` 应该进入起草反问，不应该立即创建 goal、不应该开始干活。
+`/goal-set <vague topic>` should enter the drafting interview: it must not create a goal immediately and must not start executing work.
 
-## Prompts（每行一个 turn）
+## Prompts (one turn per line)
 
-TURN: /goal-set 帮我整理一下笔记
+TURN: /goal-set help me organize my notes

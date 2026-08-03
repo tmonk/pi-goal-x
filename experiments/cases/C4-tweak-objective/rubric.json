@@ -14,22 +14,22 @@
   },
   {
     "id": "apply-goal-tweak-called",
-    "desc": "Tweak should be applied via the sanctioned apply_goal_tweak tool (the only schema-allowed channel).",
+    "desc": "Tweak should be applied via the sanctioned propose_goal_tweak tool (the only schema-allowed channel).",
     "kind": "tool-called",
-    "tool": "apply_goal_tweak"
+    "tool": "propose_goal_tweak"
   },
   {
     "id": "apply-goal-tweak-mentions-extra-txt",
-    "desc": "apply_goal_tweak.newObjective should mention extra.txt (the added requirement).",
+    "desc": "propose_goal_tweak.newObjective should mention extra.txt (the added requirement).",
     "kind": "tool-args-jq",
-    "tool": "apply_goal_tweak",
+    "tool": "propose_goal_tweak",
     "jq": ".newObjective | test(\"extra\\\\.txt\")"
   },
   {
     "id": "apply-goal-tweak-keeps-base-txt",
-    "desc": "apply_goal_tweak.newObjective should still mention base.txt (we expanded, not replaced).",
+    "desc": "propose_goal_tweak.newObjective should still mention base.txt (we expanded, not replaced).",
     "kind": "tool-args-jq",
-    "tool": "apply_goal_tweak",
+    "tool": "propose_goal_tweak",
     "jq": ".newObjective | test(\"base\\\\.txt\")"
   },
   {

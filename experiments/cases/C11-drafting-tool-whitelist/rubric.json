@@ -42,8 +42,7 @@
   {
     "id": "update-goal-complete",
     "desc": "Goal should reach completion after autoContinue.",
-    "kind": "tool-args-jq",
-    "tool": "update_goal",
-    "jq": ".status == \"complete\""
+    "kind": "tool-called",
+    "tool": "complete_goal"
   }
 ]

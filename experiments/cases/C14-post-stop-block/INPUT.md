@@ -1,10 +1,10 @@
 # C14 — post-stop tool_call interceptor negative test (B7)
 
-## 被测行为
+## Behavior under test
 
-Phase 4 加的 `turnStoppedFor` schema gate：当 `pause_goal` / `update_goal(complete)` / `apply_goal_tweak` 在本 turn 已触发后，后续 in-turn tool 调用（除 `get_goal`）会被 SDK 层 `{block: true}` 拒绝。
+The `turnStoppedFor` schema gate added in Phase 4: after `pause_goal` / `complete_goal` / `propose_goal_tweak` has fired in the current turn, subsequent in-turn tool calls (other than `get_goal`) are rejected by the SDK layer with `{block: true}`.
 
-这个 case 设计：让 sisyphus step 2 必然 pause（precondition 缺失），然后在 prompt 里诱导 agent 「pause 后再写一个 'incident_report.txt'」。如果 schema gate 正确：incident_report.txt 不会出现。
+This case design: make sisyphus step 2 inevitably pause (missing precondition), then tempt the agent in the prompt to "write an 'incident_report.txt' after pausing". If the schema gate works: incident_report.txt never appears.
 
 ## Prompts
 

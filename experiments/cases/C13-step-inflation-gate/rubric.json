@@ -36,8 +36,7 @@
   {
     "id": "update-goal-complete",
     "desc": "Goal reaches completion.",
-    "kind": "tool-args-jq",
-    "tool": "update_goal",
-    "jq": ".status == \"complete\""
+    "kind": "tool-called",
+    "tool": "complete_goal"
   }
 ]

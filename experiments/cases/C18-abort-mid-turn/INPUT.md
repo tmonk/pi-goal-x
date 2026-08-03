@@ -1,14 +1,14 @@
 # C18 — abort/Ctrl-C mid-turn (B4)
 
-## 被测行为
+## Behavior under test
 
-drive.mjs 在第一个 TURN 发送后 12 秒 call `session.abort()`，模拟用户 Ctrl-C 中断 sisyphus 链。验证 Phase 4 加的 `pauseForAbort` 路径：
-- `turn_end` / `message_end` 检测到 `isAbortedAssistantMessage` (`stopReason === "aborted"`)
+drive.mjs calls `session.abort()` 20 seconds after the first TURN is sent (ABORT_AFTER_MS below), simulating a user Ctrl-C interrupting the sisyphus chain. Verify the `pauseForAbort` path added in Phase 4:
+- `turn_end` / `message_end` detects `isAbortedAssistantMessage` (`stopReason === "aborted"`)
 - → `pauseActiveGoal(ctx)` → goal.status = "paused", stopReason = "user", autoContinue = false
 
-/goal-sisyphus 触发 drafting → agent 立刻 propose_goal_draft → goal 创建 → autoContinue 启动 → 12s 后 abort 触发 → pause。
+/goal-sisyphus triggers drafting → the agent immediately proposes with propose_goal_draft → goal created → autoContinue starts → abort fires → pause.
 
-最终: goal 在 disk 上是 paused 状态。autoContinue 应停（其值 false）。
+Final: the goal on disk is in paused state. autoContinue should stop (its value false).
 
 ## Prompts
 
