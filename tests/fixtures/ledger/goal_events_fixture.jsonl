@@ -1,0 +1,16 @@
+{"type":"goal_created","goalId":"goal-a","objective":"Create README","sisyphus":false,"autoContinue":true,"at":"2026-08-03T09:00:00.000Z"}
+{"type":"goal_focused","goalId":"goal-a","reason":"created","at":"2026-08-03T09:00:01.000Z"}
+{"type":"goal_unfocused","reason":"user","at":"2026-08-03T09:01:00.000Z"}
+{"type":"goal_paused","goalId":"goal-a","reason":"blocked on credentials","suggestedAction":"Set FOO_API_KEY","status":"paused","at":"2026-08-03T09:02:00.000Z"}
+{"type":"goal_resumed","goalId":"goal-a","reason":"user","at":"2026-08-03T09:03:00.000Z"}
+{"type":"goal_tweaked","goalId":"goal-a","changeSummary":"Narrowed scope to CLI only","at":"2026-08-03T09:04:00.000Z"}
+{"type":"completion_requested","goalId":"goal-a","summary":"All steps verified","at":"2026-08-03T09:05:00.000Z"}
+{"type":"audit_started","goalId":"goal-a","provider":"anthropic","model":"claude","thinkingLevel":"medium","at":"2026-08-03T09:05:01.000Z"}
+{"type":"audit_result","goalId":"goal-a","verdict":"approved","report":"<approved/> all requirements met","at":"2026-08-03T09:05:02.000Z"}
+{"type":"audit_skipped","goalId":"goal-a","reason":"disabled","provider":"anthropic","model":"claude","thinkingLevel":"medium","at":"2026-08-03T09:05:03.000Z"}
+{"type":"goal_completed","goalId":"goal-a","archivePath":".pi/goals/archived/goal_2026080317060000_goal-a.md","at":"2026-08-03T09:06:00.000Z"}
+{"type":"goal_aborted","goalId":"goal-b","reason":"obsolete","archivePath":".pi/goals/archived/goal_2026080317070000_goal-b.md","at":"2026-08-03T09:07:00.000Z"}
+{"type":"task_list_set","goalId":"goal-a","taskCount":3,"blockCompletion":true,"at":"2026-08-03T09:08:00.000Z"}
+{"type":"task_complete","goalId":"goal-a","taskId":"task-1","evidence":"tests pass","at":"2026-08-03T09:09:00.000Z"}
+{"type":"task_skipped","goalId":"goal-a","taskId":"task-2","reason":"user request","at":"2026-08-03T09:10:00.000Z"}
+not-json at all
