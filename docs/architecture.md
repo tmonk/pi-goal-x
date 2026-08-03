@@ -100,7 +100,7 @@ Because this is stored with `pi.appendEntry("pi-goal-focus", ...)`, it is sessio
 2. If the latest focus entry explicitly has `focusedGoalId: null`, or points at a missing/stale goal, remain unfocused.
 3. If no focus entry exists, merge a compatible legacy `pi-goal-state { version: 3, goal }` goal and focus it. If disk already has the same id, the disk record wins and the legacy session record only supplies focus.
 4. If no focus entry exists and `autoSelectSingleGoal` is enabled, auto-focus the sole open goal for compatibility. The default is disabled.
-5. Otherwise remain unfocused until the user explicitly selects a goal. `/goal-unfocus` appends a null focus entry so the current session stays detached without modifying the shared goal.
+5. Otherwise remain unfocused until the user explicitly selects a goal. `/goal-unfocus` appends a null focus entry so the current session stays detached without modifying the shared goal or appending a project-global focus event. Resume and tree reconstruction preserve that explicit null focus.
 
 Focus is human-owned. No agent tool can switch focus. Lifecycle tools operate only on the focused goal.
 
@@ -138,7 +138,7 @@ A deprecated optional `draftId` parameter is accepted for compatibility but igno
 - `/goals-set` and `/sisyphus-set` directly create and focus a new open goal from the supplied objective.
 - `/goal-list` prints all open goals with id, status, mode, usage, objective title, path, and a focus marker.
 - `/goal-focus` uses `ctx.ui.select` when multiple goals are open and updates only session focus.
-- `/goal-unfocus` writes a null session focus entry, clears that session's continuation/runtime state, and leaves the shared active goal file unchanged.
+- `/goal-unfocus` writes a null session focus entry, clears continuation/runtime state, aborts in-flight work and audits for that session, and leaves the shared active goal file and project-global focus ledger unchanged. Focus revision tokens prevent pending completion, tweak, and task-list confirmation results from mutating a goal after detachment.
 - `/goal-status` and `/goal` show the focused goal plus an `other open goals` hint.
 - `/goal-resume` resumes the focused paused goal; when unfocused with multiple open goals, it asks the user to choose. Choosing an already active goal only focuses it.
 - `/goal-clear` and `/goal-abort` archive only the focused/selected goal and never clear the whole pool at once.

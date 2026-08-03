@@ -388,9 +388,39 @@ function isMeaningfulProgressToolCall(toolName: string, args: unknown): boolean 
 
 // ---------- extension entry point ----------
 
-export default function goalExtension(pi: ExtensionAPI): void {
+export default function goalExtension(
+	pi: ExtensionAPI,
+	dependencies: { runCompletionAuditor?: typeof runGoalCompletionAuditor } = {},
+): void {
 	let goalsById = new Map<string, GoalRecord>();
 	let focusedGoalId: string | null = null;
+	let focusRevision = 0;
+	let hasExplicitSessionFocus = false;
+
+	function assignFocusedGoalId(next: string | null): void {
+		if (focusedGoalId !== next) focusRevision += 1;
+		focusedGoalId = next;
+	}
+
+	function focusedOperationToken(goalId: string): { goalId: string; revision: number } {
+		return { goalId, revision: focusRevision };
+	}
+
+	function isFocusedOperationCurrent(token: { goalId: string; revision: number }): boolean {
+		return focusedGoalId === token.goalId && focusRevision === token.revision;
+	}
+
+	function focusedOperationCancelledResult(action: string, token: { goalId: string; revision: number }) {
+		return {
+			content: [{
+				type: "text" as const,
+				text: `${action} cancelled because goal ${token.goalId} is no longer focused in this session. The shared goal was not modified.`,
+			}],
+			details: goalDetails(state.goal),
+			terminate: true,
+		};
+	}
+
 	const state = {
 		get goal(): GoalRecord | null {
 			return focusedGoalFromPool(goalsById, focusedGoalId);
@@ -398,11 +428,11 @@ export default function goalExtension(pi: ExtensionAPI): void {
 		set goal(next: GoalRecord | null) {
 			if (next) {
 				goalsById.set(next.id, next);
-				focusedGoalId = next.id;
+				assignFocusedGoalId(next.id);
 				return;
 			}
 			if (focusedGoalId) goalsById.delete(focusedGoalId);
-			focusedGoalId = null;
+			assignFocusedGoalId(null);
 		},
 	};
 	let continuationQueuedFor: string | null = null;
@@ -602,11 +632,11 @@ export default function goalExtension(pi: ExtensionAPI): void {
 			if (current && !current.activePath) {
 				goalsById = fresh;
 				goalsById.set(current.id, current);
-				focusedGoalId = current.id;
+				assignFocusedGoalId(current.id);
 				return true;
 			}
 			goalsById = fresh;
-			focusedGoalId = null;
+			assignFocusedGoalId(null);
 			clearStoppedRuntimeState();
 			if (current) resetGetGoalNudgeState(current.id);
 			if (tweakDraftingFor !== null) tweakDraftingFor = null;
@@ -619,19 +649,25 @@ export default function goalExtension(pi: ExtensionAPI): void {
 			: diskGoal;
 		goalsById = fresh;
 		goalsById.set(reconciled.id, reconciled);
-		focusedGoalId = reconciled.id;
+		assignFocusedGoalId(reconciled.id);
 		if (reconciled.status !== "active" || !reconciled.autoContinue) clearContinuationState();
 		if (reconciled.status !== "active") clearActiveAccounting();
 		return true;
 	}
 
 	function appendFocusEntry(goalId: string | null, reason: GoalFocusReason): void {
+		hasExplicitSessionFocus = true;
 		pi.appendEntry(FOCUS_ENTRY, goalFocusDetails(goalId, reason));
 	}
 
-	function setFocusedGoalId(goalId: string | null, ctx: ExtensionContext, reason: GoalFocusReason): void {
+	function setFocusedGoalId(
+		goalId: string | null,
+		ctx: ExtensionContext,
+		reason: GoalFocusReason,
+		opts: { recordLedger?: boolean } = {},
+	): void {
 		const previousGoalId = focusedGoalId;
-		focusedGoalId = goalId && goalsById.has(goalId) ? goalId : null;
+		assignFocusedGoalId(goalId && goalsById.has(goalId) ? goalId : null);
 		if (previousGoalId !== focusedGoalId) {
 			clearContinuationState();
 			clearActiveAccounting();
@@ -642,9 +678,9 @@ export default function goalExtension(pi: ExtensionAPI): void {
 		appendFocusEntry(focusedGoalId, reason);
 		// Append ledger event for focus changes
 		try {
-			if (focusedGoalId) {
+			if (opts.recordLedger !== false && focusedGoalId) {
 				appendGoalEvent(ctx, { type: "goal_focused", goalId: focusedGoalId, reason, at: nowIso() });
-			} else if (previousGoalId) {
+			} else if (opts.recordLedger !== false && previousGoalId) {
 				appendGoalEvent(ctx, { type: "goal_unfocused", reason, at: nowIso() });
 			}
 		} catch {
@@ -657,7 +693,7 @@ export default function goalExtension(pi: ExtensionAPI): void {
 	function updateFocusedGoal(next: GoalRecord, ctx: ExtensionContext, shouldPersist = true): void {
 		const previousGoalId = focusedGoalId;
 		goalsById.set(next.id, next);
-		focusedGoalId = next.id;
+		assignFocusedGoalId(next.id);
 		if (previousGoalId !== focusedGoalId) {
 			resetGetGoalNudgeState(previousGoalId);
 			resetGetGoalNudgeState(focusedGoalId);
@@ -675,7 +711,7 @@ export default function goalExtension(pi: ExtensionAPI): void {
 	function removeFocusedGoal(ctx: ExtensionContext, reason: GoalFocusReason): void {
 		const previousGoalId = focusedGoalId;
 		if (focusedGoalId) goalsById.delete(focusedGoalId);
-		focusedGoalId = null;
+		assignFocusedGoalId(null);
 		clearStoppedRuntimeState();
 		resetGetGoalNudgeState(previousGoalId);
 		appendFocusEntry(null, reason);
@@ -859,7 +895,9 @@ export default function goalExtension(pi: ExtensionAPI): void {
 
 	function loadState(ctx: ExtensionContext): void {
 		goalsById = readActiveGoalPool(ctx);
-		focusedGoalId = null;
+		focusRevision += 1; // Session reload/tree navigation invalidates pending async focus operations.
+		assignFocusedGoalId(null);
+		hasExplicitSessionFocus = false;
 		let focusEntry: GoalFocusEntry | null = null;
 		let legacyGoal: GoalRecord | null = null;
 		let legacyStateSeen = false;
@@ -880,7 +918,8 @@ export default function goalExtension(pi: ExtensionAPI): void {
 			legacyGoal = sanitizeGoalPaths(ctx, mergeGoalPromptFromDisk(ctx, legacyGoal));
 		}
 		const settings = loadGoalSettings(ctx.cwd);
-		focusedGoalId = resolveSessionFocus({ pool: goalsById, focusEntry, legacyGoal, autoSelectSingleGoal: settings.autoSelectSingleGoal });
+		hasExplicitSessionFocus = focusEntry !== null;
+		assignFocusedGoalId(resolveSessionFocus({ pool: goalsById, focusEntry, legacyGoal, autoSelectSingleGoal: settings.autoSelectSingleGoal }));
 		if (!focusEntry && focusedGoalId) {
 			try {
 				appendFocusEntry(focusedGoalId, legacyGoal?.id === focusedGoalId ? "migrated" : "selected");
@@ -1038,7 +1077,7 @@ export default function goalExtension(pi: ExtensionAPI): void {
 				state.goal = null;
 				if (focusedGoalId === prevId) {
 					goalsById.delete(prevId);
-					focusedGoalId = null;
+					assignFocusedGoalId(null);
 				}
 				clearStoppedRuntimeState();
 				syncGoalTools();
@@ -1504,12 +1543,25 @@ Verification contract:
 	}
 
 	function unfocusGoalCommand(ctx: ExtensionContext): void {
+		const runtimeGoalId = state.goal?.id ?? runningGoalId ?? checkpointGoalId;
 		reconcileFocusedGoalFromDisk(ctx);
 		const current = state.goal;
-		setFocusedGoalId(null, ctx, "unfocused");
+		const detachedGoalId = current?.id ?? runtimeGoalId;
+		let wasBusy = false;
+		try {
+			wasBusy = !ctx.isIdle();
+		} catch {}
+		if (detachedGoalId && wasBusy) turnStoppedFor = { goalId: detachedGoalId, turnSeq };
+		setFocusedGoalId(null, ctx, "unfocused", { recordLedger: false });
 		runningGoalId = null;
 		checkpointGoalId = null;
 		postCompactReminderPending = false;
+		if (auditAbortController) auditAbortController.abort();
+		if (detachedGoalId && wasBusy) {
+			try {
+				ctx.abort?.();
+			} catch {}
+		}
 		if (!current) {
 			const openCount = openGoals().length;
 			ctx.ui.notify(openCount > 0 ? buildUnfocusedOpenGoalsSummary(openCount) : detailedSummary(null), "info");
@@ -2261,6 +2313,7 @@ ${objective}` : objective,
 			});
 
 			const headless = shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM });
+			const tweakFocus = focusedOperationToken(state.goal.id);
 
 			let decision: { decision: "confirm" | "continue"; auditorEnabled: boolean };
 			if (headless) {
@@ -2276,6 +2329,9 @@ ${objective}` : objective,
 						details: goalDetails(state.goal),
 					};
 				}
+			}
+			if (!isFocusedOperationCurrent(tweakFocus)) {
+				return focusedOperationCancelledResult("Goal tweak", tweakFocus);
 			}
 
 			if (decision.decision === "confirm") {
@@ -2439,6 +2495,7 @@ ${objective}` : objective,
 			}
 
 			const auditTarget = mergeGoalPromptFromDisk(ctx, state.goal);
+			const completionFocus = focusedOperationToken(auditTarget.id);
 			// Append ledger: completion requested
 			try {
 				appendGoalEvent(ctx, {
@@ -2583,6 +2640,9 @@ ${objective}` : objective,
 				display: true,
 				details: { phase: "started", goalId: auditTarget.id, auditor: auditorLabel },
 			}, { triggerTurn: true });
+			if (!isFocusedOperationCurrent(completionFocus)) {
+				return focusedOperationCancelledResult("Goal completion", completionFocus);
+			}
 			// Append ledger: audit started
 			try {
 				appendGoalEvent(ctx, {
@@ -2617,16 +2677,17 @@ ${objective}` : objective,
 
 			// Create a dedicated AbortController for the audit so it can be interrupted via Escape
 			auditAbortController?.abort(); // Clean up any stale controller
-			auditAbortController = new AbortController();
+			const completionAuditController = new AbortController();
+			auditAbortController = completionAuditController;
 
-			const auditor = await runGoalCompletionAuditor({
+			const auditor = await (dependencies.runCompletionAuditor ?? runGoalCompletionAuditor)({
 				ctx,
 				goal: auditTarget,
 				completionSummary: params.completionSummary,
 				detailedSummary: detailedSummary(auditTarget),
 				verificationSummary: params.verificationSummary,
 				settings: loadGoalSettings(ctx.cwd),
-				signal: auditAbortController.signal,
+				signal: completionAuditController.signal,
 				onProgress: (progress) => {
 					auditProgress = {
 						...progress,
@@ -2636,9 +2697,14 @@ ${objective}` : objective,
 				},
 			});
 			// Clear abort controller — audit finished on its own
-			auditAbortController = null;
+			if (auditAbortController === completionAuditController) auditAbortController = null;
 			// Clear auditor progress display
 			stopAuditAnimation();
+			if (!isFocusedOperationCurrent(completionFocus)) {
+				auditProgress = null;
+				goalWidgetComponent?.invalidate();
+				return focusedOperationCancelledResult("Goal completion", completionFocus);
+			}
 
 			// If the audit was aborted by the user (Esc), show a TUI dialog letting
 			// the user choose: mark complete without audit, or continue working.
@@ -2650,6 +2716,9 @@ ${objective}` : objective,
 				showingEscapeDialog = true;
 				const userChoice: EscapeDialogResult = await showEscapeDialog(ctx, auditTarget.objective);
 				showingEscapeDialog = false;
+				if (!isFocusedOperationCurrent(completionFocus)) {
+					return focusedOperationCancelledResult("Goal completion", completionFocus);
+				}
 
 				if (userChoice === "complete_without_audit") {
 					// ── Mark complete without audit ────────────────────────────
@@ -3074,8 +3143,12 @@ ${objective}` : objective,
 			const taskLines = renderTaskLines(taskList.tasks);
 			const gateLabel = blockCompletion ? " (blockCompletion enabled)" : "";
 			const proposalText = [`Proposed task list${gateLabel}:`, "", ...taskLines].join("\n");
+			const taskListFocus = focusedOperationToken(state.goal.id);
 
 			const dialogResult = await showProposalDialog(ctx, proposalText, "goal", !state.goal?.skipAuditor);
+			if (!isFocusedOperationCurrent(taskListFocus)) {
+				return focusedOperationCancelledResult("Task list proposal", taskListFocus);
+			}
 			if (dialogResult.decision !== "confirm") {
 				return {
 					content: [{ type: "text", text: "Task list proposal declined." }],
@@ -3448,7 +3521,7 @@ promptGuidelines: [
 			const archived = archiveGoalFile(ctx, completedGoal);
 			resetGetGoalNudgeState(completedGoal.id);
 			goalsById.delete(completedGoal.id);
-			focusedGoalId = null;
+			assignFocusedGoalId(null);
 			appendFocusEntry(null, "completed");
 			syncGoalTools();
 			updateUI(ctx);
@@ -3490,7 +3563,7 @@ promptGuidelines: [
 		loadState(ctx);
 		syncGoalTools();
 		syncTerminalInputPause(ctx);
-		if (event.reason === "resume" && !state.goal && openGoals().length > 1 && ctx.hasUI) {
+		if (event.reason === "resume" && !state.goal && !hasExplicitSessionFocus && openGoals().length > 1 && ctx.hasUI) {
 			await focusGoalCommand(ctx);
 		}
 		// Codex behavior: prompt before reactivating a paused goal on resume.

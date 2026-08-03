@@ -77,6 +77,8 @@ let focusedGoalId: string | null = null;
 | `goalWorkToolCalledThisTurn` | empty-turn guard：只有本 turn 做了有意义工作才继续 auto-continue。 |
 | `turnStoppedFor` | pause/abort/complete/tweak 后阻止同一 turn 继续乱调用工具。 |
 | `postCompactReminderPending` | session compact 后给下一轮 agent 注入 deterministic resync prompt。 |
+| `focusRevision` | session focus 改变时递增；异步 completion/tweak/task proposal 在写入前必须验证 revision，避免 unfocus 后迟到结果修改共享 goal。 |
+| `hasExplicitSessionFocus` | 区分“从未选择 focus”和显式 null focus，保证 resume/tree 不覆盖 `/goal-unfocus`。 |
 | `activeGetGoalTurnsByGoalId` | 统计重复 `get_goal`，用于 soft nudge，不是 hard block。 |
 
 ## 4. 持久化：Goal 文件与 Ledger
@@ -140,7 +142,7 @@ ledger append 是 best-effort：写入失败不应该让用户的生命周期动
 | `/sisyphus-set <objective>` | 直接创建并启动 Sisyphus goal，不进入 draft discussion。 |
 | `/goal-list` | 列出 `.pi/goals/` 下所有 open goals。 |
 | `/goal-focus` | 让用户选择当前 session focus。 |
-| `/goal-unfocus` | 只清除当前 session focus 和 continuation state，不暂停、修改或归档共享 goal。 |
+| `/goal-unfocus` | 清除当前 session focus，终止该 session 的 continuation/in-flight work/audit，并用 revision gate 丢弃迟到异步结果；不暂停、修改、归档共享 goal，也不写 project-global focus event。 |
 | `/goal-status` / `/goal` | 显示 focused goal 状态和其他 open goals 提示。 |
 | `/goal-tweak <change>` | 修改 focused goal，但也要先走 tweak drafting。 |
 | `/goal-pause` | 用户暂停 focused active goal。 |
