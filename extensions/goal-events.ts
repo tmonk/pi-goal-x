@@ -24,6 +24,7 @@ import {
 } from "./prompts/goal-prompts.ts";
 import { syncTerminalInputPause } from "./goal-widget.ts";
 import type { GoalCore } from "./goal-state.ts";
+import type { GoalMutationOutcome } from "./goal-service.ts";
 
 /**
  * The goal extension's lifecycle event handlers (context, turn_start,
@@ -130,22 +131,33 @@ export function registerGoalEvents(core: GoalCore): void {
 		// This runs after the agent's turn ends — the agent has now seen the result.
 		if (core.state.goal?.status === "complete" && !core.state.goal?.archivedPath) {
 			const completedGoal = core.state.goal;
-			const archiveResult = core.goalService.apply(ctx, {
-				reconcile: false,
-				archive: true,
-				commitFocused: false,
-				mutate: () => completedGoal,
-				ledger: (written) => [{
-					type: "goal_completed",
-					goalId: completedGoal.id,
-					archivePath: written.archivedPath,
-					at: nowIso(),
-				}],
-			});
+			let archiveResult: GoalMutationOutcome;
+			try {
+				archiveResult = core.goalService.apply(ctx, {
+					reconcile: false,
+					archive: true,
+					commitFocused: false,
+					mutate: () => completedGoal,
+					ledger: (written) => [{
+						type: "goal_completed",
+						goalId: completedGoal.id,
+						archivePath: written.archivedPath,
+						at: nowIso(),
+					}],
+				});
+			} catch (err) {
+				// The archive write throws on failure (e.g. unwritable archived
+				// directory); surface it as a typed outcome (follow-up Stage 3).
+				archiveResult = { ok: false, message: err instanceof Error ? err.message : String(err) };
+			}
 			if (archiveResult.ok) {
 				core.goalsById.delete(completedGoal.id);
 				core.assignFocusedGoalId(null);
 				core.appendFocusEntry(null, "completed");
+			} else {
+				// The completed goal stays open and focused; make the failure
+				// observable instead of silently dropping it.
+				ctx.ui.notify(`Failed to archive completed goal: ${archiveResult.message}`, "warning");
 			}
 			core.updateUI(ctx);
 		}

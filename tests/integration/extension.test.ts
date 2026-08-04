@@ -8,7 +8,7 @@
  * `npm run test:integration`.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -701,6 +701,78 @@ describe("confirmation and audit UX (follow-up Stage 2)", () => {
 			const events = ledgerEvents(f.cwd);
 			assert.equal(events.some((e) => e.type === "audit_skipped"), false, "no skip event for continue working");
 			assert.equal(events.some((e) => e.type === "goal_completed"), false, "goal not completed");
+		} finally {
+			f.cleanup();
+		}
+	});
+});
+
+describe("completion transaction hardening (follow-up Stage 3)", () => {
+	it("completion commit write failure never reports success and never clears focus", async () => {
+		const f = fixture();
+		const goalsDir = path.join(f.cwd, ".pi", "goals");
+		try {
+			// Pre-create the ledger file so its fallback append path works even
+			// when the goals directory is read-only (append needs write on the
+			// file, not the directory; the atomic goal write needs a writable
+			// directory and therefore fails).
+			writeFileSync(goalLedgerPath({ cwd: f.cwd }), "", "utf8");
+			const h = createHarness({
+				cwd: f.cwd, sessionEntries: f.sessionEntries,
+				runCompletionAuditor: async () =>
+					({ approved: true, disapproved: false, output: "All good\n<approved/>", model: "fixture" }),
+			});
+			await start(h);
+			// Block the authoritative active-file write (reads still work).
+			chmodSync(goalsDir, 0o555);
+			const update = h.tools.get("update_goal")!;
+			const result = await (update.execute as any)("fail-write-1", { status: "complete" }, new AbortController().signal, undefined, h.ctx);
+			const text = result.content?.[0]?.text ?? "";
+			assert.ok(text.includes("Goal completion failed"), `failure report expected: ${text.slice(0, 120)}`);
+			assert.ok(text.includes("not completed"), "must state the goal was not completed");
+			assert.ok(!text.includes("Goal audit approved"), "no success report when the state mutation failed");
+			assert.notEqual(result.terminate, true, "no termination request on failed completion");
+			// The deferred archival at turn_end must not emit goal_completed.
+			await h.handlers.get("turn_end")?.({ message: { role: "assistant", stopReason: "stop", usage: { input: 0, output: 0 } } }, h.ctx);
+			const events = ledgerEvents(f.cwd);
+			assert.equal(events.some((e) => e.type === "goal_completed"), false, "no goal_completed event");
+			assert.ok(events.some((e) => e.type === "audit_result"), "audit itself ran and recorded its result");
+			// The goal stays open and focused (get_goal still reports it, not complete).
+			const get = h.tools.get("get_goal")!;
+			const snapshot = await (get.execute as any)("g-1", {}, new AbortController().signal, undefined, h.ctx);
+			const snapText = snapshot.content?.[0]?.text ?? "";
+			assert.ok(snapText.includes("Status: running"), `goal still open and active: ${snapText.slice(0, 100)}`);
+		} finally {
+			try { chmodSync(goalsDir, 0o755); } catch {}
+			f.cleanup();
+		}
+	});
+
+	it("deferred-archive failure at turn_end keeps the goal open and records no goal_completed", async () => {
+		const f = fixture();
+		try {
+			const h = createHarness({
+				cwd: f.cwd, sessionEntries: f.sessionEntries,
+				runCompletionAuditor: async () =>
+					({ approved: true, disapproved: false, output: "All good\n<approved/>", model: "fixture" }),
+			});
+			await start(h);
+			const update = h.tools.get("update_goal")!;
+			const result = await (update.execute as any)("fail-arch-1", { status: "complete" }, new AbortController().signal, undefined, h.ctx);
+			const text = result.content?.[0]?.text ?? "";
+			assert.ok(text.includes("Goal audit approved"), "commit itself succeeded");
+			// Sabotage the archived directory: the deferred archive write fails.
+			const archivedDir = path.join(f.cwd, ".pi", "goals", "archived");
+			rmSync(archivedDir, { recursive: true, force: true });
+			writeFileSync(archivedDir, "not a directory", "utf8");
+			await h.handlers.get("turn_end")?.({ message: { role: "assistant", stopReason: "stop", usage: { input: 0, output: 0 } } }, h.ctx);
+			const events = ledgerEvents(f.cwd);
+			assert.equal(events.some((e) => e.type === "goal_completed"), false, "no goal_completed when archive failed");
+			assert.ok(h.notifies.some((n) => n.msg.includes("Failed to archive completed goal")), "archive failure is observable");
+			assert.equal(activeGoalFiles(f.cwd).length, 1, "goal file stays in the active pool");
+			// The active file still holds the completed goal (not archived).
+			const remaining = parseGoalFile(path.join(f.cwd, ".pi", "goals", activeGoalFiles(f.cwd)[0]!));
+			assert.equal(remaining?.status, "complete", "completed goal remains on disk, unarchived");
 		} finally {
 			f.cleanup();
 		}

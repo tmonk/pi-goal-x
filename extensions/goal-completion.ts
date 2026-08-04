@@ -12,6 +12,7 @@ import { nowIso, type GoalRecord } from "./goal-record.ts";
 import { mergeGoalPromptFromDisk } from "./storage/goal-files.ts";
 import { showEscapeDialog, type EscapeDialogResult } from "./widgets/goal-escape-dialog.ts";
 import type { GoalCore } from "./goal-state.ts";
+import type { GoalMutationOutcome } from "./goal-service.ts";
 
 // Agent's goal-confirmation entry point. Shows the user a full plain-text
 // draft report with two choices: [Confirm] (creates the goal) or
@@ -68,7 +69,14 @@ export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContex
  * Deferred archival: sets the goal complete in memory + writes the active
  * file WITHOUT archiving; archival happens at turn_end so the agent can
  * recognise the outcome before the goal is archived.
+ *
+ * Returns a discriminated result. When GoalService.apply fails (stale focus,
+ * missing file, write failure, or invalid lifecycle state), it returns
+ * { ok: false, message, terminate: false } — never a completed report and
+ * never a termination request (follow-up Stage 3).
  */
+type CompletionCommitResult = AgentToolResult<unknown> & { ok: boolean };
+
 function commitGoalCompletion(core: GoalCore, ctx: ExtensionContext, opts: {
 	goal: GoalRecord;
 	completionFocus: { goalId: string; revision: number };
@@ -76,16 +84,31 @@ function commitGoalCompletion(core: GoalCore, ctx: ExtensionContext, opts: {
 	auditSkippedReason?: string | null;
 	terminate?: boolean;
 	trailing?: string[];
-}): AgentToolResult<unknown> {
+}): CompletionCommitResult {
 	core.accountProgress(ctx);
 	core.auditProgress = null;
 	core.goalWidgetComponentRef.current?.invalidate();
-	const completeResult = core.goalService.apply(ctx, {
-		reconcile: false,
-		focusToken: opts.completionFocus,
-		mutate: () => ({ ...opts.goal, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
-	});
-	if (completeResult.ok && completeResult.goal) core.runtime.markTurnStopped(completeResult.goal.id);
+	let completeResult: GoalMutationOutcome;
+	try {
+		completeResult = core.goalService.apply(ctx, {
+			reconcile: false,
+			focusToken: opts.completionFocus,
+			mutate: () => ({ ...opts.goal, status: "complete" as const, stopReason: "agent" as const, updatedAt: nowIso() }),
+		});
+	} catch (err) {
+		// The authoritative file write throws on failure; surface it as a typed
+		// mutation outcome so the caller can inspect it instead of crashing.
+		completeResult = { ok: false, message: err instanceof Error ? err.message : String(err) };
+	}
+	if (!completeResult.ok) {
+		return {
+			ok: false,
+			content: [{ type: "text", text: `Goal completion failed: ${completeResult.message ?? "the state mutation was rejected"}. The goal was not completed.` }],
+			details: goalDetails(core.state.goal),
+			terminate: false,
+		};
+	}
+	if (completeResult.goal) core.runtime.markTurnStopped(completeResult.goal.id);
 	core.updateUI(ctx);
 	const text = buildCompletionReport({
 		detailedSummary: detailedSummary(core.state.goal),
@@ -94,6 +117,7 @@ function commitGoalCompletion(core: GoalCore, ctx: ExtensionContext, opts: {
 		taskSummary: core.state.goal?.taskList ? buildTaskSummary(core.state.goal.taskList) : null,
 	});
 	return {
+		ok: true,
 		content: [{ type: "text", text: opts.trailing?.length ? [text, "", ...opts.trailing].join("\n") : text }],
 		details: goalDetails(core.state.goal),
 		...(opts.terminate === false ? {} : { terminate: true }),
