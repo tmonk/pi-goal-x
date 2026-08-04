@@ -19,9 +19,10 @@ is empty).
 
 - `extensions/goal-questionnaire.ts` — `runGoalQuestionnaire` uses plain
   `ctx.ui.custom(factory)` (no options). pi's `showExtensionCustom` swaps the
-  editor for the dialog component inline in the main TUI buffer; render is
-  unbounded (full proposal content in the buffer). Hardware cursor suppression
-  during the dialog is retained (pre-regression).
+  editor for the dialog component inline in the main TUI buffer. The render is
+  byte-identical to 383ae52 for content that fits; for content taller than
+  the terminal it is tail-sliced to the churn-guard bound (below). Hardware
+  cursor suppression during the dialog is retained (pre-regression).
 - `extensions/goal-task-confirmation.ts` —
   `ctx.ui.custom(factory, { overlay: true, overlayOptions: { anchor: "center",
   width: "70%", minWidth: 50, maxHeight: "60%" } })`.
@@ -42,6 +43,45 @@ is empty).
   reverted overlay panels) and the session's temporary repro scripts.
 - `tests/.test-manifest.json` restored to the 383ae52 listing.
 
+## Churn guard (the one addition to the 383ae52 surface)
+
+Goal tweak (user): the tall-dialog close was observed as “the window takes
+~10s to scroll back to the bottom” — confirmed as pi-tui's shrink
+full-render wiping the scrollback. Fix = bound the questionnaire render to
+the terminal height; no new machinery.
+
+```ts
+// in runGoalQuestionnaire's factory, before the first render:
+const tuiInfo = tui as unknown as { terminal?: { rows?: number }; previousLines?: string[] };
+const terminalRows = tuiInfo.terminal?.rows;
+const baseFrame = tuiInfo.previousLines?.length;          // pre-dialog frame (chat+footer+editor)
+const maxDialogLines = terminalRows && baseFrame ? Math.max(10, terminalRows - baseFrame + 1) : undefined;
+
+// in render(), after the width safety net, before caching:
+if (maxDialogLines !== undefined && lines.length > maxDialogLines) {
+    lines = lines.slice(lines.length - maxDialogLines);   // tail slice
+}
+```
+
+### Why it works
+
+The dialog occupies the editor slot, so the opened frame is
+`preDialogFrame − 1 + dialogLines`. With
+`dialogLines ≤ terminalRows − preDialogFrame + 1` the frame is at most
+`terminalRows`, so `previousViewportTop` stays 0 and on close pi-tui's
+shrink decision `targetRow < prevViewportTop` is never true, and the
+clear-path guard `extraLines > height` is never hit — the `fullRender(true)`
+(`\x1b[2J\x1b[H\x1b[3J`) branch is unreachable. The tail slice keeps the
+options/footer (the actionable part) in view; for content that fits, the
+slice is a no-op and the render is identical to 383ae52.
+
+Guarded to real TUI instances only (`terminal.rows`/`previousLines` exist):
+the mock TUI in unit tests renders unbounded, so the 383ae52 test surface is
+untouched. Tradeoff (accepted in the tweak): for a dialog taller than the
+terminal, the dialog head is not written to the buffer — scrollback contains
+the tail only. Pre-regression wrote the head but the close wiped everything
+with 2J+3J.
+
 ## Why scrollback is "in full" now
 
 1. **No alternate screen** — the alt-screen module is gone; no dialog flow
@@ -50,34 +90,43 @@ is empty).
    (no 2J/3J); closing emits at worst `\r\x1b[2K` row clears; `2J/3J` only
    occur in a pre-existing pi-tui edge case (see below).
 3. **Full content in the buffer** — the inline questionnaire renders the
-   complete proposal; the user can scroll up and read all of it while the
-   dialog is open. (The reverted overlay panel composited only the tail onto
-   the frame, so scrollback never contained the full dialog.)
+   complete proposal for content that fits, so the user can scroll up and
+   read all of it while the dialog is open; taller-than-screen proposals
+   render the tail (churn guard), which stays in the buffer instead of being
+   wiped by the old close-time 2J+3J. (The reverted overlay panel composited
+   only the tail onto the frame, so scrollback never contained the full
+   dialog.)
 4. **No viewport yank for content that fits** — measured 0 scrolls on
    open/nav/close; the renderer's viewport model stays put.
 
 ## Verification methodology
 
 `experiments/scroll-repro/repro-dialog-render.mjs` (383ae52 harness) models
-the differential renderer; the final acceptance run drives the **real**
-components through the **real** pi-tui with a fake terminal and pi's exact
-`showExtensionCustom` sequence (editor swap for non-overlay, `showOverlay`
-for the centered dialogs), tracking viewport scrolls (`\n` while the cursor
-is on the bottom row), DECSET 1049, `2J`, and `3J` in the emitted stream, and
-inspecting `previousLines` for full-content presence. Results are tabulated
-in PRODUCT.md (all scenarios: 0 churn when content fits, no 1049, no 2J/3J on
-open, full dialog content in the buffer, chat visible above; 2J/3J on close
-only in the tall-dialog edge case below).
+the differential renderer; `experiments/scroll-repro/before-after-churn.mjs`
+(committed) drives the **real** `runGoalQuestionnaire` through the **real**
+pi-tui with a fake terminal and pi's exact `showExtensionCustom` sequence
+(editor swap; `showOverlay` for the centered dialogs), tracking viewport
+scrolls (`\n` while the cursor is on the bottom row, measured from the
+pre-render cursor row), DECSET 1049, `2J`, `3J`, the post-close cursor row,
+and `previousLines` content presence. Report mode measures the current
+behavior; `--expect-fixed` asserts no 2J/3J, no viewport yank, and a
+0-churn fits scenario. Results are tabulated in PRODUCT.md (all scenarios
+0-churn for fits and for tall dialogs with a fitting chat; no 1049; no 2J/3J
+anywhere; chat visible above; tall-dialog tail in the buffer).
 
-## Known pre-existing pi-tui edge case (documented, not introduced)
+## Pre-existing pi-tui edge case — now eliminated by the churn guard
 
 pi-tui's differential renderer, on a frame shrink where the content's last
 row moved above the previous viewport top (`targetRow < prevViewportTop`),
 calls `fullRender(true)` which emits `\x1b[2J\x1b[H\x1b[3J` — screen +
-scrollback cleared. This fires when closing a questionnaire whose opened
-frame exceeded the terminal height (a proposal taller than the screen; the
-original spec's "close scroll churn"). pi-tui is a dependency untouched by
-the three commits, so this behavior is present at 383ae52 and predates the
-reverted work. The extension's only lever to avoid it would be bounding the
-dialog render — new machinery, explicitly rejected ("revert exactly", "no new
-dialog machinery"). Recorded for the user's decision at signoff.
+scrollback cleared. At 383ae52 this fired on closing a questionnaire whose
+opened frame exceeded the terminal height (proposal taller than the screen;
+the original spec's "close scroll churn") — the cause of the user's observed
+~10s scroll-back-to-bottom. pi-tui is a dependency untouched by the three
+commits, so the behavior was pre-existing; the extension's only lever is
+bounding the dialog render, which is exactly what the churn guard does (the
+opened frame never exceeds the terminal height, so the shrink full-render
+branch is unreachable). The guard is verified by
+`experiments/scroll-repro/before-after-churn.mjs` (`--expect-fixed`), which
+previously failed with `2J=1 3J=1` on the tall-dialog close and now passes
+with no 2J/3J anywhere (rows 24/40/60).

@@ -5,12 +5,18 @@
 Implemented. Per explicit user direction, the goal dialog and heading surface
 is reverted **exactly** to commit `383ae52` — the state before the
 alternate-screen (b8cff1a), full-heading (a146edb), and overlay-panel
-(61db55e) commits — while verifying that terminal scrollback is enabled **in
-full**: dialogs stay in the main terminal buffer (no DECSET 1049 alternate
-screen, no `\x1b[2J`/`\x1b[3J` scrollback erases in the dialog flow), the
-complete chat and dialog content remain in the buffer and readable via
-terminal scrollback, and opening/navigating/closing never yanks the viewport
-for content that fits on screen.
+(61db55e) commits — plus one minimal churn guard: the questionnaire render is
+bounded to the terminal height (tail slice) so that closing a proposal taller
+than the screen can no longer trigger pi-tui's shrink full-render
+(`\x1b[2J\x1b[H\x1b[3J`). Verified with a committed programmatic before/after
+harness: dialogs stay in the main terminal buffer (no DECSET 1049 alternate
+screen, no `\x1b[2J`/`\x1b[3J` scrollback erases anywhere in the dialog
+flow), complete chat content and the full dialog (for content that fits)
+remain in the buffer and readable via terminal scrollback, and
+opening/navigating/closing never yank the viewport for content that fits on
+screen — or for taller-than-screen proposals (the pre-regression behavior
+only kept them readable via scrollback up until the close, which then wiped
+it).
 
 ## What was tried and rejected (why we are here)
 
@@ -35,10 +41,12 @@ for content that fits on screen.
 - **Accept-goal questionnaire (`propose_goal_draft` / `goal_questionnaire` /
   `goal_question` — `runGoalQuestionnaire`):** plain `ctx.ui.custom(factory)`
   with no options — the dialog replaces the editor inline in the main TUI
-  buffer, rendered unbounded exactly as pre-regression: question title, rich
-  context renderer, tabs, options list, input mode, submit view, recommended
-  default highlighted. No overlay options, no windowing, no internal scrolling
-  UI.
+  buffer: question title, rich context renderer, tabs, options list, input
+  mode, submit view, recommended default highlighted. No overlay options, no
+  windowing, no internal scrolling UI. The render is byte-identical to the
+  pre-regression UI for content that fits on screen; content taller than the
+  terminal is tail-sliced to the terminal-height bound so the opened frame
+  never exceeds the screen (see “Churn guard” below).
 - **Task-list confirmation (`showTaskConfirmation`):** centered main-screen
   overlay `{ anchor: "center", width: "70%", minWidth: 50, maxHeight: "60%" }`.
 - **Audit escape dialog (`showEscapeDialog`):** centered main-screen overlay
@@ -54,50 +62,64 @@ for content that fits on screen.
 ### Scrollback (the "IN FULL" requirement)
 
 - No DECSET 1049 anywhere in the dialog flow (the alt-screen is deleted).
-- No `\x1b[2J`/`\x1b[3J` clears while opening, navigating, or closing a
-  dialog whose content fits on screen.
-- The full dialog content and the chat history are written into the main
-  terminal buffer, so the user can scroll up and read everything while a
-  dialog is open.
-- For content that fits on screen: **0 viewport scrolls** on open, navigate,
-  and close (measured through the real pi-tui renderer).
+- No `\x1b[2J`/`\x1b[3J` clears on open, navigate, or close — including for
+  proposals taller than the terminal (the churn guard keeps the opened frame
+  ≤ terminal height, so pi-tui's shrink full-render never fires).
+- The chat history and the full dialog content (for content that fits) are
+  written into the main terminal buffer, so the user can scroll up and read
+  everything while a dialog is open.
+- **0 viewport scrolls** on open, navigate, and close for content that fits
+  on screen, and for taller-than-screen proposals with a chat that fits
+  (measured through the real pi-tui renderer).
+
+### Churn guard (the one addition to the 383ae52 surface)
+
+`runGoalQuestionnaire` bounds its render to the terminal height:
+`maxDialogLines = max(10, terminalRows − preDialogFrame + 1)`, where
+`preDialogFrame` is the height of the frame before the dialog swaps into the
+editor slot (`tui.previousLines`). With the frame at most `terminalRows`
+tall, closing never shrinks past the previous viewport top and pi-tui's
+generic `fullRender(true)` path (the `\x1b[2J\x1b[H\x1b[3J` scrollback wipe)
+is never entered. The tail slice keeps the actionable options/footer in view
+and preserves the exact pre-regression rendering whenever the dialog fits.
+Only engaged when real TUI dimensions are available (mocks render unbounded
+as before). Tradeoff, accepted by the user via goal tweak: for a dialog
+taller than the terminal, the head of the dialog is not written to the
+buffer (scrollback contains the tail only) — previously it was written but
+wiped on close by the 2J+3J full render.
 
 ## Verification (headless, real renderer)
 
 Driven the real restored components (`runGoalQuestionnaire`,
 `showTaskConfirmation`, `showEscapeDialog`) through the real
 `@earendil-works/pi-tui` differential renderer with a fake terminal, using
-pi's exact `showExtensionCustom` open/close sequence:
+pi's exact `showExtensionCustom` open/close sequence
+(`experiments/scroll-repro/before-after-churn.mjs`, report mode = before,
+`--expect-fixed` = after):
 
-| Scenario (rows=40) | open scrolls | nav | close | 1049 | 2J/3J on open | full dialog in buffer | chat above |
+| Scenario (rows=40) | open scrolls | nav | close | 1049 | 2J/3J | full dialog in buffer | chat above |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | short chat + short proposal (fits) | 0 | 0 | 0 | none | none | ✓ | ✓ |
-| short chat + long proposal | 87 (pre-existing) | 0 | 0 (2J+3J on close — see note) | none | none | ✓ (all 40 detail + 30 task lines) | ✓ |
-| long chat (120) + short proposal | 13 (pre-existing) | 0 | 0 | none | none | ✓ | ✓ |
+| short chat + long proposal (73-line) | 0 (was 87) | 0 | 0 | none | **none (was 2J+3J)** | tail (29 lines) | ✓ |
+| long chat (120) + long proposal | 9 (chat alone exceeds screen; pre-existing) | 0 | 0 | none | none (was 2J+3J) | tail (10 lines) | ✓ |
 | task-list confirmation (overlay) | 0 | — | 0 | none | none | — | ✓ |
 | escape dialog (overlay) | 0 | — | 0 | none | none | — | ✓ |
 
-`npm run check`: 0 errors. Full unit suite: 482 pass / 0 fail (matches the
-383ae52 test surface; the three commits' tests were removed).
+Before/after delta (the regression the tweak fixed): on the unbounded 383ae52
+render, the tall-dialog scenarios emitted `2J=1 3J=1` on close — pi-tui's
+shrink full-render wiping terminal scrollback and leaving the viewport at the
+top, so the window took ~10s to scroll back to the bottom. After the churn
+guard: no 2J/3J anywhere, viewport never jumps, `--expect-fixed` passes
+(also verified at rows=24 and rows=60).
 
-### Known pre-existing edge case (out of the reverted surface)
-
-Closing a questionnaire whose **opened frame exceeded the terminal height**
-(proposal longer than the screen) triggers pi-tui's generic shrink path
-(`deleted lines moved viewport up → fullRender(true)`), which emits
-`\x1b[2J\x1b[H\x1b[3J` — clearing the screen and the terminal scrollback.
-This behavior is pi-tui's differential-renderer behavior present at 383ae52
-(the three commits never touched pi-tui), it predates the reverted work, and
-it is orthogonal to the dialog/heading surface. The same shrink decision is
-what the original spec measured as "close scroll churn". Fixing it would
-require either bounding the dialog render (new machinery, rejected) or
-touching the pi-tui dependency (out of scope). Recorded here for the user's
-decision at signoff; the fits-on-screen flows (the common case) are fully
-clean.
+`npm run check`: 0 errors. Full unit suite: 482 pass / 0 fail (the 383ae52
+test surface; the three commits' tests were removed; no test asserted the
+unbounded render).
 
 ## Out of scope
 
-- Any new dialog machinery (windowing, internal scrolling, overlays beyond
-  the restored 383ae52 options, alternate screen).
+- Any new dialog machinery beyond the churn guard (windowing, internal
+  scrolling, overlays beyond the restored 383ae52 options, alternate screen).
 - Changes to lifecycle schemas, persistence, or audit logic.
-- pi-tui / pi runtime internals.
+- pi-tui / pi runtime internals (the guard works entirely within the
+extension's render).

@@ -336,3 +336,69 @@ scrollback. Present at 383ae52 (pi-tui untouched by the three commits);
 fixing it requires either bounding the dialog render (rejected: new
 machinery) or touching the pi-tui dependency (out of scope). Documented in
 PRODUCT.md/TECH.md; left to the user's call at signoff.
+
+---
+
+## Milestone (final): churn guard — tall-dialog close no longer wipes scrollback
+
+Date: same session (goal tweak). User observed the tall-dialog edge case in a
+real terminal: closing a long proposal's questionnaire left the window taking
+~10s (vs ~1s) to scroll back to the bottom — the 2J+3J shrink full-render.
+User direction via `/goal-tweak`: keep the 383ae52 surface, **build a simple
+programmatic before/after test first** ("We now know how to fix it, so we can
+see before/after"), then apply the smallest fix.
+
+### Task-1: committed before/after harness
+
+`experiments/scroll-repro/before-after-churn.mjs` — drives the real
+`runGoalQuestionnaire` through the real pi-tui renderer with a fake terminal
+(mirroring pi's `showExtensionCustom` editor swap), printing per scenario:
+open/nav/close scrolls, 2J/3J emissions, post-close cursor row + yank
+verdict, and scrollback content. One command; report mode captures the
+**before** state; `--expect-fixed` asserts the **after** state (exit 1 while
+broken). Key emulator detail: the start row must be captured **before** the
+render (`hardwareCursorRow − previousViewportTop` pre-render); capturing it
+after over-counts scrolls (the diff renderer writes `\r\n` after each line
+but none after the last). Before-state on the unbounded render: fits 0/0/0;
+short chat + 73-line proposal open 87 / close 2J=1 3J=1; long chat (120) +
+long proposal close 2J=1 3J=1.
+
+### Task-2: the fix (smallest possible)
+
+`extensions/goal-questionnaire.ts` (+17/−1): bound the render to the terminal
+height with a tail slice —
+`maxDialogLines = max(10, terminal.rows − previousLines.length + 1)`
+(pre-dialog frame = chat + footer + editor), applied as
+`lines.slice(lines.length − maxDialogLines)` before caching. The opened frame
+never exceeds the terminal height, so pi-tui's shrink `fullRender(true)`
+(`targetRow < prevViewportTop` / `extraLines > height`) is unreachable:
+no 2J/3J, no viewport jump. Guarded to real TUI dimensions only, so the mock
+TUI unit tests (and the 383ae52 test surface) are untouched; content that
+fits renders byte-identically. Tradeoff (accepted in the tweak): a
+taller-than-screen dialog shows the tail (options/footer + last content);
+its head is not written to the buffer.
+
+### Task-3: before/after delta
+
+| Scenario (rows=40) | before | after |
+| --- | --- | --- |
+| fits | 0/0/0, full content | 0/0/0, full content (identical) |
+| short chat + long proposal | open 87, close 2J=1 3J=1 (scrollback wiped) | open 0 / nav 0 / close 0, no 2J/3J |
+| long chat (120) + long proposal | open 87, close 2J=1 3J=1 | open 9 (chat alone exceeds screen — pre-existing) / 0 / 0, no 2J/3J |
+
+`--expect-fixed` passes (exit 0). Also verified at rows=24 and rows=60 (0
+churn, no 2J/3J). `npm run check` 0 errors; unit suite 482 pass / 0 fail (no
+test asserted the unbounded render). Working tree committed at 3/5 tasks
+(harness + fix + README).
+
+### Task-4: docs
+
+PRODUCT.md/TECH.md updated (churn guard, before/after table, tail-slice
+tradeoff replacing the "known edge case" note); CHANGELOG.md Unreleased gains
+`### Fixed` entries for the guard and the harness; MILESTONES.md this entry.
+
+### Remaining
+
+Task-5 signoff: user visual confirmation in a real terminal — tall proposal
+open/close clean, window returns to the bottom promptly, scrollback readable,
+383ae52 surface intact for content that fits.

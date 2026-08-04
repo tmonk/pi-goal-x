@@ -23,11 +23,31 @@ with the `0.x` prefix indicating pre-1.0 development.
   and `set_goal_tasks` truncates the change summary to 80 columns again.
   Terminal scrollback is enabled in full: dialog content stays in the main
   buffer and is readable by scrolling up, and opening/navigating/closing cause
-  no viewport churn for content that fits on screen. (Known pre-existing
-  pi-tui edge case: closing a dialog whose opened frame exceeded the terminal
-  height triggers pi-tui's generic shrink full-render, which clears the
-  scrollback — present at `383ae52`, outside the goal surface; see
-  `specs/2026-08-04-goal-confirmation-scroll-fix/PRODUCT.md`.)
+  no viewport churn for content that fits on screen. (A pre-existing pi-tui
+  shrink path could clear the scrollback when closing a dialog taller than
+  the terminal — now eliminated by the churn guard below; the fits-on-screen
+  surface is unchanged.)
+
+### Fixed
+
+- **Goal questionnaire viewport churn (taller-than-screen proposals).**
+  Closing a questionnaire whose opened frame exceeded the terminal height
+  triggered pi-tui's generic shrink full-render
+  (`\x1b[2J\x1b[H\x1b[3J`), erasing terminal scrollback and leaving the
+  viewport at the top, so the window took ~10s to scroll back to the bottom.
+  `runGoalQuestionnaire` now bounds its render to the terminal height with a
+  tail slice (`max(10, rows − pre-dialog frame + 1)`; only engaged with real
+  TUI dimensions): the opened frame never exceeds the screen, so there is no
+  shrink full-render — no 2J/3J, no viewport jump — while content that fits
+  renders exactly as before (383ae52). Tradeoff for taller-than-screen
+  dialogs: the tail (options/footer + last content) stays in view; the
+  dialog head is not written to the buffer.
+- **Programmatic before/after test:**
+  `experiments/scroll-repro/before-after-churn.mjs` drives the real
+  `runGoalQuestionnaire` through the real pi-tui renderer and reports
+  open/nav/close scrolls, 2J/3J emissions, post-close viewport position, and
+  scrollback content; `--expect-fixed` asserts the fixed behavior (exit 0:
+  no 2J/3J anywhere, fits scenario stays 0-churn).
 
 ## [0.22.0] — 2026-08-04
 
