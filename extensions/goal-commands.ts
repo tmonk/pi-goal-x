@@ -339,6 +339,32 @@ export function registerGoalCommands(core: GoalCore): void {
 			const selected = await chooseOpenGoal(ctx, "Clear which open goal?");
 			if (!selected) return;
 		}
+		if (!core.state.goal) {
+			ctx.ui.notify(clearGoalCommandMessage({ archived: false, wasDrafting: false }), "warning");
+			return;
+		}
+		// Snapshot the selected goal id and focus revision before asking.
+		const target = core.state.goal;
+		const focusToken = core.focusedOperationToken(target.id);
+		// Headless behavior is explicit: guidance without mutation. Clearing
+		// requires an interactive confirmation (follow-up Stage 2).
+		if (!ctx.hasUI) {
+			ctx.ui.notify(`Run /goal-clear in an interactive session to confirm clearing: ${oneLineSummary(target)}`, "warning");
+			return;
+		}
+		const confirmed = await ctx.ui.confirm("Clear goal?", oneLineSummary(target));
+		if (!confirmed) {
+			ctx.ui.notify("Goal clear cancelled.", "info");
+			return;
+		}
+		// Reconcile and validate the same focus token after confirmation, then
+		// archive. Cancellation above changes no file, focus entry, ledger
+		// entry, or runtime state.
+		core.reconcileFocusedGoalFromDisk(ctx);
+		if (!core.isFocusedOperationCurrent(focusToken) || !core.state.goal || core.state.goal.id !== target.id) {
+			ctx.ui.notify("Goal changed while confirming; nothing was cleared.", "warning");
+			return;
+		}
 		const archived = core.archiveCurrentGoal(ctx, "user");
 		const didArchive = !!archived;
 		core.setGoal(null, ctx, true, "cleared");

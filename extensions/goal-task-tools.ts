@@ -291,7 +291,7 @@ pi.registerTool(defineTool({
 		}
 		if (dialogResult.decision !== "confirm") {
 			return {
-				content: [{ type: "text", text: "Task list proposal declined." }],
+				content: [{ type: "text", text: "Task list kept unchanged." }],
 				details: goalDetails(core.state.goal),
 			};
 		}

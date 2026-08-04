@@ -237,6 +237,9 @@ if (settings.disabled === true) {
 
 	// If the audit was aborted by the user (Esc), show a TUI dialog letting
 	// the user choose: mark complete without audit, or continue working.
+	// The low-level abort callback (core.abortAudit) only records transient
+	// runtime state; exactly one canonical ledger event is appended here after
+	// the user's choice (follow-up Stage 2).
 	if (auditor.error === "Auditor aborted.") {
 		core.auditProgress = null;
 		core.goalWidgetComponentRef.current?.invalidate();
@@ -245,6 +248,8 @@ if (settings.disabled === true) {
 		core.showingEscapeDialog = true;
 		const userChoice: EscapeDialogResult = await showEscapeDialog(ctx, auditTarget.objective);
 		core.showingEscapeDialog = false;
+		// Consume the transient abort state recorded by the low-level callback.
+		core.auditAborted = false;
 		if (!core.isFocusedOperationCurrent(completionFocus)) {
 			return core.focusedOperationCancelledResult("Goal completion", completionFocus);
 		}
@@ -257,6 +262,7 @@ if (settings.disabled === true) {
 				display: true,
 				details: { phase: "skipped", goalId: auditTarget.id, auditor: auditorLabel },
 			});
+			// The one canonical ledger outcome for this choice.
 			try {
 				core.goalService.appendEvents(ctx, [{
 					type: "audit_skipped",
@@ -280,15 +286,15 @@ if (settings.disabled === true) {
 				terminate: false,
 				trailing: ["The goal is complete. Provide a final summary of what was accomplished."],
 			});
-		} else {
-			// ── Continue working → pause the goal ──────────────
-			core.pauseActiveGoal(ctx);
-			if (core.state.goal) core.runtime.markTurnStopped(core.state.goal.id);
-			return {
-				content: [{ type: "text", text: "Goal paused — user chose to continue working after skipping audit." }],
-				details: core.state.goal ? goalDetails(core.state.goal) : undefined,
-			};
 		}
+		// ── Continue working ────────────────────────────────────────
+		// The goal stays active: no pause, no stop marker, no skip event.
+		core.goalWidgetComponentRef.current?.invalidate();
+		core.updateUI(ctx);
+		return {
+			content: [{ type: "text", text: "Audit aborted — the goal remains active and work continues." }],
+			details: goalDetails(auditTarget),
+		};
 	}
 
 	// Show final audit output briefly before clearing

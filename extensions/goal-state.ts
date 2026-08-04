@@ -64,6 +64,7 @@ export interface GoalCore {
 	auditAnimationTimer: ReturnType<typeof setInterval> | null;
 	auditAbortController: AbortController | null;
 	showingEscapeDialog: boolean;
+	auditAborted: boolean;
 	goalWorkToolCalledThisTurn: boolean;
 	tasksEnabled: boolean;
 	debugMode: boolean;
@@ -202,6 +203,8 @@ export function createGoalCore(
 	let auditProgress: AuditorWidgetProgress | null = null;
 	let auditAnimationTimer: ReturnType<typeof setInterval> | null = null;
 	let auditAbortController: AbortController | null = null;
+	let auditAborted = false;
+
 	let showingEscapeDialog = false;
 	let debugMode = false;
 
@@ -234,6 +237,11 @@ export function createGoalCore(
 	// settings (disableTasks). Stage 4 replaces them with the two task tools.
 	let tasksEnabled = true;
 
+	// Transient runtime state: set when the user aborts a running audit via
+	// Escape. No ledger event is appended from the low-level abort callback;
+	// the completion flow appends exactly one canonical event after the
+	// user's dialog choice (follow-up Stage 2).
+
 	/**
 	 * Install the fixed three/five goal-tool profile. Called only after session
 	 * initialization and after a settings change that toggles disableTasks.
@@ -265,27 +273,14 @@ export function createGoalCore(
 
 	function abortAudit(ctx: ExtensionContext): void {
 		if (!auditAbortController || !auditProgress) return;
-		const settings = loadGoalSettingsFileConfig(ctx.cwd);
 		auditAbortController.abort();
 		auditAbortController = null;
 		stopAuditAnimation();
 		auditProgress = null;
 		goalWidgetComponentRef.current?.invalidate();
-		if (state.goal) {
-			try {
-				goalService.appendEvents(ctx, [{
-					type: "audit_skipped",
-					goalId: state.goal.id,
-					reason: "user_aborted",
-					provider: settings.provider,
-					model: settings.model,
-					thinkingLevel: settings.thinkingLevel,
-					at: nowIso(),
-				}]);
-			} catch {
-				// Ledger append failure should not block skip
-			}
-		}
+		// Record the abort as transient runtime state only; the completion flow
+		// decides the single canonical ledger outcome after the dialog choice.
+		auditAborted = true;
 	}
 
 	function clearContinuationTimer(): void {
@@ -748,6 +743,12 @@ export function createGoalCore(
 		},
 		set showingEscapeDialog(value: boolean) {
 			showingEscapeDialog = value;
+		},
+		get auditAborted() {
+			return auditAborted;
+		},
+		set auditAborted(value: boolean) {
+			auditAborted = value;
 		},
 		get goalWorkToolCalledThisTurn() {
 			return goalWorkToolCalledThisTurn;

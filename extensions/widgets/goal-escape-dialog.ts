@@ -42,7 +42,7 @@ export async function showEscapeDialog(
 				{
 					label: "Continue working",
 					value: "continue_working",
-					description: "Resume work on the goal. The audit will not run this turn.",
+					description: "Resume work on the goal. It stays active; the audit will not run this turn.",
 				},
 			];
 

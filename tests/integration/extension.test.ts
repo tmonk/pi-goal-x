@@ -27,6 +27,7 @@ interface Harness {
 	ctx: ExtensionContext;
 	notifies: Array<{ msg: string; level: string }>;
 	activeToolsHistory: string[][];
+	terminalInputHandler: ((data: string) => unknown) | null;
 }
 
 interface HarnessOptions {
@@ -36,6 +37,8 @@ interface HarnessOptions {
 	hasUI?: boolean;
 	select?: (prompt: string, options: string[]) => Promise<string | undefined>;
 	input?: (prompt: string, fallback: string) => Promise<string | undefined>;
+	confirm?: () => Promise<boolean>;
+	uiCustom?: () => Promise<any>;
 }
 
 function createHarness(options: HarnessOptions): Harness {
@@ -44,6 +47,7 @@ function createHarness(options: HarnessOptions): Harness {
 	const commands = new Map<string, any>();
 	const notifies: Array<{ msg: string; level: string }> = [];
 	const activeToolsHistory: string[][] = [];
+	let terminalInputHandler: ((data: string) => unknown) | null = null;
 	const pi = {
 		registerTool: (def: ToolDefinition) => { tools.set(def.name, def); },
 		registerCommand: (name: string, def: any) => { commands.set(name, def); },
@@ -66,8 +70,11 @@ function createHarness(options: HarnessOptions): Harness {
 		},
 		ui: {
 			notify: (msg: string, level: string) => { notifies.push({ msg, level }); }, setStatus: () => {}, setWidget: () => {},
-			onTerminalInput: () => () => {}, select: options.select ?? (async () => undefined),
-			input: options.input ?? (async () => undefined), confirm: async () => false, custom: async () => undefined,
+			onTerminalInput: (cb: (data: string) => unknown) => { terminalInputHandler = cb; return () => {}; },
+			select: options.select ?? (async () => undefined),
+			input: options.input ?? (async () => undefined),
+			confirm: options.confirm ?? (async () => false),
+			custom: options.uiCustom ?? (async () => undefined),
 		},
 		getSystemPrompt: () => "base",
 		isIdle: () => true,
@@ -75,7 +82,10 @@ function createHarness(options: HarnessOptions): Harness {
 		abort: () => {},
 	} as unknown as ExtensionContext;
 	goalExtension(pi as any, options.runCompletionAuditor ? { runCompletionAuditor: options.runCompletionAuditor } : {});
-	return { handlers, tools, commands, ctx, notifies, activeToolsHistory };
+	return {
+		handlers, tools, commands, ctx, notifies, activeToolsHistory,
+		get terminalInputHandler() { return terminalInputHandler; },
+	};
 }
 
 async function start(h: Harness): Promise<void> {
@@ -565,3 +575,134 @@ describe("five-tool handler integration", () => {
 			}
 		});
 	});
+
+describe("confirmation and audit UX (follow-up Stage 2)", () => {
+	it("/goal-clear asks for confirmation; cancelling is a byte-for-byte no-op", async () => {
+		const f = fixture();
+		try {
+			const before = readFileSync(path.join(f.cwd, ".pi", "goals", activeGoalFiles(f.cwd)[0]!), "utf8");
+			const ledgerBefore = ledgerEvents(f.cwd).length;
+			let confirmPrompt = "";
+			const h = createHarness({
+				cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+				confirm: async () => { confirmPrompt = "asked"; return false; },
+			});
+			await start(h);
+			await h.commands.get("goal-clear").handler("", h.ctx);
+			assert.ok(confirmPrompt === "asked", "confirmation must be requested before archiving");
+			assert.equal(activeGoalFiles(f.cwd).length, 1, "goal must stay open after cancel");
+			const after = readFileSync(path.join(f.cwd, ".pi", "goals", activeGoalFiles(f.cwd)[0]!), "utf8");
+			assert.equal(after, before, "active goal file unchanged byte-for-byte");
+			assert.equal(ledgerEvents(f.cwd).length, ledgerBefore, "no ledger entry appended on cancel");
+			assert.ok(h.notifies.some((n) => n.msg.includes("cancelled")), "cancel acknowledged");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("/goal-clear confirms and archives the selected goal", async () => {
+		const f = fixture();
+		try {
+			const h = createHarness({
+				cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+				confirm: async () => true,
+			});
+			await start(h);
+			await h.commands.get("goal-clear").handler("", h.ctx);
+			assert.equal(activeGoalFiles(f.cwd).length, 0, "goal archived after confirm");
+			const archived = readdirSync(path.join(f.cwd, ".pi", "goals", "archived"));
+			assert.equal(archived.length, 1, "exactly one goal archived");
+			assert.ok(h.notifies.some((n) => n.msg.includes("cleared and archived")), "archive acknowledged");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("/goal-clear headless returns guidance without mutation", async () => {
+		const f = fixture();
+		try {
+			const before = readFileSync(path.join(f.cwd, ".pi", "goals", activeGoalFiles(f.cwd)[0]!), "utf8");
+			const ledgerBefore = ledgerEvents(f.cwd).length;
+			const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: false });
+			await start(h);
+			await h.commands.get("goal-clear").handler("", h.ctx);
+			assert.equal(activeGoalFiles(f.cwd).length, 1, "headless clear must not archive");
+			assert.equal(readFileSync(path.join(f.cwd, ".pi", "goals", activeGoalFiles(f.cwd)[0]!), "utf8"), before, "file unchanged");
+			assert.equal(ledgerEvents(f.cwd).length, ledgerBefore, "no ledger entry in headless clear");
+			assert.ok(h.notifies.some((n) => n.msg.includes("interactive session")), "headless guidance notification");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("Escape abort during audit appends exactly one audit_skipped and completes without audit", async () => {
+		const f = fixture();
+		let auditorStartedResolve: (() => void) | null = null;
+		try {
+			const h = createHarness({
+				cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+				uiCustom: async () => "complete_without_audit",
+				runCompletionAuditor: async ({ signal }: any) => {
+						auditorStartedResolve?.();
+					await new Promise<void>((resolve) => {
+						signal.addEventListener("abort", () => resolve(), { once: true });
+					});
+					return { approved: false, disapproved: false, output: "Auditor aborted.", error: "Auditor aborted." };
+				},
+			});
+			await start(h);
+			const auditorStarted = new Promise<void>((resolve) => { auditorStartedResolve = resolve; });
+			const update = h.tools.get("update_goal")!;
+			const pending = (update.execute as any)("abort-1", { status: "complete" }, new AbortController().signal, undefined, h.ctx);
+			// The auditor fixture is now running: progress display and the abort
+			// controller are set. Simulate the user pressing Escape mid-audit.
+			await auditorStarted;
+			// The widget's Escape handler matches the raw ESC byte (\x1b).
+			h.terminalInputHandler?.("");
+			const result = await pending;
+			const text = result.content?.[0]?.text ?? "";
+			assert.ok(text.includes("Goal audit skipped"), `skip report: ${text.slice(0, 80)}`);
+			const skipped = ledgerEvents(f.cwd).filter((e) => e.type === "audit_skipped");
+			assert.equal(skipped.length, 1, "exactly one canonical audit_skipped event (no duplicate from the abort callback)");
+			assert.equal((skipped[0] as any).reason, "user_aborted");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("Escape abort then continue working leaves the goal active with no skip event", async () => {
+		const f = fixture();
+		let auditorStartedResolve: (() => void) | null = null;
+		try {
+			const h = createHarness({
+				cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+				uiCustom: async () => "continue_working",
+				runCompletionAuditor: async ({ signal }: any) => {
+					auditorStartedResolve?.();
+					await new Promise<void>((resolve) => {
+						signal.addEventListener("abort", () => resolve(), { once: true });
+					});
+					return { approved: false, disapproved: false, output: "Auditor aborted.", error: "Auditor aborted." };
+				},
+			});
+			await start(h);
+			const auditorStarted = new Promise<void>((resolve) => { auditorStartedResolve = resolve; });
+			const update = h.tools.get("update_goal")!;
+			const pending = (update.execute as any)("abort-2", { status: "complete" }, new AbortController().signal, undefined, h.ctx);
+			await auditorStarted;
+			// The widget's Escape handler matches the raw ESC byte (\x1b).
+			h.terminalInputHandler?.("");
+			const result = await pending;
+			const text = result.content?.[0]?.text ?? "";
+			assert.ok(text.includes("remains active"), `continue-working report: ${text}`);
+			assert.notEqual(result.terminate, true, "continue working must not terminate the turn");
+			const goal = parseGoalFile(path.join(f.cwd, ".pi", "goals", activeGoalFiles(f.cwd)[0]!));
+			assert.equal(goal?.status, "active", "goal stays active after continue working");
+			const events = ledgerEvents(f.cwd);
+			assert.equal(events.some((e) => e.type === "audit_skipped"), false, "no skip event for continue working");
+			assert.equal(events.some((e) => e.type === "goal_completed"), false, "goal not completed");
+		} finally {
+			f.cleanup();
+		}
+	});
+});
