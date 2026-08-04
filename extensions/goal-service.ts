@@ -1,4 +1,4 @@
-import { cloneGoal, nowIso, type GoalFocusReason, type GoalRecord, type GoalTask } from "./goal-record.ts";
+import { cloneGoal, nowIso, type GoalFocusReason, type GoalRecord, type GoalTask, type GoalUsage } from "./goal-record.ts";
 import { appendGoalEvent, type GoalLedgerEvent } from "./goal-ledger.ts";
 import { findTaskInTree, updateTaskInTree } from "./goal-policy.ts";
 import {
@@ -128,8 +128,37 @@ export type GoalTaskUpdateOutcome = { ok: true; goal: GoalRecord; task: GoalTask
 export class GoalService {
 	private readonly ref: GoalServiceRef;
 
+	/**
+	 * The usage this session last wrote to disk for a goal (or the disk usage
+	 * the session's accounting is relative to after load/reconcile). The
+	 * baseline for additive usage merging: on a persist revision conflict the
+	 * delta since this baseline is merged onto the disk record instead of the
+	 * local usage being dropped.
+	 */
+	private lastPersistedUsage: { goalId: string; tokensUsed: number; activeSeconds: number } | null = null;
+
 	constructor(ref: GoalServiceRef) {
 		this.ref = ref;
+	}
+
+	/** Record the usage value the focused goal's in-memory accounting builds on. */
+	private trackBaseline(goalId: string, usage: GoalUsage): void {
+		this.lastPersistedUsage = { goalId, tokensUsed: usage.tokensUsed, activeSeconds: usage.activeSeconds };
+	}
+
+	/**
+	 * Session-local usage delta since the last recorded baseline (clamped at
+	 * zero so usage is never reduced). Falls back to the disk usage when this
+	 * session has no baseline for the goal (never persisted/reconciled it).
+	 */
+	private usageDelta(current: GoalRecord, disk: GoalRecord): { tokens: number; seconds: number } {
+		const baseline = this.lastPersistedUsage?.goalId === current.id
+			? this.lastPersistedUsage
+			: { goalId: current.id, tokensUsed: disk.usage.tokensUsed, activeSeconds: disk.usage.activeSeconds };
+		return {
+			tokens: Math.max(0, current.usage.tokensUsed - baseline.tokensUsed),
+			seconds: Math.max(0, current.usage.activeSeconds - baseline.activeSeconds),
+		};
 	}
 
 	/** Safe focused record reconciliation from disk. */
@@ -162,6 +191,7 @@ export class GoalService {
 		fresh.set(reconciled.id, reconciled);
 		this.ref.assignFocusedGoalId(reconciled.id);
 		this.ref.onReconciled(reconciled);
+		this.trackBaseline(reconciled.id, reconciled.usage);
 		return true;
 	}
 
@@ -264,7 +294,10 @@ export class GoalService {
 			// 6. in-memory pool/focus commit.
 			const previousGoalId = current.id;
 			const commitFocused = spec.commitFocused !== false;
-			if (commitFocused) this.ref.setFocused(written);
+			if (commitFocused) {
+				this.ref.setFocused(written);
+				this.trackBaseline(written.id, written.usage);
+			}
 			const goalId = commitFocused ? written.id : this.ref.getFocusedGoalId();
 			const focusChanged = commitFocused && previousGoalId !== written.id;
 
@@ -392,9 +425,10 @@ export class GoalService {
 	/**
 	 * Persist the focused goal: bump updatedAt, merge objective from disk, write
 	 * active or archive. Serialized by the per-goal lock with a short bounded
-	 * budget; if another process bumped the revision meanwhile, the persist is
-	 * skipped (returns null) so a stale usage/updatedAt snapshot never
-	 * overwrites a concurrent authoritative change.
+	 * budget. If another process bumped the revision meanwhile, the persist
+	 * does not clobber the disk's authoritative fields — instead the session's
+	 * additive usage/accounting delta since the last baseline is merged onto
+	 * the disk record (concurrent work is never silently dropped).
 	 */
 	persist(ctx: GoalServiceContext): GoalRecord | null {
 		const current = this.ref.getFocused();
@@ -409,11 +443,30 @@ export class GoalService {
 		}
 		try {
 			const freshDisk = this.readFreshDiskGoal(ctx, current);
-			if (!freshDisk || (freshDisk.revision ?? 0) !== capturedRevision) {
-				return null;
+			if (!freshDisk) return null;
+			if ((freshDisk.revision ?? 0) !== capturedRevision) {
+				// Revision moved concurrently: merge only the additive usage
+				// delta from this session onto the disk record and advance its
+				// revision. All other fields stay authoritative from disk.
+				const { tokens, seconds } = this.usageDelta(current, freshDisk);
+				if (tokens === 0 && seconds === 0) return null;
+				const merged = mergeGoalPromptFromDisk(ctx, {
+					...freshDisk,
+					usage: {
+						tokensUsed: freshDisk.usage.tokensUsed + tokens,
+						activeSeconds: freshDisk.usage.activeSeconds + seconds,
+					},
+					updatedAt: nowIso(),
+					revision: (freshDisk.revision ?? 0) + 1,
+				});
+				const written = merged.status === "complete" ? archiveGoalFile(ctx, merged) : writeActiveGoalFile(ctx, merged);
+				this.trackBaseline(written.id, written.usage);
+				this.ref.setFocused(written);
+				return written;
 			}
 			const merged = mergeGoalPromptFromDisk(ctx, { ...current, updatedAt: nowIso(), revision: capturedRevision + 1 });
 			const written = merged.status === "complete" ? archiveGoalFile(ctx, merged) : writeActiveGoalFile(ctx, merged);
+			this.trackBaseline(written.id, written.usage);
 			this.ref.setFocused(written);
 			return written;
 		} finally {
@@ -441,6 +494,7 @@ export class GoalService {
 			}
 		}
 		this.ref.setFocused(written);
+		this.trackBaseline(written.id, written.usage);
 		const focusChanged = previousGoalId !== written.id;
 		if (focusChanged) this.ref.onFocusChanged(previousGoalId, written.id);
 		return { ok: true, goal: written, previousGoalId, goalId: written.id, focusChanged };

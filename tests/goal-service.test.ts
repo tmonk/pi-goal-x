@@ -13,7 +13,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { GoalService, type GoalServiceRef } from "../extensions/goal-service.ts";
-import { createGoal, type GoalRecord } from "../extensions/goal-record.ts";
+import { cloneGoal, createGoal, type GoalRecord } from "../extensions/goal-record.ts";
 import { writeActiveGoalFile, parseGoalFile, serializeGoalFile } from "../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../extensions/goal-ledger.ts";
 import { acquireGoalLock } from "../extensions/storage/goal-lock.ts";
@@ -514,6 +514,95 @@ describe("cross-process mutation control (follow-up Stage 4)", () => {
 			writeFileSync(legacyPath, legacy, "utf8");
 			const parsed = parseGoalFile(legacyPath)!;
 			assert.equal(parsed.revision, 0, "missing revision normalizes to zero");
+		} finally {
+			f.cleanup();
+		}
+	});
+});
+
+describe("persist additive usage merge on revision conflict", () => {
+	it("merges only the session usage delta onto the disk record when the revision moved", () => {
+		const f = fixture();
+		try {
+			// Writer A: baseline session usage lands on disk via a normal persist.
+			const a1 = cloneGoal(f.ref.getFocused()!);
+			a1.usage.tokensUsed = 50;
+			a1.usage.activeSeconds = 10;
+			f.ref.setFocused(a1);
+			const first = f.service.persist({ cwd: f.cwd });
+			assert.ok(first, "first persist must succeed");
+			assert.equal(first.usage.tokensUsed, 50);
+
+			// Writer B (another process): bumps the revision AND the usage and
+			// changes the objective (its authoritative fields).
+			const active = activeFiles(f.cwd);
+			const diskGoal = parseGoalFile(path.join(f.cwd, ".pi", "goals", active[0]!));
+			assert.ok(diskGoal, "fixture goal must parse");
+			const bDisk = cloneGoal(diskGoal);
+			bDisk.objective = "=== Goal ===\nObjective: Writer B objective";
+			bDisk.usage.tokensUsed = 70;
+			bDisk.usage.activeSeconds = 12;
+			bDisk.revision = (diskGoal!.revision ?? 0) + 1;
+			writeActiveGoalFile({ cwd: f.cwd }, bDisk);
+
+			// Writer A charges more work since its baseline (50/10).
+			const a2 = cloneGoal(f.ref.getFocused()!);
+			a2.usage.tokensUsed = 80;
+			a2.usage.activeSeconds = 17;
+			f.ref.setFocused(a2);
+
+			// A persists: the revision moved, so only the additive delta
+			// (30 tokens / 7 seconds) is merged onto B's record.
+			const merged = f.service.persist({ cwd: f.cwd });
+			assert.ok(merged, "persist must merge instead of returning null");
+			assert.equal(merged.usage.tokensUsed, 100, "disk 70 + session delta 30");
+			assert.equal(merged.usage.activeSeconds, 19, "disk 12 + session delta 7");
+			assert.equal(merged.revision, (diskGoal!.revision ?? 0) + 2, "revision advances past the conflict");
+			assert.ok(merged.objective.includes("Writer B objective"), "authoritative disk objective must be preserved");
+
+			// Disk reflects the merged record.
+			const onDisk = parseGoalFile(path.join(f.cwd, ".pi", "goals", active[0]!));
+			assert.ok(onDisk, "merged goal must parse from disk");
+			assert.equal(onDisk.usage.tokensUsed, 100, "merged usage must be on disk");
+			assert.ok(onDisk.objective.includes("Writer B objective"), "B's objective must be on disk");
+
+			// A subsequent persist (memory revision now matches disk) must not
+			// double-count the merged usage.
+			const again = f.service.persist({ cwd: f.cwd });
+			assert.ok(again, "persist after merge succeeds on the success path");
+			assert.equal(again.usage.tokensUsed, 100, "usage must not double-count after the merge");
+			assert.equal(again.usage.activeSeconds, 19, "activeSeconds must not double-count after the merge");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("never clobbers authoritative fields on conflict (usage only), even with no prior baseline", () => {
+		const f = fixture();
+		try {
+			// Writer A never persisted this goal: its memory usage is the
+			// session's full local accounting since load (0 baseline).
+			const a = cloneGoal(f.ref.getFocused()!);
+			a.usage.tokensUsed = 100;
+			a.usage.activeSeconds = 30;
+			f.ref.setFocused(a);
+
+			// Writer B moved the revision first.
+			const active = activeFiles(f.cwd);
+			const diskGoal = parseGoalFile(path.join(f.cwd, ".pi", "goals", active[0]!));
+			assert.ok(diskGoal, "fixture goal must parse");
+			assert.ok(diskGoal, "fixture goal must parse");
+			const bDisk = cloneGoal(diskGoal!);
+			bDisk.objective = "=== Goal ===\nObjective: B wins";
+			bDisk.revision = (diskGoal!.revision ?? 0) + 1;
+			writeActiveGoalFile({ cwd: f.cwd }, bDisk);
+
+			const merged = f.service.persist({ cwd: f.cwd });
+			assert.ok(merged, "persist must merge instead of returning null");
+			assert.equal(merged.usage.tokensUsed, 100, "session usage must be added, not dropped");
+			assert.equal(merged.usage.activeSeconds, 30);
+			assert.ok(merged.objective.includes("B wins"), "authoritative disk objective must be preserved");
+			assert.equal(merged.revision, (diskGoal!.revision ?? 0) + 2);
 		} finally {
 			f.cleanup();
 		}
