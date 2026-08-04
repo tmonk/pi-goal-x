@@ -206,25 +206,41 @@ export function registerGoalCommands(core: GoalCore): void {
 		}
 	}
 
+	/**
+	 * One declarative row table for the settings menu (follow-up Stage 1).
+	 * Rendering and dispatch both derive from SETTING_ROWS so the displayed
+	 * fields and the selectable fields can never drift apart. All eight
+	 * persisted fields are present and operable.
+	 */
+	type SettingRow = {
+		key: keyof GoalSettings;
+		label: string;
+		kind: "boolean" | "text" | "thinking" | "positiveInteger";
+	};
+
+	const SETTING_ROWS: readonly SettingRow[] = [
+		{ key: "disabled", label: "disabled", kind: "boolean" },
+		{ key: "provider", label: "provider", kind: "text" },
+		{ key: "model", label: "model", kind: "text" },
+		{ key: "thinkingLevel", label: "thinking_level", kind: "thinking" },
+		{ key: "disableTasks", label: "disableTasks", kind: "boolean" },
+		{ key: "disableContracts", label: "disableContracts", kind: "boolean" },
+		{ key: "subtaskDepth", label: "subtaskDepth", kind: "positiveInteger" },
+		{ key: "autoSelectSingleGoal", label: "autoSelectSingleGoal", kind: "boolean" },
+	];
+
+	const THINKING_VALUES = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+
 	function settingsValue(config: GoalSettings, key: keyof GoalSettings): string {
-		if (key === "disabled") return config.disabled === true ? "true" : "false";
-		if (key === "disableTasks") return config.disableTasks === true ? "true" : "false";
-		if (key === "disableContracts") return config.disableContracts === true ? "true" : "false";
-		if (key === "autoSelectSingleGoal") return config.autoSelectSingleGoal === true ? "true" : "false";
+		if (key === "disabled" || key === "disableTasks" || key === "disableContracts" || key === "autoSelectSingleGoal") {
+			return config[key] === true ? "true" : "false";
+		}
 		if (key === "subtaskDepth") return config.subtaskDepth !== undefined ? String(config.subtaskDepth) : "1";
 		return config[key] ?? "(default)";
 	}
 
 	function settingsLines(config: GoalSettings): string[] {
-		return [
-			`disabled: ${settingsValue(config, "disabled")}`,
-			`provider: ${settingsValue(config, "provider")}`,
-			`model: ${settingsValue(config, "model")}`,
-			`thinking_level: ${settingsValue(config, "thinkingLevel")}`,
-			`disableTasks: ${settingsValue(config, "disableTasks")}`,
-			`disableContracts: ${settingsValue(config, "disableContracts")}`,
-			`subtaskDepth: ${settingsValue(config, "subtaskDepth")}`,
-		];
+		return SETTING_ROWS.map((row) => `${row.label}: ${settingsValue(config, row.key)}`);
 	}
 
 	async function handleSettingsMenu(ctx: ExtensionContext): Promise<void> {
@@ -232,15 +248,18 @@ export function registerGoalCommands(core: GoalCore): void {
 			ctx.ui.notify(`Settings file: ${goalSettingsPath(ctx.cwd)}`, "info");
 			return;
 		}
-		const editorKeys = ["disabled", "provider", "model", "thinking_level", "subtaskDepth", "autoSelectSingleGoal"] as const;
-		// Fixed-profile hook: if a settings change toggles disableTasks, the
-		// three/five goal-tool profile is reinstalled exactly once. Lifecycle
-		// transitions never touch the profile.
-		const tasksEnabledAtMenuStart = !loadGoalSettings(ctx.cwd).disableTasks;
+		/**
+		 * Persist a settings edit, then reinstall the fixed three/five profile
+		 * when the effective disableTasks value changed since the last install.
+		 * core.tasksEnabled tracks the last profile actually installed (updated
+		 * by installGoalToolProfile), so toggling task availability off, on, and
+		 * off within one menu session reinstalls on every real change instead of
+		 * comparing against the value captured when the menu opened.
+		 */
 		const saveSettings = (next: GoalSettings): void => {
 			saveGoalSettingsFileConfig(ctx.cwd, next);
 			const tasksEnabledNow = !loadGoalSettings(ctx.cwd).disableTasks;
-			if (tasksEnabledNow !== tasksEnabledAtMenuStart) {
+			if (tasksEnabledNow !== core.tasksEnabled) {
 				core.installGoalToolProfile(tasksEnabledNow);
 			}
 		};
@@ -251,52 +270,61 @@ export function registerGoalCommands(core: GoalCore): void {
 			options.push("Done");
 			const selected = await ctx.ui.select("Goal settings", options);
 			if (!selected || selected === "Done" || selected === "─── Settings ───") return;
-			// Strip leading spaces from selection
+			// Strip leading spaces and resolve the row from the display label.
 			const selectedTrimmed = selected.trim();
 			const colon = selectedTrimmed.indexOf(":");
 			if (colon === -1) continue;
-			const field = selectedTrimmed.slice(0, colon).trim();
-			const editorKey = field === "thinking_level" ? "thinkingLevel" : field;
-			if (!(editorKeys as readonly string[]).includes(editorKey)) continue;
-			const key = editorKey as keyof GoalSettings;
-			if (key === "disabled") {
-				const next = { ...config, disabled: !config.disabled };
+			const label = selectedTrimmed.slice(0, colon).trim();
+			const row = SETTING_ROWS.find((r) => r.label === label);
+			if (!row) continue;
+			const key = row.key;
+			if (row.kind === "boolean") {
+				const next = { ...config, [key]: config[key] !== true };
 				saveSettings(next);
 				ctx.ui.notify(`Settings saved:\n${settingsLines(loadGoalSettingsFileConfig(ctx.cwd)).join("\n")}`, "info");
 				continue;
 			}
-			if (key === "autoSelectSingleGoal") {
-				const next = { ...config, autoSelectSingleGoal: config.autoSelectSingleGoal !== true };
-				saveSettings(next);
-				ctx.ui.notify(`Settings saved:\n${settingsLines(loadGoalSettingsFileConfig(ctx.cwd)).join("\n")}`, "info");
-				continue;
-			}
-			if (key === "subtaskDepth") {
+			if (row.kind === "positiveInteger") {
 				const input = await ctx.ui.input("Set subtaskDepth", String(config.subtaskDepth ?? 1));
 				if (input === undefined) continue;
-				const n = parseInt(input.trim(), 10);
-				if (isNaN(n) || n < 1) {
-					ctx.ui.notify("subtaskDepth must be a positive integer", "warning");
+				// Full-string decimal validation: no partial parseInt. Rejects
+				// 1.5, 1x, 0, negatives, infinity, and unsafe integers alike.
+				const trimmed = input.trim();
+				if (!/^[0-9]+$/.test(trimmed) || !Number.isSafeInteger(Number(trimmed)) || Number(trimmed) < 1) {
+					ctx.ui.notify("subtaskDepth must be a positive integer (e.g. 1, 2, 3)", "warning");
 					continue;
 				}
-				const next = { ...config, subtaskDepth: n };
+				const next = { ...config, subtaskDepth: Number(trimmed) };
 				saveSettings(next);
 				ctx.ui.notify(`Settings saved:\n${settingsLines(loadGoalSettingsFileConfig(ctx.cwd)).join("\n")}`, "info");
 				continue;
 			}
+			if (row.kind === "thinking") {
+				const currentValue = settingsValue(config, key);
+				const input = await ctx.ui.input(`Set ${row.label}`, currentValue === "(default)" ? "Leave empty for default" : currentValue);
+				if (input === undefined) continue;
+				const inputTrimmed = input.trim();
+				const next: GoalSettings = { ...config };
+				if (!inputTrimmed) {
+					delete next.thinkingLevel;
+				} else if (!(THINKING_VALUES as readonly string[]).includes(inputTrimmed)) {
+					ctx.ui.notify("thinking_level must be one of: off, minimal, low, medium, high, xhigh", "warning");
+					continue;
+				} else {
+					next.thinkingLevel = inputTrimmed as GoalSettings["thinkingLevel"];
+				}
+				saveSettings(next);
+				ctx.ui.notify(`Settings saved:\n${settingsLines(loadGoalSettingsFileConfig(ctx.cwd)).join("\n")}`, "info");
+				continue;
+			}
+			// text rows (provider, model)
 			const currentValue = settingsValue(config, key);
-			const input = await ctx.ui.input(`Set ${field}`, currentValue === "(default)" ? "Leave empty for default" : currentValue);
+			const input = await ctx.ui.input(`Set ${row.label}`, currentValue === "(default)" ? "Leave empty for default" : currentValue);
 			if (input === undefined) continue;
 			const next: GoalSettings = { ...config };
 			const inputTrimmed = input.trim();
 			if (!inputTrimmed) {
 				delete next[key];
-			} else if (key === "thinkingLevel") {
-				if (!["off", "minimal", "low", "medium", "high", "xhigh"].includes(inputTrimmed)) {
-					ctx.ui.notify("thinking_level must be one of: off, minimal, low, medium, high, xhigh", "warning");
-					continue;
-				}
-				next.thinkingLevel = inputTrimmed as GoalSettings["thinkingLevel"];
 			} else if (key === "provider" || key === "model") {
 				next[key] = inputTrimmed;
 			}

@@ -239,21 +239,18 @@ export function createGoalCore(
 	 * initialization and after a settings change that toggles disableTasks.
 	 * Lifecycle transitions, focus changes, status changes, and compaction never
 	 * add/remove/restore goal tools, and this never mutates the host's ordinary
-	 * work-tool selection.
+	 * work-tool selection. On success the module-level tasksEnabled tracker is
+	 * updated to the installed value, so callers can compare the effective
+	 * setting against the last profile actually installed (used by the settings
+	 * menu to detect repeated disableTasks toggles across one menu session).
 	 */
-	/**
-	 * Install the fixed three/five goal-tool profile. Called only after session
-	 * initialization and after a settings change that toggles disableTasks.
-	 * Lifecycle transitions, focus changes, status changes, and compaction never
-	 * add/remove/restore goal tools, and this never mutates the host's ordinary
-	 * work-tool selection.
-	 */
-	function installGoalToolProfile(tasksEnabled: boolean): void {
+	function installGoalToolProfile(tasksEnabledArg: boolean): void {
 		try {
 			const current = new Set(pi.getActiveTools());
 			for (const knownGoalTool of ALL_REGISTERED_GOAL_TOOLS) current.delete(knownGoalTool);
-			for (const goalTool of tasksEnabled ? FIVE_GOAL_TOOLS : CORE_GOAL_TOOLS) current.add(goalTool);
+			for (const goalTool of tasksEnabledArg ? FIVE_GOAL_TOOLS : CORE_GOAL_TOOLS) current.add(goalTool);
 			pi.setActiveTools([...current]);
+			tasksEnabled = tasksEnabledArg;
 		} catch (err) {
 			console.error("[pi-goal] installGoalToolProfile error:", err instanceof Error ? err.message : String(err));
 		}

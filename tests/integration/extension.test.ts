@@ -8,7 +8,7 @@
  * `npm run test:integration`.
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -25,6 +25,8 @@ interface Harness {
 	tools: Map<string, ToolDefinition>;
 	commands: Map<string, any>;
 	ctx: ExtensionContext;
+	notifies: Array<{ msg: string; level: string }>;
+	activeToolsHistory: string[][];
 }
 
 interface HarnessOptions {
@@ -33,12 +35,15 @@ interface HarnessOptions {
 	runCompletionAuditor?: (...args: any[]) => Promise<any>;
 	hasUI?: boolean;
 	select?: (prompt: string, options: string[]) => Promise<string | undefined>;
+	input?: (prompt: string, fallback: string) => Promise<string | undefined>;
 }
 
 function createHarness(options: HarnessOptions): Harness {
 	const handlers = new Map<string, Function>();
 	const tools = new Map<string, ToolDefinition>();
 	const commands = new Map<string, any>();
+	const notifies: Array<{ msg: string; level: string }> = [];
+	const activeToolsHistory: string[][] = [];
 	const pi = {
 		registerTool: (def: ToolDefinition) => { tools.set(def.name, def); },
 		registerCommand: (name: string, def: any) => { commands.set(name, def); },
@@ -47,7 +52,7 @@ function createHarness(options: HarnessOptions): Harness {
 		registerMessageRenderer: () => {},
 		sendMessage: () => {},
 		getActiveTools: () => ["read", "bash", "edit", "write"],
-		setActiveTools: () => {},
+		setActiveTools: (next: string[]) => { activeToolsHistory.push([...next]); },
 		hasUI: options.hasUI ?? false,
 	};
 	const ctx = {
@@ -60,9 +65,9 @@ function createHarness(options: HarnessOptions): Harness {
 			getRoot: () => options.cwd,
 		},
 		ui: {
-			notify: () => {}, setStatus: () => {}, setWidget: () => {},
+			notify: (msg: string, level: string) => { notifies.push({ msg, level }); }, setStatus: () => {}, setWidget: () => {},
 			onTerminalInput: () => () => {}, select: options.select ?? (async () => undefined),
-			input: async () => undefined, confirm: async () => false, custom: async () => undefined,
+			input: options.input ?? (async () => undefined), confirm: async () => false, custom: async () => undefined,
 		},
 		getSystemPrompt: () => "base",
 		isIdle: () => true,
@@ -70,7 +75,7 @@ function createHarness(options: HarnessOptions): Harness {
 		abort: () => {},
 	} as unknown as ExtensionContext;
 	goalExtension(pi as any, options.runCompletionAuditor ? { runCompletionAuditor: options.runCompletionAuditor } : {});
-	return { handlers, tools, commands, ctx };
+	return { handlers, tools, commands, ctx, notifies, activeToolsHistory };
 }
 
 async function start(h: Harness): Promise<void> {
@@ -300,18 +305,263 @@ describe("five-tool handler integration", () => {
 		try {
 			writeFileSync(path.join(f.cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ disabled: true }));
 			const selects: string[] = ["  thinking_level: off", "off", "Done"];
+			const inputs: string[] = ["off"];
 			const h = createHarness({
 				cwd: f.cwd,
 				sessionEntries: f.sessionEntries,
 				hasUI: true,
 				select: async () => selects.shift(),
+				input: async () => inputs.shift(),
 			});
 			await start(h);
 			const settingsCmd = h.commands.get("goal-settings");
 			await settingsCmd.handler("", h.ctx);
 			const saved = JSON.parse(readFileSync(path.join(f.cwd, ".pi", "pi-goal-x-settings.json"), "utf8"));
 			assert.equal(saved.disabled, true, "existing setting preserved");
+			assert.equal(saved.thinking_level, "off", "thinking_level edited through the menu");
 		} finally {
 			f.cleanup();
 		}
+	});
+
+	describe("goal-settings menu (follow-up Stage 1)", () => {
+		const settingsPath = (cwd: string) => path.join(cwd, ".pi", "pi-goal-x-settings.json");
+		const readSettings = (cwd: string) => {
+			const p = settingsPath(cwd);
+			return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : {};
+		};
+
+		it("displays every one of the eight persisted rows and reflects file values", async () => {
+			const f = fixture();
+			try {
+				writeFileSync(settingsPath(f.cwd), JSON.stringify({
+					disableTasks: true, subtaskDepth: 3, provider: "anthropic", thinking_level: "high", disabled: true,
+				}));
+				let firstOptions: string[] = [];
+				const h = createHarness({
+					cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+					select: async (_prompt: string, options: string[]) => {
+						if (firstOptions.length === 0) firstOptions = [...options];
+						return "Done";
+					},
+				});
+				await start(h);
+				await h.commands.get("goal-settings").handler("", h.ctx);
+				const lines = firstOptions.filter((o) => o.startsWith("  ") && !o.startsWith("  ───"));
+				assert.equal(lines.length, 8, `all eight rows rendered, got: ${lines.join(" | ")}`);
+				assert.ok(lines.some((l) => l === "  disabled: true"));
+				assert.ok(lines.some((l) => l === "  provider: anthropic"));
+				assert.ok(lines.some((l) => l === "  model: (default)"));
+				assert.ok(lines.some((l) => l === "  thinking_level: high"));
+				assert.ok(lines.some((l) => l === "  disableTasks: true"));
+				assert.ok(lines.some((l) => l === "  disableContracts: false"));
+				assert.ok(lines.some((l) => l === "  subtaskDepth: 3"));
+				assert.ok(lines.some((l) => l === "  autoSelectSingleGoal: false"));
+			} finally {
+				f.cleanup();
+			}
+		});
+
+		it("toggles every boolean row directly and persists each value", async () => {
+			const f = fixture();
+			try {
+				const selects = [
+					"  disableTasks: (default)",
+					"  disableContracts: (default)",
+					"  disabled: (default)",
+					"  autoSelectSingleGoal: (default)",
+					"Done",
+				];
+				const h = createHarness({
+					cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+					select: async () => selects.shift(),
+				});
+				await start(h);
+				await h.commands.get("goal-settings").handler("", h.ctx);
+				const saved = readSettings(f.cwd);
+				assert.equal(saved.disableTasks, true);
+				assert.equal(saved.disableContracts, true);
+				assert.equal(saved.disabled, true);
+				assert.equal(saved.autoSelectSingleGoal, true);
+				// Second pass toggles disableTasks off and autoSelectSingleGoal off; the
+				// file must then omit both keys (false is the default and not persisted).
+				const selects2 = ["  disableTasks: true", "  autoSelectSingleGoal: true", "Done"];
+				const h2 = createHarness({
+					cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+					select: async () => selects2.shift(),
+				});
+				await start(h2);
+				await h2.commands.get("goal-settings").handler("", h2.ctx);
+				const saved2 = readSettings(f.cwd);
+				assert.equal(saved2.disableTasks, undefined, "disableTasks toggled back off clears the key");
+				assert.equal(saved2.autoSelectSingleGoal, undefined, "autoSelectSingleGoal toggled back off clears the key");
+				assert.equal(saved2.disableContracts, true, "untouched boolean preserved");
+				assert.equal(saved2.disabled, true, "untouched boolean preserved");
+			} finally {
+				f.cleanup();
+			}
+		});
+
+		it("edits and clears provider and model text fields", async () => {
+			const f = fixture();
+			try {
+				const selects = ["  provider: (default)", "  model: (default)", "Done"];
+				const inputs = ["anthropic", "claude-sonnet-4"];
+				const h = createHarness({
+					cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+					select: async () => selects.shift(),
+					input: async () => inputs.shift(),
+				});
+				await start(h);
+				await h.commands.get("goal-settings").handler("", h.ctx);
+				const saved = readSettings(f.cwd);
+				assert.equal(saved.provider, "anthropic");
+				assert.equal(saved.model, "claude-sonnet-4");
+				// Clear both by entering an empty value.
+				const selects2 = ["  provider: anthropic", "  model: claude-sonnet-4", "Done"];
+				const inputs2 = ["", ""];
+				const h2 = createHarness({
+					cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+					select: async () => selects2.shift(),
+					input: async () => inputs2.shift(),
+				});
+				await start(h2);
+				await h2.commands.get("goal-settings").handler("", h2.ctx);
+				const saved2 = readSettings(f.cwd);
+				assert.equal(saved2.provider, undefined, "empty input clears provider");
+				assert.equal(saved2.model, undefined, "empty input clears model");
+			} finally {
+				f.cleanup();
+			}
+		});
+
+		it("accepts every thinking level and rejects unknown values", async () => {
+			const f = fixture();
+			try {
+				const selects = [
+					"  thinking_level: (default)", "off",
+					"  thinking_level: off", "minimal",
+					"  thinking_level: minimal", "low",
+					"  thinking_level: low", "medium",
+					"  thinking_level: medium", "high",
+					"  thinking_level: high", "xhigh",
+					"Done",
+				];
+				const inputs = ["off", "minimal", "low", "medium", "high", "xhigh"];
+				const h = createHarness({
+					cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+					select: async () => selects.shift(),
+					input: async () => inputs.shift(),
+				});
+				await start(h);
+				await h.commands.get("goal-settings").handler("", h.ctx);
+				const saved = readSettings(f.cwd);
+				assert.equal(saved.thinking_level, "xhigh", "all six levels accepted in sequence");
+				// Unknown value is rejected with a warning and nothing is persisted.
+				const notifiesBefore = h.notifies.length;
+				const selects2 = ["  thinking_level: xhigh", "bogus", "Done"];
+				const inputs2 = ["bogus"];
+				const h2 = createHarness({
+					cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+					select: async () => selects2.shift(),
+					input: async () => inputs2.shift(),
+				});
+				await start(h2);
+				await h2.commands.get("goal-settings").handler("", h2.ctx);
+				assert.ok(h2.notifies.some((n) => n.level === "warning" && n.msg.includes("thinking_level must be one of")),
+					"unknown thinking level warns");
+				assert.equal(readSettings(f.cwd).thinking_level, "xhigh", "rejected value is not persisted");
+			} finally {
+				f.cleanup();
+			}
+		});
+
+		it("subtaskDepth accepts 1 and rejects 1.5, 1x, zero, negative, infinity, and unsafe values", async () => {
+			const f = fixture();
+			try {
+				const rejects = ["1.5", "1x", "0", "-3", "Infinity", "9007199254740992", "", "1"];
+				const inputs = [...rejects];
+				const selects: string[] = [];
+				for (let i = 0; i < rejects.length; i++) selects.push("  subtaskDepth: (default)");
+				selects.push("Done");
+				const h = createHarness({
+					cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+					select: async () => selects.shift(),
+					input: async () => inputs.shift(),
+				});
+				await start(h);
+				await h.commands.get("goal-settings").handler("", h.ctx);
+				const warnings = h.notifies.filter((n) => n.level === "warning" && n.msg.includes("subtaskDepth"));
+				assert.equal(warnings.length, rejects.length - 1, `every invalid input warns: ${warnings.length}`);
+				assert.equal(readSettings(f.cwd).subtaskDepth, 1, "only the valid input is persisted");
+			} finally {
+				f.cleanup();
+			}
+		});
+
+		it("toggling tasks off, on, and off in one menu session reinstalls the correct fixed profile each time", async () => {
+			const f = fixture();
+			try {
+				const selects = ["  disableTasks: (default)", "  disableTasks: true", "  disableTasks: (default)", "Done"];
+				const h = createHarness({
+					cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+					select: async () => selects.shift(),
+				});
+				await start(h);
+				// session_start installed the five-tool profile: history[0].
+				assert.equal(h.activeToolsHistory.length, 1, "one install at session_start");
+				await h.commands.get("goal-settings").handler("", h.ctx);
+				// Each real change reinstalls exactly once: three, five, three.
+				assert.equal(h.activeToolsHistory.length, 4, "three reinstalls after session_start");
+				const installed = h.activeToolsHistory.slice(1).map((tools) => (tools.includes("set_goal_tasks") ? "five" : "three"));
+				assert.deepEqual(installed, ["three", "five", "three"], "profile alternates three/five/three, never skipping a toggle");
+				const saved = readSettings(f.cwd);
+				assert.equal(saved.disableTasks, true, "final file state has tasks disabled");
+			} finally {
+				f.cleanup();
+			}
+		});
+
+		it("headless /goal-settings reports the settings file path without editing", async () => {
+			const f = fixture();
+			try {
+				const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: false });
+				await start(h);
+				await h.commands.get("goal-settings").handler("", h.ctx);
+				assert.ok(h.notifies.some((n) => n.msg.includes("Settings file: ") && n.msg.includes("pi-goal-x-settings.json")),
+					`headless notification: ${h.notifies.map((n) => n.msg).join(" | ")}`);
+				const p = settingsPath(f.cwd);
+				assert.ok(!existsSync(p), "headless invocation must not create the settings file");
+			} finally {
+				f.cleanup();
+			}
+		});
+
+		it("environment overrides take precedence in the profile-reinstall decision", async () => {
+			const f = fixture();
+			const prevTasks = process.env.PI_GOAL_DISABLE_TASKS;
+			process.env.PI_GOAL_DISABLE_TASKS = "true";
+			try {
+				// session_start installs the three-tool profile because the env
+				// override forces disableTasks even though the file is absent.
+				const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true });
+				await start(h);
+				assert.equal(h.activeToolsHistory.length, 1, "three-tool install at session_start");
+				assert.ok(!h.activeToolsHistory[0]!.includes("set_goal_tasks"), "env override installs the core profile");
+				// Toggling the file value cannot change the effective setting, so no
+				// reinstall may happen even though the menu session edits twice.
+				const selects = ["  disableTasks: (default)", "  disableTasks: true", "Done"];
+				const h2 = createHarness({
+					cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true,
+					select: async () => selects.shift(),
+				});
+				await start(h2);
+				await h2.commands.get("goal-settings").handler("", h2.ctx);
+				assert.equal(h2.activeToolsHistory.length, 1, "no reinstall when the effective setting never changed");
+			} finally {
+				if (prevTasks === undefined) delete process.env.PI_GOAL_DISABLE_TASKS;
+				else process.env.PI_GOAL_DISABLE_TASKS = prevTasks;
+				f.cleanup();
+			}
+		});
 	});
