@@ -38,6 +38,27 @@
   authoritative serial baseline.
   Timings are evidence, not portable performance guarantees.
 
+## 2026-08-04 — Stage 5.1-B: /goal-status and per-draft auditor selection
+
+- Registered `/goal-status` (14-command palette): read-only focused-goal
+  summary plus other-open-goal count, reusing the existing `showGoalStatus`
+  helper; it never initiates drafting or an agent turn. `/goal-list` remains
+  the pool view.
+- Per-draft auditor selection: the draft session carries `auditorEnabled`
+  (defaulting to `!settings.disabled`); the confirmation dialog receives it
+  as `defaultAuditorEnabled` (its visible toggle renders the choice), and the
+  confirmation text displays the selected auditor behavior. Continue
+  refining preserves the user's toggle in memory and the durable session
+  entry. Confirmation persists `skipAuditor` through the one creation
+  transaction (`GoalCreationConfig.skipAuditor` → `createGoal`) and mutates
+  it in the same `GoalService.apply` transaction on tweak. Headless
+  confirmation uses the effective-settings default.
+- Tests (+4): `/goal-status` reports focused and unfocused state without
+  drafting; auditor choice persists on create and through continue refining;
+  headless defaults (auditor on, or off when settings.disabled); tweak
+  persists the choice in the same transaction.
+- Validation: `npm run check` 0 errors; `test:all` 504/0; `test:serial`
+  real-SDK 480/0; `git diff --check` clean.
 ## 2026-08-04 — Stage 5.1-A: durable draft state and /goal-cancel
 
 - Replaced the module-local WeakMap-only draft marker with a branch-local

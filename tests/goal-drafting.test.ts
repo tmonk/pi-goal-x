@@ -593,3 +593,113 @@ test("direct goal creation interrupts and clears an active draft", async () => {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
 	}
 });
+
+// ── Stage 5.1-B: /goal-status and per-draft auditor selection ─────────────
+
+test("/goal-status reports state without initiating drafting", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-status-"));
+	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
+	try {
+		const h = createHarness(cwd);
+		await h.sessionStart();
+		await h.commands.get("goal-direct")!.handler("Status target", h.ctx);
+		const messagesBefore = h.messages.length;
+		await h.commands.get("goal-status")!.handler("", h.ctx);
+		assert.equal(h.messages.length, messagesBefore, "status must not initiate a draft or agent turn");
+		assert.ok(h.notifications.some((n) => n.includes("Status target")), "focused goal reported");
+		assert.equal(h.activeTools().includes("goal_questionnaire"), false, "no drafting profile");
+		// Unfocused with open goals: reports the pool without mutating.
+		await h.commands.get("goal-unfocus")!.handler("", h.ctx);
+		await h.commands.get("goal-status")!.handler("", h.ctx);
+		assert.ok(h.notifications.some((n) => n.includes("No goal is focused") && n.includes("open goal")), "pool summary reported");
+	} finally {
+		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
+});
+
+test("the auditor choice persists on create and through continue refining", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-auditor-create-"));
+	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
+	try {
+		const h = createHarness(cwd, { hasUI: true });
+		await h.sessionStart();
+		await h.commands.get("goal")!.handler("Audited work", h.ctx);
+
+		// First proposal: user disables the auditor but keeps refining.
+		const p1 = runProposal(h, proposalParams("Audited work.\nSuccess criteria: done."));
+		h.dialogResult({ questions: [], answers: [{ id: "confirm", question: "Confirm Goal Draft", answer: CONTINUE_ANSWER, wasCustom: false }], cancelled: false, auditorEnabled: false });
+		await p1;
+		assert.equal(activeGoalFiles(cwd).length, 0, "no goal while refining");
+		// The choice is preserved in the durable session entry.
+		const draftEntries = h.entries().filter((e: any) => e.customType === "pi-goal-draft");
+		const latest = draftEntries[draftEntries.length - 1] as any;
+		assert.equal(latest.data.auditorEnabled, false, "auditor choice preserved through continue");
+
+		// Second proposal: confirm with the same (disabled) auditor choice.
+		const p2 = runProposal(h, proposalParams("Audited work.\nSuccess criteria: done."));
+		h.dialogResult({ questions: [], answers: [{ id: "confirm", question: "Confirm Goal Draft", answer: CONFIRM_ANSWER, wasCustom: false }], cancelled: false, auditorEnabled: false });
+		await p2;
+		const goal = firstGoal(cwd);
+		assert.equal(goal.skipAuditor, true, "skipAuditor persisted on create");
+
+		// A third goal created with the auditor enabled has no skipAuditor.
+		await h.commands.get("goal")!.handler("Enabled work", h.ctx);
+		const p3 = runProposal(h, proposalParams("Enabled work."));
+		h.dialogResult({ questions: [], answers: [{ id: "confirm", question: "Confirm Goal Draft", answer: CONFIRM_ANSWER, wasCustom: false }], cancelled: false, auditorEnabled: true });
+		await p3;
+		const goals = activeGoalFiles(cwd).map((f) => parseGoalFile(path.join(cwd, ".pi", "goals", f))!);
+		const enabled = goals.find((g) => g.objective.includes("Enabled work"))!;
+		assert.equal(enabled.skipAuditor, undefined, "auditor enabled means no skipAuditor");
+	} finally {
+		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
+});
+
+test("headless confirmation uses effective settings for the auditor", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-auditor-headless-"));
+	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
+	try {
+		// Default settings: auditor enabled.
+		const h1 = createHarness(cwd);
+		await h1.sessionStart();
+		await h1.commands.get("goal")!.handler("Headless audited", h1.ctx);
+		await runProposal(h1, proposalParams("Headless audited."));
+		const g1 = firstGoal(cwd);
+		assert.equal(g1.skipAuditor, undefined, "auditor enabled by default in headless");
+
+		// settings.disabled: auditor off at draft start.
+		writeSettings(cwd, { disabled: true });
+		const h2 = createHarness(cwd);
+		await h2.sessionStart();
+		await h2.commands.get("goal")!.handler("Headless unaudited", h2.ctx);
+		await runProposal(h2, proposalParams("Headless unaudited."));
+		const goals = activeGoalFiles(cwd).map((f) => parseGoalFile(path.join(cwd, ".pi", "goals", f))!);
+		const g2 = goals.find((g) => g.objective.includes("Headless unaudited"))!;
+		assert.equal(g2.skipAuditor, true, "disabled settings default the auditor off");
+	} finally {
+		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
+});
+
+test("a tweak confirmation persists the auditor choice in the same transaction", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-auditor-tweak-"));
+	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
+	try {
+		const h = createHarness(cwd, { hasUI: true });
+		await h.sessionStart();
+		await h.commands.get("goal-direct")!.handler("Initial objective", h.ctx);
+		const before = firstGoal(cwd);
+		assert.equal(before.skipAuditor, undefined);
+		await h.commands.get("goal-tweak")!.handler("Revise the scope", h.ctx);
+		const pending = runProposal(h, proposalParams("Revised objective", { sisyphus: false }));
+		h.dialogResult({ questions: [], answers: [{ id: "confirm", question: "Confirm Goal Draft", answer: CONFIRM_ANSWER, wasCustom: false }], cancelled: false, auditorEnabled: false });
+		await pending;
+		const after = firstGoal(cwd);
+		assert.equal(after.id, before.id, "same goal");
+		assert.ok(after.objective.includes("Revised objective"), "objective updated");
+		assert.equal(after.skipAuditor, true, "skipAuditor mutated in the tweak transaction");
+		assert.ok(ledgerEvents(cwd).some((e) => e.type === "goal_tweaked"), "tweak recorded");
+	} finally {
+		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
+});

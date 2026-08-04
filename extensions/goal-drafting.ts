@@ -269,18 +269,31 @@ export function registerDraftingTools(core: GoalCore): void {
 			const target = draft.mode === "tweak" ? core.state.goal : undefined;
 			if (draft.mode === "tweak" && (!target || target.id !== draft.targetGoalId)) return { content: [{ type: "text", text: "The goal changed while drafting; review it and start /goal-tweak again." }], details: goalDetails(core.state.goal) };
 			if (draft.mode === "sisyphus" && !sisyphusObjectiveSufficient(objective)) return { content: [{ type: "text", text: "A Sisyphus goal needs ordered steps with explicit per-step done criteria. Refine the objective with numbered steps (1) ..., 2) ...) or Step N: blocks before proposing again." }], details: goalDetails(core.state.goal) };
+			const auditorLine = draft.auditorEnabled
+				? "\n\nAuditor for this goal: enabled (independent approval required before completion)."
+				: "\n\nAuditor for this goal: disabled (completion skips the audit).";
 			const confirmation = shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM })
-				? { decision: "confirm" as const, auditorEnabled: true }
-				: await showProposalDialog(ctx, proposalText(draft, objective, params.auto_continue !== false, taskResult.value, target ?? undefined), draft.mode === "sisyphus" ? "sisyphus" : "goal");
+				? { decision: "confirm" as const, auditorEnabled: draft.auditorEnabled }
+				: await showProposalDialog(ctx, proposalText(draft, objective, params.auto_continue !== false, taskResult.value, target ?? undefined) + auditorLine, draft.mode === "sisyphus" ? "sisyphus" : "goal", draft.auditorEnabled);
 			if (confirmation.decision === "cancel") {
 				clearGoalDrafting(core, ctx);
 				return { content: [{ type: "text", text: "Draft cancelled; no goal was created. Run /goal or /sisyphus to start a new draft." }], details: goalDetails(core.state.goal) };
 			}
-			if (confirmation.decision !== "confirm") return { content: [{ type: "text", text: "Goal draft refinement requested. The goal was not changed; ask what the user wants revised before proposing again." }], details: goalDetails(core.state.goal) };
+			if (confirmation.decision !== "confirm") {
+				// Continue refining: preserve the user's auditor choice for the
+				// next proposal (memory and the durable session entry).
+				if (confirmation.auditorEnabled !== draft.auditorEnabled) {
+					const next = { ...draft, auditorEnabled: confirmation.auditorEnabled };
+					activeDrafts.set(core, next);
+					draftSessionEntry(core, { version: 1, mode: next.mode, seed: next.originalTopic, targetGoalId: next.targetGoalId, startedAt: next.startedAt, auditorEnabled: next.auditorEnabled });
+				}
+				return { content: [{ type: "text", text: "Goal draft refinement requested. The goal was not changed; ask what the user wants revised before proposing again." }], details: goalDetails(core.state.goal) };
+			}
+			const skipAuditor = confirmation.auditorEnabled === false;
 			const settings = loadGoalSettings(ctx.cwd);
 			const extracted = settings.disableContracts ? { objective, verificationContract: undefined } : extractVerificationContract(objective);
 			if (draft.mode !== "tweak") {
-				core.replaceGoal({ objective: extracted.objective, autoContinue: params.auto_continue !== false, sisyphus: expectedSisyphus, taskList: taskResult.value }, ctx, true, extracted.verificationContract);
+				core.replaceGoal({ objective: extracted.objective, autoContinue: params.auto_continue !== false, sisyphus: expectedSisyphus, taskList: taskResult.value, skipAuditor }, ctx, true, extracted.verificationContract);
 				clearGoalDrafting(core, ctx);
 				return { content: [{ type: "text", text: buildGoalCreatedReport({ objective: extracted.objective }) }], details: goalDetails(core.state.goal), terminate: true };
 			}
@@ -289,7 +302,7 @@ export function registerDraftingTools(core: GoalCore): void {
 			const now = nowIso();
 			const result = core.goalService.apply(ctx, {
 				reconcile: false, focusToken: token, refreshFromDisk: true,
-				mutate: (goal) => ({ ...goal, objective: extracted.objective, verificationContract: extracted.verificationContract ?? goal.verificationContract, taskList: taskResult.value ?? goal.taskList, updatedAt: now }),
+				mutate: (goal) => ({ ...goal, objective: extracted.objective, verificationContract: extracted.verificationContract ?? goal.verificationContract, taskList: taskResult.value ?? goal.taskList, skipAuditor, updatedAt: now }),
 				ledger: (written) => [{ type: "goal_tweaked", goalId: written.id, changeSummary: "Goal revised through /goal-tweak drafting.", at: written.updatedAt }, ...(taskResult.value ? [{ type: "task_list_set" as const, goalId: written.id, taskCount: countTasks(taskResult.value.tasks), blockCompletion: taskResult.value.blockCompletion, at: written.updatedAt }] : [])],
 			});
 			if (!result.ok) return { content: [{ type: "text", text: "Goal tweak was not applied: " + result.message }], details: goalDetails(core.state.goal) };

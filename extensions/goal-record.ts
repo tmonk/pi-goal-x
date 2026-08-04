@@ -89,6 +89,8 @@ export interface GoalCreationConfig {
 	autoContinue: boolean;
 	sisyphus: boolean;
 	taskList?: GoalTaskList;
+	/** User-chosen per-draft auditor bypass, persisted on the created goal. */
+	skipAuditor?: boolean;
 }
 
 export interface AssistantUsage {
@@ -173,6 +175,7 @@ export function createGoal(config: GoalCreationConfig, now = Date.now()): GoalRe
 		autoContinue: config.autoContinue,
 		usage: emptyUsage(),
 		sisyphus: config.sisyphus,
+		skipAuditor: config.skipAuditor === true ? true : undefined,
 		revision: 0,
 		createdAt: timestamp,
 		updatedAt: timestamp,

@@ -449,6 +449,12 @@ export function registerGoalCommands(core: GoalCore): void {
 			core.updateUI(ctx);
 		},
 	});
+	pi.registerCommand("goal-status", {
+		description: "Show the focused goal and how many other goals are open (read-only).",
+		handler: async (_rawArgs, ctx) => {
+			await showGoalStatus(ctx);
+		},
+	});
 	pi.registerCommand("goal-focus", {
 		description: "Choose which open goal this session focuses on.",
 		handler: async (_rawArgs, ctx) => {
