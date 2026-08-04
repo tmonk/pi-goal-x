@@ -97,7 +97,7 @@ direct write or ledger calls.
   │    ├─ /goal-focus chooses the session focus
   │    ├─ /goal-unfocus clears only the session focus and leaves the shared goal open
   │    └─ unfocused sessions guide the user to choose instead of letting the agent decide
-  └─ /goal-clear archives the focused goal immediately (the missing confirmation prompt is a known 0.23 defect)
+  └─ /goal-clear archives the focused goal after confirmation (cancel is a durable no-op)
 ```
 
 ## Goal pool and session focus
@@ -290,7 +290,7 @@ compaction recovery, and the bounded steering prompts. The separate
 `tests/e2e/run.ts` real-model path is manual and opt-in. In `experiments/`,
 C20-C26 are the release set and B1-B2/C1-C19 are migrated compatibility cases.
 
-## Hardening (0.23)
+## Hardening
 
 The 2026-08-04 hardening plan
 ([`specs/2026-08-04-goal-simplification-hardening`](../specs/2026-08-04-goal-simplification-hardening/TECH.md))
@@ -299,9 +299,9 @@ is implemented: paused-status normalization (status authoritative, legacy
 structural-field clearing, token-budget integer validation, `task_reopened`
 ledger semantics with observable diagnostics, the three/five fixed tool
 profile, and the supported integration/experiment coverage described above.
-(0.23's drafting-surface removal was later reversed by the product correction
-in the runtime follow-up, which restores guided drafting as a first-class
-workflow; see the follow-up section below.)
+(the interim drafting-surface removal was later reversed by the product
+correction in the runtime follow-up, which restores guided drafting as a
+first-class workflow; see the follow-up section below.)
 
 The runtime follow-up
 ([`specs/2026-08-04-goal-runtime-follow-up`](../specs/2026-08-04-goal-runtime-follow-up/TECH.md))

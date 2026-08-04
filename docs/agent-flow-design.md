@@ -285,7 +285,7 @@ goal.ts (thin installer)
   and status/structure remain unchanged; `set_goal_tasks` surfaces the typed
   conflict. Old readers keep existing data readable.
 
-## 15. Hardening (0.23) and runtime follow-up
+## 15. Hardening and runtime follow-up
 
 This document describes the shipped behavior. The 2026-08-04 hardening plan
 ([`specs/2026-08-04-goal-simplification-hardening`](../specs/2026-08-04-goal-simplification-hardening/TECH.md))

@@ -404,11 +404,11 @@ extensions/widgets/goal-notifications.ts widget-style notification text
 - **Disk-backed continuity**: goal state survives context churn and can be audited from `.pi/goals/`.
 - **Human-owned focus**: the agent may work on the focused goal, but only user commands/UI selection switch focus.
 
-## Hardening (0.23)
+## Hardening
 
 The 2026-08-04 hardening pass
 ([`specs/2026-08-04-goal-simplification-hardening`](specs/2026-08-04-goal-simplification-hardening/PRODUCT.md))
-is implemented and validated in 0.23: persisted lifecycle status is
+is implemented and validated: persisted lifecycle status is
 authoritative (paused stays paused, including legacy `autoContinue: true`
 records), disabled-auditor completion works and records `audit_skipped`, the
 three/five tool profile is fixed and host tools are never touched, task
@@ -431,7 +431,8 @@ landed the remaining work:
 - Cross-process mutations are serialized with persisted revisions and
   per-goal locks (typed conflicts, no blind overwrites).
 - **Guided drafting is restored as a first-class workflow** (a product
-  correction to the 0.23 removal): `/goal`, `/sisyphus`, and `/goal-tweak`
+  correction reversing the interim removal): `/goal`, `/sisyphus`, and
+  `/goal-tweak`
   run a transient draft with `goal_question`, `goal_questionnaire`, and
   `propose_goal_draft` (Confirm / Continue / Cancel); durable draft sessions
   survive compaction; `/goal-cancel` and `/goal-status` complete the
