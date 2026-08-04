@@ -98,6 +98,11 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 		// sequences every cycle, which can cause terminal viewport snapping).
 		const wasHardwareCursorShown = tui.getShowHardwareCursor();
 		tui.setShowHardwareCursor(false);
+		// Pause pi's working spinner for the dialog duration: its ~80ms
+		// re-renders write output while the user is scrolled up reading the
+		// proposal, which snaps the terminal viewport back to the bottom
+		// ("terminal scrolls back down after X seconds"). Restored on close.
+		ctx.ui.setWorkingVisible(false);
 		// Terminal-height bound: the dialog renders in the editor slot, so the opened
 		// frame height is (pre-dialog frame - 1) + dialog lines. Bound the dialog so
 		// the frame never exceeds the terminal height — without this, closing a dialog
@@ -139,6 +144,8 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 		function submit(cancelled: boolean) {
 			// Restore hardware cursor now that the dialog is closing
 			tui.setShowHardwareCursor(wasHardwareCursorShown);
+			// Resume pi's working spinner (the agent run is still active until agent_end).
+			ctx.ui.setWorkingVisible(true);
 			const ordered = questions.map((q) => answers.get(q.id)).filter((a): a is GoalQuestionnaireAnswer => !!a);
 			done({ questions, answers: ordered, cancelled, auditorEnabled: auditorToggleInit ? auditorEnabled : undefined });
 		}

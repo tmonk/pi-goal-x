@@ -82,6 +82,36 @@ terminal, the dialog head is not written to the buffer — scrollback contains
 the tail only. Pre-regression wrote the head but the close wiped everything
 with 2J+3J.
 
+### Spinner guard (the second churn source — “terminal scrolls back down after X seconds”)
+
+User replication: “agent presents goal → user scrolls up to read it all →
+terminal scrolls back down after X seconds” (viewport lands at 0/586 = the
+bottom). Root cause found headlessly by reproducing the real session: while
+the questionnaire dialog is open, the agent run is still active
+(`_isAgentRunActive`), so pi's `WorkingStatusIndicator` (`Loader` in the
+statusContainer) keeps ticking every 80ms and calls `ui.requestRender()` on
+every tick. Each tick rewrites the spinner frame line (~44 bytes, measured
+220 bytes per 5 ticks) — and in iTerm2/Ghostty/kitty (default “scroll to
+bottom on output”) **any output while the user is scrolled up snaps the
+viewport to the bottom**. This also affected the task-list/escape overlays
+(they composite over the base frame, whose spinner line still changes).
+
+Fix (one call pair per dialog, 383ae52 rendering untouched):
+
+```ts
+// in each dialog's factory, after the hardware-cursor suppression:
+ctx.ui.setWorkingVisible(false);
+// on close (submit() for the questionnaire; dispose() for the overlays):
+ctx.ui.setWorkingVisible(true);
+```
+
+`setWorkingVisible(false)` → `clearStatusIndicator("working")` → the Loader
+interval is disposed and the statusContainer cleared (replaced by the static
+2-line `IdleStatus` when `clearOnShrink` is on — no periodic output). The
+restore re-shows the spinner only if the session is still streaming
+(`setWorkingVisible(true)` checks `session.isStreaming`), so it is safe in
+every close path. In headless/mock contexts `setWorkingVisible` is a no-op.
+
 ## Why scrollback is "in full" now
 
 1. **No alternate screen** — the alt-screen module is gone; no dialog flow
@@ -98,21 +128,28 @@ with 2J+3J.
    dialog.)
 4. **No viewport yank for content that fits** — measured 0 scrolls on
    open/nav/close; the renderer's viewport model stays put.
+5. **No periodic output while the user is reading** — the goal dialogs pause
+   pi's working spinner for their duration (`setWorkingVisible(false)`), so
+   the ~80ms tick writes that previously snapped a scrolled-up viewport back
+   to the bottom are gone (measured 0 bytes per tick).
 
 ## Verification methodology
 
 `experiments/scroll-repro/repro-dialog-render.mjs` (383ae52 harness) models
 the differential renderer; `experiments/scroll-repro/before-after-churn.mjs`
 (committed) drives the **real** `runGoalQuestionnaire` through the **real**
-pi-tui with a fake terminal and pi's exact `showExtensionCustom` sequence
-(editor swap; `showOverlay` for the centered dialogs), tracking viewport
-scrolls (`\n` while the cursor is on the bottom row, measured from the
-pre-render cursor row), DECSET 1049, `2J`, `3J`, the post-close cursor row,
-and `previousLines` content presence. Report mode measures the current
-behavior; `--expect-fixed` asserts no 2J/3J, no viewport yank, and a
-0-churn fits scenario. Results are tabulated in PRODUCT.md (all scenarios
-0-churn for fits and for tall dialogs with a fitting chat; no 1049; no 2J/3J
-anywhere; chat visible above; tall-dialog tail in the buffer).
+pi-tui with a fake terminal and the **real pi frame layout** (header, chat,
+status-with-spinner, editor, footer), using pi's exact `showExtensionCustom`
+sequence (editor swap; `showOverlay` for the centered dialogs). It tracks
+viewport scrolls (`\n` while the cursor is on the bottom row, measured from
+the pre-render cursor row), DECSET 1049, `2J`, `3J`, the post-close cursor
+row, `previousLines` content presence, and — the spinner phase — the bytes
+emitted by five working-spinner ticks while the user is scrolled up reading
+the dialog. Report mode measures the current behavior; `--expect-fixed`
+asserts no 2J/3J, no viewport yank, a 0-churn fits scenario, and 0 bytes per
+spinner tick. Results are tabulated in PRODUCT.md (all scenarios 0-churn for
+fits and for tall dialogs with a fitting chat; no 1049; no 2J/3J anywhere;
+chat visible above; tall-dialog tail in the buffer; 0 spinner bytes).
 
 ## Pre-existing pi-tui edge case — now eliminated by the churn guard
 

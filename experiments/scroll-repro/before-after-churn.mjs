@@ -2,29 +2,38 @@
 //
 // Drives the REAL runGoalQuestionnaire through the REAL pi-tui differential
 // renderer with a fake terminal, mirroring pi's showExtensionCustom (editor
-// swap for non-overlay). For each scenario it reports:
+// swap for non-overlay) and the REAL pi frame layout (header, chat, status
+// with working spinner, editor -> dialog, footer). For each scenario it
+// reports:
 //   - open / nav / close terminal scrolls (a \n feed on the bottom row scrolls)
 //   - \x1b[2J / \x1b[3J emissions (screen clear / SCROLLBACK ERASE)
-//   - post-close viewport position (window-at-bottom verdict: a 2J+3J full
-//     render homes the cursor to row 0 and wipes scrollback, so the terminal
-//     must re-scroll ~a screenful of new content before the window returns to
-//     the bottom — the "~10s instead of 1s" scroll-back delay)
-//   - scrollback content: full dialog in the main buffer, chat visible above
+//   - post-close viewport position (a 2J+3J full render homes the cursor and
+//     wipes scrollback — the "~10s to scroll back to the bottom" delay)
+//   - scrollback content: dialog tail in the main buffer, chat visible above
+//   - SPINNER PHASE: pi's working spinner ticks every ~80ms and calls
+//     requestRender; with the dialog open and the user scrolled up reading the
+//     proposal, each tick's output snaps the terminal viewport back to the
+//     bottom ("terminal scrolls back down after X seconds"). The goal dialogs
+//     pause the spinner (setWorkingVisible(false)) for their duration, so the
+//     fixed harness asserts 0 bytes per tick -> no snap.
 //
 // Usage:
 //   node before-after-churn.mjs                 # report mode (measures current behavior)
 //   node before-after-churn.mjs 40              # report mode, rows=40
-//   node before-after-churn.mjs --expect-fixed  # assertion mode: no 2J/3J, no yank, fits stays 0-churn
+//   node before-after-churn.mjs --expect-fixed  # assertion mode
 //
 // Report mode exits 0 always; --expect-fixed fails when any open/nav/close
-// step emits 2J/3J, when a post-close viewport is yanked to the top, or when
-// the fits scenario scrolls.
+// step emits 2J/3J, when a post-close viewport is yanked, when the fits
+// scenario scrolls, or when a spinner tick emits output while the user is
+// scrolled up reading the dialog.
 
 import { TUI, Container } from "../../node_modules/@earendil-works/pi-tui/dist/tui.js";
 import { runGoalQuestionnaire } from "../../extensions/goal-questionnaire.ts";
 
 const ROWS = Number(process.argv.slice(2).find((a) => !a.startsWith("--")) ?? 40);
 const EXPECT_FIXED = process.argv.includes("--expect-fixed");
+const SPINNER_TICKS = 5;
+const SCROLL_UP = 30;
 const COLS = 120;
 
 function makeTerminal() {
@@ -40,11 +49,12 @@ function makeTerminal() {
 }
 
 // ANSI stream emulation: track cursor screen row + viewport scrolls (a \n feed
-// while the cursor is on the bottom row scrolls the terminal), and count
-// 1049 / 2J / 3J. Returns final cursor screen row too (post-close position).
+// while the cursor is on the bottom row scrolls the terminal), count
+// 1049 / 2J / 3J, and count text writes. Returns final cursor screen row too.
 function analyze(stream, rows, startRow) {
 	let cursorRow = startRow;
 	let scrolled = 0;
+	let textWrites = 0;
 	let i = 0;
 	const s = stream;
 	const counts = { alt1049: 0, clear2J: 0, clear3J: 0 };
@@ -79,9 +89,10 @@ function analyze(stream, rows, startRow) {
 			i++;
 			continue;
 		}
+		textWrites++;
 		i++;
 	}
-	return { ...counts, scrolled, finalCursorRow: cursorRow };
+	return { ...counts, scrolled, textWrites, finalCursorRow: cursorRow };
 }
 
 const theme = { fg: (_c, s) => s, bg: (_c, s) => s, bold: (s) => s, dim: (s) => s };
@@ -102,9 +113,10 @@ const LONG_CONTEXT = [
 ].join("\n");
 const SHORT_CONTEXT = "● Goal draft/tweak ready for confirmation.\n\n=== Goal ===\nObjective: Short and simple.\nSuccess criteria: It works.";
 
-// ctx.ui.custom mirroring pi's showExtensionCustom: no overlay options -> editor
-// swap (inline in the main buffer); resolve on done -> restore editor.
-function makeCtx(tui, editorContainer, editor) {
+// ctx.ui mirroring pi's showExtensionCustom (editor swap / showOverlay) plus
+// setWorkingVisible mirroring interactive-mode's clearStatusIndicator: hides or
+// restores the statusContainer spinner.
+function makeCtx(tui, editorContainer, editor, statusContainer, spinner) {
 	const state = { component: null, handle: null };
 	const ctx = {
 		hasUI: true,
@@ -127,27 +139,55 @@ function makeCtx(tui, editorContainer, editor) {
 					tui.requestRender();
 				});
 			},
+			setWorkingVisible(visible) {
+				statusContainer.clear();
+				if (visible && spinner) statusContainer.addChild(spinner);
+				tui.requestRender();
+			},
 		},
 	};
 	return { ctx, state };
 }
 
+// pi's working spinner: changes its frame char every tick (~80ms) and
+// requestRender()s — the periodic output that snaps a scrolled-up user.
+function makeSpinner(tui) {
+	const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+	let idx = 0;
+	const spinner = new Container();
+	spinner.render = () => [`${frames[idx]} Working...`];
+	return {
+		spinner,
+		tick() {
+			idx = (idx + 1) % frames.length;
+			tui.requestRender();
+		},
+	};
+}
+
 async function runScenario(chatLines, context, label, expectsFits) {
 	const { terminal, writes } = makeTerminal();
 	const tui = new TUI(terminal, false, "/tmp/tui-before-after-churn");
+	// REAL pi layout: header, chat, status(spinner), editorContainer, footer.
+	const header = new Container();
+	header.render = () => ["pi • model • cwd"];
 	const chat = new Container();
 	chat.render = () => Array.from({ length: chatLines }, (_, i) => `chat line ${i} ${"x".repeat(20)}`);
-	const footer = new Container();
-	footer.render = () => ["─ footer ─"];
+	const statusContainer = new Container();
+	const { spinner, tick } = makeSpinner(tui);
+	statusContainer.addChild(spinner);
 	const editorContainer = new Container();
 	const editor = new Container();
 	editor.render = () => ["❯ "];
 	editorContainer.addChild(editor);
-	tui.addChild(chat); tui.addChild(footer); tui.addChild(editorContainer);
+	const footer = new Container();
+	footer.render = () => ["─ footer ─"];
+	tui.addChild(header); tui.addChild(chat); tui.addChild(statusContainer);
+	tui.addChild(editorContainer); tui.addChild(footer);
 	tui.doRender();
 	writes.length = 0;
 
-	const { ctx, state } = makeCtx(tui, editorContainer, editor);
+	const { ctx, state } = makeCtx(tui, editorContainer, editor, statusContainer, spinner);
 	const resultPromise = runGoalQuestionnaire(ctx, [{
 		id: "confirm", question: "Confirm Goal Draft",
 		context,
@@ -155,12 +195,27 @@ async function runScenario(chatLines, context, label, expectsFits) {
 		recommended: 0, allowCustom: false,
 	}], undefined);
 
+	// open
 	const openStartRow = tui.hardwareCursorRow - tui.previousViewportTop;
 	tui.doRender();
 	const openStream = writes.join("");
 	writes.length = 0;
 	const open = analyze(openStream, ROWS, openStartRow);
 	const openLines = (tui.previousLines ?? []).map(stripAnsi);
+
+	// spinner phase: the user scrolls up to read the proposal; pi's spinner
+	// ticks while the dialog is open. Any output per tick = snap to bottom.
+	let tickBytesTotal = 0;
+	let anyTickText = false;
+	for (let t = 0; t < SPINNER_TICKS; t++) {
+		tick();
+		tui.doRender();
+		const bytes = writes.join("");
+		writes.length = 0;
+		const res = analyze(bytes, ROWS, 0);
+		tickBytesTotal += bytes.length;
+		if (res.textWrites > 0) anyTickText = true;
+	}
 
 	// nav: move selection down once
 	const component = state.component;
@@ -182,7 +237,7 @@ async function runScenario(chatLines, context, label, expectsFits) {
 	const detailCount = (context.match(/Detail line \d+/g) ?? []).length;
 	const taskCount = (context.match(/\[ \] task-\d+/g) ?? []).length;
 	// Dialog content is written into the main buffer during OPEN (readable via
-	// scrollback while the dialog is up); check the open frame, not post-close.
+	// scrollback while the dialog is up); check the open frame.
 	const fullDialogInBuffer = detailCount === 0 ? openLines.some((l) => /Objective:/.test(l)) : openLines.some((l) => l.includes(`Detail line ${detailCount - 1}`));
 	const fullTasksInBuffer = taskCount === 0 ? true : openLines.some((l) => l.includes(`task-${taskCount - 1}`));
 	const chatVisible = openLines.slice(0, chatLines).some((l) => l.startsWith("chat line"));
@@ -190,9 +245,10 @@ async function runScenario(chatLines, context, label, expectsFits) {
 
 	console.log(`[${label}] chat=${chatLines} rows=${ROWS} ${expectsFits ? "(fits)" : ""}`);
 	console.log(`  open : scrolls=${open.scrolled} 1049=${open.alt1049} 2J=${open.clear2J} 3J=${open.clear3J}`);
+	console.log(`  spinner while reading: ${SPINNER_TICKS} ticks -> bytes=${tickBytesTotal} textWrites=${anyTickText ? "yes" : "none"}${anyTickText ? "  <-- PERIODIC OUTPUT: snaps a scrolled-up user back to the bottom" : ""}`);
 	console.log(`  nav  : scrolls=${nav.scrolled} 2J=${nav.clear2J} 3J=${nav.clear3J}`);
 	console.log(`  close: scrolls=${close.scrolled} 2J=${close.clear2J} 3J=${close.clear3J} cursorRow=${close.finalCursorRow}/${ROWS}${yanked ? "  <-- FULL RENDER (2J+3J): SCROLLBACK ERASED + VIEWPORT DISTURBED" : ""}`);
-	console.log(`  scrollback: full dialog ${fullDialogInBuffer && fullTasksInBuffer ? "✓" : "✗"}, chat visible above ${chatVisible ? "✓" : "✗"}`);
+	console.log(`  scrollback: dialog tail ${fullDialogInBuffer && fullTasksInBuffer ? "✓" : "✗"}, chat visible above ${chatVisible ? "✓" : "✗"}`);
 	console.log("");
 
 	const failures = [];
@@ -200,7 +256,8 @@ async function runScenario(chatLines, context, label, expectsFits) {
 		if (open.clear2J + open.clear3J > 0 || nav.clear2J + nav.clear3J > 0 || close.clear2J + close.clear3J > 0) {
 			failures.push(`${label}: 2J/3J emitted during open/nav/close`);
 		}
-		if (yanked) failures.push(`${label}: viewport yanked to top on close`);
+		if (yanked) failures.push(`${label}: viewport yanked on close`);
+		if (anyTickText) failures.push(`${label}: spinner ticks emitted output while user is reading (terminal snaps to bottom)`);
 		if (expectsFits) {
 			if (open.scrolled !== 0 || nav.scrolled !== 0 || close.scrolled !== 0) {
 				failures.push(`${label}: viewport scrolled (content fits)`);
@@ -211,7 +268,7 @@ async function runScenario(chatLines, context, label, expectsFits) {
 	return failures;
 }
 
-// Scenario A: content fits -> must stay 0-churn, no clears.
+// Scenario A: content fits -> must stay 0-churn, no clears, no periodic output.
 // Scenario B: proposal taller than the terminal -> the churn bug (2J+3J on close).
 // Scenario C: chat taller than the terminal + tall proposal -> same close bug.
 const scenarios = [
@@ -231,7 +288,7 @@ if (EXPECT_FIXED) {
 		for (const f of allFailures) console.error(`  ✗ ${f}`);
 		process.exit(1);
 	}
-	console.log("PASS — no 2J/3J, no viewport yank, fits scenario stays 0-churn.");
+	console.log("PASS — no 2J/3J, no viewport yank, fits scenario stays 0-churn, no periodic output while reading.");
 } else {
 	console.log(`Measured ${scenarios.length} scenarios (report mode). Run with --expect-fixed after applying the fix to assert the after-state.`);
 }

@@ -29,6 +29,9 @@ export async function showEscapeDialog(
 		(tui: TUI, theme: Theme, _keybindings: unknown, done: (result: EscapeDialogResult) => void): Component => {
 			const wasHardwareCursorShown = tui.getShowHardwareCursor();
 			tui.setShowHardwareCursor(false);
+			// Pause pi's working spinner for the dialog duration: its ~80ms re-renders
+			// write output that snaps a scrolled-up user back to the terminal bottom.
+			ctx.ui.setWorkingVisible(false);
 
 			let selectedIndex = 1; // Default: "Continue working" (index 1)
 			let cancelled = false;
@@ -54,6 +57,7 @@ export async function showEscapeDialog(
 			const component: Component & { dispose?(): void } = {
 				dispose() {
 					tui.setShowHardwareCursor(wasHardwareCursorShown);
+					ctx.ui.setWorkingVisible(true);
 				},
 
 				invalidate(): void {

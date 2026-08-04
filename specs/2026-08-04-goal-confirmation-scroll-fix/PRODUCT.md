@@ -16,7 +16,9 @@ remain in the buffer and readable via terminal scrollback, and
 opening/navigating/closing never yank the viewport for content that fits on
 screen — or for taller-than-screen proposals (the pre-regression behavior
 only kept them readable via scrollback up until the close, which then wiped
-it).
+it). Plus the goal dialogs pause pi's working spinner for their duration, so
+the terminal no longer "scrolls back down after X seconds" while the user is
+reading the proposal in scrollback.
 
 ## What was tried and rejected (why we are here)
 
@@ -46,7 +48,9 @@ it).
   windowing, no internal scrolling UI. The render is byte-identical to the
   pre-regression UI for content that fits on screen; content taller than the
   terminal is tail-sliced to the terminal-height bound so the opened frame
-  never exceeds the screen (see “Churn guard” below).
+  never exceeds the screen (see “Churn guard” below). While any goal dialog
+  is open, pi's working spinner is paused (`setWorkingVisible(false)`) so its
+  ~80ms re-renders cannot snap a scrolled-up reader back to the bottom.
 - **Task-list confirmation (`showTaskConfirmation`):** centered main-screen
   overlay `{ anchor: "center", width: "70%", minWidth: 50, maxHeight: "60%" }`.
 - **Audit escape dialog (`showEscapeDialog`):** centered main-screen overlay
@@ -74,19 +78,37 @@ it).
 
 ### Churn guard (the one addition to the 383ae52 surface)
 
-`runGoalQuestionnaire` bounds its render to the terminal height:
-`maxDialogLines = max(10, terminalRows − preDialogFrame + 1)`, where
-`preDialogFrame` is the height of the frame before the dialog swaps into the
-editor slot (`tui.previousLines`). With the frame at most `terminalRows`
-tall, closing never shrinks past the previous viewport top and pi-tui's
-generic `fullRender(true)` path (the `\x1b[2J\x1b[H\x1b[3J` scrollback wipe)
-is never entered. The tail slice keeps the actionable options/footer in view
-and preserves the exact pre-regression rendering whenever the dialog fits.
-Only engaged when real TUI dimensions are available (mocks render unbounded
-as before). Tradeoff, accepted by the user via goal tweak: for a dialog
-taller than the terminal, the head of the dialog is not written to the
+Two orthogonal churn sources were fixed with minimal extension-side guards
+(the task-list confirmation and escape overlays keep their exact 383ae52
+overlay configuration):
+
+**1. Tall-dialog close 2J+3J.** `runGoalQuestionnaire` bounds its render to
+the terminal height: `maxDialogLines = max(10, terminalRows − preDialogFrame
++ 1)`, where `preDialogFrame` is the height of the frame before the dialog
+swaps into the editor slot (`tui.previousLines`). With the frame at most
+`terminalRows` tall, closing never shrinks past the previous viewport top and
+pi-tui's generic `fullRender(true)` path (the `\x1b[2J\x1b[H\x1b[3J` scrollback
+wipe) is never entered. The tail slice keeps the actionable options/footer in
+view and preserves the exact pre-regression rendering whenever the dialog
+fits. Only engaged when real TUI dimensions are available (mocks render
+unbounded as before). Tradeoff, accepted by the user via goal tweak: for a
+dialog taller than the terminal, the head of the dialog is not written to the
 buffer (scrollback contains the tail only) — previously it was written but
 wiped on close by the 2J+3J full render.
+
+**2. Periodic output while reading (spinner).** The user's real-terminal
+replication: “agent presents goal → user scrolls up to read it all → terminal
+scrolls back down after X seconds” (viewport lands at 0/586 = the bottom).
+While a goal dialog is open, pi's working spinner (`Loader`) ticks every
+~80ms and calls `requestRender()`; each tick rewrites the spinner line (~44
+bytes/tick, measured 220 bytes per 5 ticks), and in iTerm2/Ghostty/kitty
+default behavior **any output while the user is scrolled up snaps the
+viewport back to the bottom**. Each goal dialog calls
+`ctx.ui.setWorkingVisible(false)` when it opens and
+`setWorkingVisible(true)` on close/dispose, stopping the spinner for the
+dialog duration — measured 0 bytes per tick afterwards. `setWorkingVisible`
+is a no-op in headless/mock contexts, so the 383ae52 test surface is
+untouched.
 
 ## Verification (headless, real renderer)
 
@@ -97,20 +119,25 @@ pi's exact `showExtensionCustom` open/close sequence
 (`experiments/scroll-repro/before-after-churn.mjs`, report mode = before,
 `--expect-fixed` = after):
 
-| Scenario (rows=40) | open scrolls | nav | close | 1049 | 2J/3J | full dialog in buffer | chat above |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| short chat + short proposal (fits) | 0 | 0 | 0 | none | none | ✓ | ✓ |
-| short chat + long proposal (73-line) | 0 (was 87) | 0 | 0 | none | **none (was 2J+3J)** | tail (29 lines) | ✓ |
-| long chat (120) + long proposal | 9 (chat alone exceeds screen; pre-existing) | 0 | 0 | none | none (was 2J+3J) | tail (10 lines) | ✓ |
-| task-list confirmation (overlay) | 0 | — | 0 | none | none | — | ✓ |
-| escape dialog (overlay) | 0 | — | 0 | none | none | — | ✓ |
+| Scenario (rows=40) | open scrolls | nav | close | 1049 | 2J/3J | spinner ticks (bytes) | full dialog in buffer | chat above |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| short chat + short proposal (fits) | 0 | 0 | 0 | none | none | 0 / 5 | ✓ | ✓ |
+| short chat + long proposal (73-line) | 0 (was 87) | 0 | 0 | none | **none (was 2J+3J)** | 0 / 5 (was 220) | tail (29 lines) | ✓ |
+| long chat (120) + long proposal | 8 (chat alone exceeds screen; pre-existing) | 0 | 0 | none | none (was 2J+3J) | 0 / 5 (was 220) | tail (10 lines) | ✓ |
+| task-list confirmation (overlay) | 0 | — | 0 | none | none | 0 / 5 (was ~215) | — | ✓ |
+| escape dialog (overlay) | 0 | — | 0 | none | none | 0 / 5 (was ~215) | — | ✓ |
 
-Before/after delta (the regression the tweak fixed): on the unbounded 383ae52
+Before/after delta (the regressions the tweak fixed): on the unbounded 383ae52
 render, the tall-dialog scenarios emitted `2J=1 3J=1` on close — pi-tui's
 shrink full-render wiping terminal scrollback and leaving the viewport at the
-top, so the window took ~10s to scroll back to the bottom. After the churn
-guard: no 2J/3J anywhere, viewport never jumps, `--expect-fixed` passes
-(also verified at rows=24 and rows=60).
+top, so the window took ~10s to scroll back to the bottom. And while any
+dialog was open, pi's working spinner wrote ~44 bytes every ~80ms — in a real
+terminal (iTerm2/Ghostty/kitty default) any output while the user is scrolled
+up snaps the viewport to the bottom, so reading the proposal in scrollback
+ended with the terminal "scrolling back down after X seconds" (the user's
+0/586 observation). After the guards: no 2J/3J anywhere, 0 bytes per spinner
+tick, viewport never jumps, `--expect-fixed` passes (also verified at
+rows=24 and rows=60).
 
 `npm run check`: 0 errors. Full unit suite: 482 pass / 0 fail (the 383ae52
 test surface; the three commits' tests were removed; no test asserted the

@@ -48,6 +48,9 @@ async function showTaskListConfirmationDialog(ctx: ExtensionContext, proposalTex
 		(tui: TUI, theme: Theme, _keybindings: unknown, done: (result: TaskConfirmationResult) => void): Component => {
 			const wasHardwareCursorShown = tui.getShowHardwareCursor();
 			tui.setShowHardwareCursor(false);
+			// Pause pi's working spinner for the dialog duration: its ~80ms re-renders
+			// write output that snaps a scrolled-up user back to the terminal bottom.
+			ctx.ui.setWorkingVisible(false);
 
 			// Default: "Confirm task list" (matches the pre-existing default).
 			let selectedIndex = 0;
@@ -76,6 +79,7 @@ async function showTaskListConfirmationDialog(ctx: ExtensionContext, proposalTex
 			const component: Component & { dispose?(): void } = {
 				dispose() {
 					tui.setShowHardwareCursor(wasHardwareCursorShown);
+					ctx.ui.setWorkingVisible(true);
 				},
 
 				invalidate(): void {

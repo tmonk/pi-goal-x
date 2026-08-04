@@ -42,12 +42,25 @@ with the `0.x` prefix indicating pre-1.0 development.
   renders exactly as before (383ae52). Tradeoff for taller-than-screen
   dialogs: the tail (options/footer + last content) stays in view; the
   dialog head is not written to the buffer.
+- **Terminal scrolling back down while reading a goal dialog.** With the
+  dialog open and the user scrolled up to read the proposal, the viewport
+  snapped back to the bottom “after X seconds”: pi's working spinner ticks
+  every ~80ms and each tick rewrites its line (~44 bytes), and any output
+  while scrolled up snaps the viewport to the bottom in iTerm2/Ghostty/kitty
+  (default behavior). The goal dialogs (questionnaire, task-list
+  confirmation, escape dialog) now pause the spinner for their duration
+  (`setWorkingVisible(false)` on open, `setWorkingVisible(true)` on
+  close/dispose) — measured 0 bytes per tick afterwards, so reading the
+  proposal in scrollback is undisturbed. No-op in headless contexts.
 - **Programmatic before/after test:**
   `experiments/scroll-repro/before-after-churn.mjs` drives the real
-  `runGoalQuestionnaire` through the real pi-tui renderer and reports
-  open/nav/close scrolls, 2J/3J emissions, post-close viewport position, and
-  scrollback content; `--expect-fixed` asserts the fixed behavior (exit 0:
-  no 2J/3J anywhere, fits scenario stays 0-churn).
+  `runGoalQuestionnaire` through the real pi-tui renderer with the real pi
+  frame layout (header, chat, status-with-spinner, editor, footer) and
+  reports open/nav/close scrolls, 2J/3J emissions, post-close viewport
+  position, scrollback content, and the bytes emitted by five working-spinner
+  ticks while the user is scrolled up reading the dialog; `--expect-fixed`
+  asserts the fixed behavior (exit 0: no 2J/3J anywhere, no periodic output,
+  fits scenario stays 0-churn).
 
 ## [0.22.0] — 2026-08-04
 

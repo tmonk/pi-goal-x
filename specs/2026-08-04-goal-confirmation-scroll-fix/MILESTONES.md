@@ -402,3 +402,52 @@ tradeoff replacing the "known edge case" note); CHANGELOG.md Unreleased gains
 Task-5 signoff: user visual confirmation in a real terminal — tall proposal
 open/close clean, window returns to the bottom promptly, scrollback readable,
 383ae52 surface intact for content that fits.
+
+---
+
+## Milestone (final, part 2): the real replication — “terminal scrolls back down after X seconds”
+
+User signoff rejected the part-1 fix: “No - it still scrolls back down to
+scroll 0/586 (in the example). You clearly have not been able to reproduce
+this.” Clarification: “0/XXX is the bottom of the viewport” and “the
+replication is: agent presents goal → user scrolls up to read it all →
+terminal scrolls back down after X seconds.”
+
+### Reproduction (committed harness upgraded)
+
+Root cause found by driving the REAL questionnaire through the REAL pi-tui
+with the REAL pi frame layout (header, chat, status-with-spinner, editor →
+dialog, footer) and simulating pi's working spinner (Loader: 80ms tick →
+`ui.requestRender()`): while the questionnaire dialog is open, the agent run
+is still active (`_isAgentRunActive`), so the spinner keeps ticking and each
+tick rewrites the spinner line (~44 bytes; measured 220 bytes per 5 ticks).
+In iTerm2/Ghostty/kitty (default “scroll to bottom on output”), **any output
+while the user is scrolled up snaps the viewport to the bottom** — the
+“0/586” the user saw. The centered task-list/escape overlays had the same
+problem (their composite frame includes the changing spinner line). The
+earlier harness missed it because it never simulated the spinner or the real
+layout.
+
+### Fix (smallest possible)
+
+Each goal dialog calls `ctx.ui.setWorkingVisible(false)` on open and
+`setWorkingVisible(true)` on close (`submit()` for the questionnaire,
+`dispose()` for the overlays) — `clearStatusIndicator` disposes the Loader
+interval and empties the statusContainer (static 2-line IdleStatus when
+clearOnShrink), so the ~80ms tick writes stop entirely. Headless/mock
+contexts treat it as a no-op. The 383ae52 rendering is untouched.
+
+### Before/after delta (harness, rows=40)
+
+| Scenario | before (spinner active) | after (spinner paused) |
+| --- | --- | --- |
+| fits | 220 bytes / 5 ticks → snap | 0 bytes / 5 ticks, no snap |
+| short chat + long proposal | 220 bytes / 5 ticks → snap | 0 bytes / 5 ticks |
+| long chat (120) + long proposal | 220 bytes / 5 ticks → snap | 0 bytes / 5 ticks |
+| task-list / escape overlays | ~215 bytes / 5 ticks → snap | 0 bytes / 5 ticks |
+
+Combined with part-1 (tail-slice close guard): no 2J/3J anywhere, 0 bytes per
+spinner tick, fits scenario byte-identical and 0-churn (verified rows
+24/40/60). `npm run check` 0 errors; unit suite 482 pass / 0 fail;
+`--expect-fixed` exit 0. Committed; docs updated; awaiting the user's
+real-terminal re-check.
