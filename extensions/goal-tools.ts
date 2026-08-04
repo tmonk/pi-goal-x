@@ -30,7 +30,7 @@ import {
 	UPDATE_GOAL_TASK_TOOL_NAME,
 } from "./goal-tool-names.ts";
 import { convertFlatTasks, countTasks, mergeTasksWithExisting, type FlatTaskInput } from "./goal-task-tools.ts";
-import { nowIso, type GoalRecord, type GoalTask, type GoalTaskList } from "./goal-record.ts";
+import { nowIso, validateTokenBudgetInput, type GoalRecord, type GoalTask, type GoalTaskList } from "./goal-record.ts";
 import { mergeGoalPromptFromDisk } from "./storage/goal-files.ts";
 import { showEscapeDialog, type EscapeDialogResult } from "./widgets/goal-escape-dialog.ts";
 import type { GoalCore } from "./goal-state.ts";
@@ -115,7 +115,7 @@ export function registerGoalTools(core: GoalCore): void {
 		parameters: Type.Object({
 			objective: Type.String({ description: "Full goal text. For Sisyphus goals this MUST include the user's numbered steps + per-step done criteria, taken faithfully from the user's input. 1-4000 characters." }),
 			mode: Type.Optional(StringEnum(["regular", "sisyphus"] as const, { description: "Goal mode. Defaults to regular. Use sisyphus only when the user explicitly invoked Sisyphus mode." })),
-			token_budget: Type.Optional(Type.Number({ minimum: 1, description: "Optional token budget in whole tokens. Accept it only when the user explicitly supplied a budget; never invent one." })),
+			token_budget: Type.Optional(Type.Integer({ minimum: 1, description: "Optional token budget in whole tokens. Accept it only when the user explicitly supplied a budget; never invent one." })),
 		}, { additionalProperties: false }),
 		executionMode: "sequential",
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -129,13 +129,25 @@ export function registerGoalTools(core: GoalCore): void {
 				};
 			}
 			const sisyphusFlag = params.mode === "sisyphus";
+			let tokenBudget: number | undefined;
+			if (params.token_budget !== undefined) {
+				// Tool callers are untrusted: re-validate the budget beyond the schema.
+				const budgetGate = validateTokenBudgetInput(params.token_budget);
+				if (!budgetGate.ok) {
+					return {
+						content: [{ type: "text", text: budgetGate.message }],
+						details: goalDetails(core.state.goal),
+					};
+				}
+				tokenBudget = budgetGate.value;
+			}
 			const { objective: cleanedObjective, verificationContract } = extractVerificationContract(objective);
 			core.replaceGoal(
 				{ objective: cleanedObjective, autoContinue: true, sisyphus: sisyphusFlag },
 				ctx,
 				true,
 				verificationContract,
-				params.token_budget,
+				tokenBudget,
 			);
 			const created = core.state.goal;
 			const otherCount = otherOpenGoalCount(core.goalsById, core.focusedGoalId);
@@ -850,10 +862,9 @@ export function registerGoalTools(core: GoalCore): void {
 					return { ...rest, status: "pending" as const };
 				},
 				ledger: (written) => [{
-					type: "task_skipped",
+					type: "task_reopened",
 					goalId: written.id,
 					taskId: params.task_id,
-					reason: "unskipped (toggle via update_goal_task status=pending)",
 					at: written.updatedAt,
 				}],
 			});

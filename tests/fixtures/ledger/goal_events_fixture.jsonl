@@ -13,4 +13,6 @@
 {"type":"task_list_set","goalId":"goal-a","taskCount":3,"blockCompletion":true,"at":"2026-08-03T09:08:00.000Z"}
 {"type":"task_complete","goalId":"goal-a","taskId":"task-1","evidence":"tests pass","at":"2026-08-03T09:09:00.000Z"}
 {"type":"task_skipped","goalId":"goal-a","taskId":"task-2","reason":"user request","at":"2026-08-03T09:10:00.000Z"}
+{"type":"task_reopened","goalId":"goal-a","taskId":"task-2","at":"2026-08-03T09:11:00.000Z"}
+{"type":"task_skipped","goalId":"goal-a","taskId":"task-2","reason":"unskipped (toggle via update_goal_task status=pending)","at":"2026-08-03T09:12:00.000Z"}
 not-json at all

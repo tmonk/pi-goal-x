@@ -20,6 +20,7 @@ export type GoalLedgerEvent =
   | { type: "task_list_set"; goalId: string; taskCount: number; blockCompletion: boolean; at: string }
   | { type: "task_complete"; goalId: string; taskId: string; evidence?: string; at: string }
   | { type: "task_skipped"; goalId: string; taskId: string; reason: string; at: string }
+  | { type: "task_reopened"; goalId: string; taskId: string; at: string }
   | { type: "goal_budget_limited"; goalId: string; budget: number; tokensUsed: number; at: string }
   | { type: "goal_blocked"; goalId: string; reason: string; source: "agent" | "system"; at: string };
 
@@ -60,10 +61,22 @@ export function goalLedgerPath(ctx: GoalLedgerContext): string {
   return path.resolve(ctx.cwd, normalizeRelPath(GOAL_LEDGER_FILE));
 }
 
-export function appendGoalEvent(ctx: GoalLedgerContext, event: GoalLedgerEvent): void {
+export type GoalLedgerAppendResult = { ok: true } | { ok: false; error: unknown };
+
+/**
+ * Append one ledger event. Returns a discriminated result instead of swallowing
+ * both append attempts internally: the authoritative state write is never
+ * rolled back after a ledger failure, but callers (GoalService) route failures
+ * through the onDiagnostic hook so they stay observable.
+ */
+export function appendGoalEvent(ctx: GoalLedgerContext, event: GoalLedgerEvent): GoalLedgerAppendResult {
   const filePath = goalLedgerPath(ctx);
   const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true });
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    return { ok: false, error: err };
+  }
 
   const line = JSON.stringify(event) + "\n";
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
@@ -72,25 +85,31 @@ export function appendGoalEvent(ctx: GoalLedgerContext, event: GoalLedgerEvent):
     fs.writeFileSync(tempPath, line, { flag: "wx", encoding: "utf8" });
     fs.appendFileSync(filePath, fs.readFileSync(tempPath, "utf8"), "utf8");
     appended = true;
-  } catch {
+  } catch (err) {
     // If temp write fails, try direct append as fallback.
-    // Skip fallback only if the primary append already succeeded.
     if (!appended) {
       try {
         fs.appendFileSync(filePath, line, "utf8");
         appended = true;
-      } catch {
-        // Ledger append failure should not crash the transaction.
-        // Callers that need strict durability can check the return.
+      } catch (fallbackErr) {
+        try {
+          fs.unlinkSync(tempPath);
+        } catch {
+          // Temp file may not exist; ignore cleanup failure.
+        }
+        return { ok: false, error: fallbackErr };
       }
     }
   } finally {
-    try {
-      fs.unlinkSync(tempPath);
-    } catch {
-      // Temp file may not exist; ignore cleanup failure.
+    if (appended) {
+      try {
+        fs.unlinkSync(tempPath);
+      } catch {
+        // Temp file may not exist; ignore cleanup failure.
+      }
     }
   }
+  return { ok: true };
 }
 
 export function readGoalLedger(ctx: GoalLedgerContext): GoalLedgerReadResult {
@@ -158,6 +177,8 @@ function isValidLedgerEvent(value: unknown): value is GoalLedgerEvent {
       return typeof obj.goalId === "string" && typeof obj.taskId === "string" && (obj.evidence === undefined || typeof obj.evidence === "string");
     case "task_skipped":
       return typeof obj.goalId === "string" && typeof obj.taskId === "string" && typeof obj.reason === "string";
+    case "task_reopened":
+      return typeof obj.goalId === "string" && typeof obj.taskId === "string";
     case "goal_budget_limited":
       return typeof obj.goalId === "string" && typeof obj.budget === "number" && typeof obj.tokensUsed === "number";
     case "goal_blocked":
@@ -196,6 +217,8 @@ function sanitizeEvent(event: GoalLedgerEvent): GoalLedgerEvent {
     case "task_complete":
       return { ...event, goalId: safeGoalId(event.goalId) };
     case "task_skipped":
+      return { ...event, goalId: safeGoalId(event.goalId) };
+    case "task_reopened":
       return { ...event, goalId: safeGoalId(event.goalId) };
     case "goal_budget_limited":
       return { ...event, goalId: safeGoalId(event.goalId) };

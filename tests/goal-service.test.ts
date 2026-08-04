@@ -23,13 +23,14 @@ interface HookLog {
 	goalLost: string[];
 	reconciled: string[];
 	focusChanges: Array<{ from: string | null; to: string | null }>;
+	diagnostics: Array<{ source: string; eventType?: string; message: string }>;
 }
 
 function makeRef(goal: GoalRecord): { ref: GoalServiceRef; log: HookLog } {
 	let pool = new Map<string, GoalRecord>([[goal.id, goal]]);
 	let focusedId: string | null = goal.id;
 	let revision = 0;
-	const log: HookLog = { goalLost: [], reconciled: [], focusChanges: [] };
+	const log: HookLog = { goalLost: [], reconciled: [], focusChanges: [], diagnostics: [] };
 	const ref: GoalServiceRef = {
 		getFocused: () => (focusedId ? pool.get(focusedId) ?? null : null),
 		setFocused: (next) => {
@@ -63,6 +64,9 @@ function makeRef(goal: GoalRecord): { ref: GoalServiceRef; log: HookLog } {
 		},
 		onFocusChanged: (from, to) => {
 			log.focusChanges.push({ from, to });
+		},
+		onDiagnostic: (diagnostic) => {
+			log.diagnostics.push({ source: diagnostic.source, eventType: diagnostic.eventType, message: diagnostic.message });
 		},
 	};
 	return { ref, log };
@@ -279,4 +283,35 @@ describe("GoalService mutation pipeline", () => {
 			f.cleanup();
 		}
 	});
+
+// ── Stage 4: ledger failure injection ────────────────────────────────────────
+
+it("ledger append failure after the authoritative write keeps the state transition and emits a diagnostic", async () => {
+	const f = fixture();
+	try {
+		// Make the ledger path unwritable: a directory blocks appendFileSync.
+		mkdirSync(goalLedgerPath({ cwd: f.cwd }), { recursive: true });
+
+		const result = f.service.apply({ cwd: f.cwd }, {
+			reconcile: false,
+			mutate: (g) => ({ ...g, pauseReason: "updated despite ledger failure", updatedAt: new Date().toISOString() }),
+			ledger: (written) => [{ type: "goal_paused", goalId: written.id, reason: "test", status: "paused", at: written.updatedAt }],
+		});
+		assert.ok(result.ok, "state write must not be rolled back by a ledger failure");
+		if (!result.ok) return;
+		// The authoritative write landed on disk.
+		const files = activeFiles(f.cwd);
+		assert.equal(files.length, 1, "active file still present");
+		const diskContent = readFileSync(path.join(f.cwd, ".pi", "goals", files[0]!), "utf8");
+		assert.ok(diskContent.includes("updated despite ledger failure"), "mutation persisted despite ledger failure");
+		// The failure is observable through the onDiagnostic hook.
+		assert.ok(f.log.diagnostics.length >= 1, "ledger failure must emit a diagnostic");
+		const diag = f.log.diagnostics[0]!;
+		assert.equal(diag.source, "ledger");
+		assert.equal(diag.eventType, "goal_paused");
+	} finally {
+		f.cleanup();
+	}
+});
+
 });

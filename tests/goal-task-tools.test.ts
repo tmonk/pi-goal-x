@@ -479,3 +479,28 @@ test("set_goal_tasks never creates per-goal auditor bypass state", async () => {
 		f.cleanup();
 	}
 });
+
+test("update_goal_task(pending) writes a task_reopened ledger event", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-task-reopen-ev-"));
+	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
+	const goal = createGoal({ objective: "Reopen event", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 5, 12, 0, 0));
+	goal.taskList = {
+		tasks: [{ id: "sk", title: "Skipped", status: "skipped", skipReason: "later", skippedAt: new Date().toISOString() }],
+		blockCompletion: false,
+		proposedAt: new Date().toISOString(),
+	};
+	writeActiveGoalFile({ cwd }, goal);
+	try {
+		const h = createHarness(cwd, [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") }]);
+		await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
+		await h.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, h.ctx);
+		const tool = h.tools.get("update_goal_task")!;
+		await (tool.execute as any)("upd-r", { task_id: "sk", status: "pending" }, undefined, undefined, h.ctx);
+		const events = ledgerEvents(cwd);
+		const reopened = events.find((e) => e.type === "task_reopened") as Record<string, unknown> | undefined;
+		assert.ok(reopened, "task_reopened ledger event must be written");
+		assert.equal(reopened!.taskId, "sk");
+	} finally {
+		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
+});

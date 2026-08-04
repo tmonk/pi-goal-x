@@ -226,6 +226,24 @@ export function normalizeTaskList(value: unknown): GoalTaskList | undefined {
  * is validated separately (rejected with a user-facing message); this handles
  * persisted legacy values.
  */
+/**
+ * Live-input validation for token_budget (shared by slash-command parsing, tool
+ * execution, and record creation). Tool callers are untrusted, so the schema
+ * Type.Integer bound is double-checked at runtime with Number.isSafeInteger.
+ */
+export function validateTokenBudgetInput(value: unknown): { ok: true; value: number } | { ok: false; message: string } {
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		return { ok: false, message: "token_budget must be a number." };
+	}
+	if (!Number.isSafeInteger(value)) {
+		return { ok: false, message: "token_budget must be a whole safe integer (fractional values are not accepted)." };
+	}
+	if (value < 1) {
+		return { ok: false, message: "token_budget must be at least 1." };
+	}
+	return { ok: true, value };
+}
+
 export function normalizePositiveSafeInteger(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 ? value : undefined;
 }

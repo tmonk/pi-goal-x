@@ -496,3 +496,23 @@ test("focus changed while audit is dispatched cancels completion without modifyi
 		f.cleanup();
 	}
 });
+
+test("create_goal rejects fractional, zero, and unsafe token_budget values", async () => {
+	const f = makeFixture();
+	try {
+		const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries });
+		await start(h);
+		const create = h.tools.get("create_goal")!;
+		for (const bad of [1.5, 0, -10, Number.MAX_SAFE_INTEGER + 1]) {
+			const result = await (create.execute as any)("create-bad", {
+				objective: "Budget rejection test",
+				token_budget: bad,
+			}, undefined, undefined, h.ctx);
+			const text = result.content?.[0]?.text ?? "";
+			assert.ok(text.includes("token_budget"), `must reject token_budget=${bad}, got: ${text.slice(0, 80)}`);
+		}
+		assert.equal(activeGoalFiles(f.cwd).length, 1, "no NEW goal may be created from invalid budget input (fixture goal remains)");
+	} finally {
+		f.cleanup();
+	}
+});

@@ -29,6 +29,7 @@ import { readGoalLedger, reconstructGoalLedger } from "../extensions/goal-ledger
 import { resolveSessionFocus } from "../extensions/goal-pool.ts";
 import {
 	normalizeGoalRecord,
+	validateTokenBudgetInput,
 	normalizeTaskList,
 	normalizeTaskItem,
 	nowIso,
@@ -276,7 +277,7 @@ test("golden: fixture ledger reads every event type and counts malformed lines",
 			readFileSync(fixturePath("ledger/goal_events_fixture.jsonl"), "utf8"),
 		);
 		const { events, malformed } = readGoalLedger({ cwd });
-		assert.equal(events.length, 15, "all 15 current event types must read");
+		assert.equal(events.length, 17, "all current event types must read");
 		assert.equal(malformed, 1, "the non-JSON line must be counted as malformed");
 
 		const types = events.map((e) => e.type).sort();
@@ -284,7 +285,8 @@ test("golden: fixture ledger reads every event type and counts malformed lines",
 			"audit_result", "audit_skipped", "audit_started", "completion_requested",
 			"goal_aborted", "goal_completed", "goal_created", "goal_focused",
 			"goal_paused", "goal_resumed", "goal_tweaked", "goal_unfocused",
-			"task_complete", "task_list_set", "task_skipped",
+			"task_complete", "task_list_set", "task_reopened", "task_skipped",
+			"task_skipped",
 		]);
 	} finally {
 		// temp dir cleanup is best-effort.
@@ -446,4 +448,27 @@ test("golden: serializeGoalFile emits the same header/body structure the fixture
 	} finally {
 		// temp dir cleanup is best-effort.
 	}
+});
+
+test("golden: invalid persisted token budgets normalize to absent", () => {
+	// Stage 4 contract: fractional, zero, negative, infinite, and unsafe
+	// persisted budgets become absent rather than silently changing meaning.
+	for (const bad of [0, -5, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+		const record = normalizeGoalRecord({ id: "g1", objective: "x", status: "active", tokenBudget: bad });
+		assert.equal(record?.tokenBudget, undefined, `persisted tokenBudget ${bad} must normalize to absent`);
+	}
+	const okRecord = normalizeGoalRecord({ id: "g1", objective: "x", status: "active", tokenBudget: 5000 });
+	assert.equal(okRecord?.tokenBudget, 5000, "valid persisted budget survives");
+});
+
+test("golden: validateTokenBudgetInput rejects invalid live input with user-facing messages", () => {
+	const bad = validateTokenBudgetInput(2.5);
+	assert.equal(bad.ok, false);
+	if (!bad.ok) assert.ok(bad.message.length > 0, "rejection carries a message");
+	assert.equal(validateTokenBudgetInput(0).ok, false);
+	assert.equal(validateTokenBudgetInput(-3).ok, false);
+	assert.equal(validateTokenBudgetInput(Number.MAX_SAFE_INTEGER + 1).ok, false);
+	const good = validateTokenBudgetInput(5000);
+	assert.ok(good.ok);
+	if (good.ok) assert.equal(good.value, 5000);
 });

@@ -191,6 +191,11 @@ export function createGoalCore(
 			clearContinuationState();
 			clearActiveAccounting();
 		},
+		onDiagnostic: (diagnostic) => {
+			// Non-fatal failure sink: ledger appends must never roll back the
+			// authoritative state write, but they stay observable.
+			console.warn(`[pi-goal] ${diagnostic.source} diagnostic: ${diagnostic.message}`);
+		},
 	});
 	let runningGoalId: string | null = null;
 	let terminalInputUnsubscribe: (() => void) | null = null;

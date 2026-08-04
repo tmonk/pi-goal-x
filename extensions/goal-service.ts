@@ -21,6 +21,14 @@ import { mergeFocusedGoalWithDisk } from "./goal-pool.ts";
  * (continuation queue, accounting, nudge state, tools, UI) remain in the
  * extension's event handlers.
  */
+export interface GoalDiagnostic {
+	severity: "warning";
+	source: "ledger";
+	goalId?: string;
+	eventType?: string;
+	message: string;
+}
+
 export interface GoalServiceRef {
 	getFocused(): GoalRecord | null;
 	/** Mirror of the `state.goal` setter: pool upsert + focus assignment. */
@@ -39,6 +47,8 @@ export interface GoalServiceRef {
 	onReconciled(goal: GoalRecord): void;
 	/** The session focus changed; clear continuation/accounting/nudge state. */
 	onFocusChanged(from: string | null, to: string | null): void;
+	/** Observable diagnostic sink for non-fatal failures (ledger appends). */
+	onDiagnostic(diagnostic: GoalDiagnostic): void;
 }
 
 export type GoalServiceContext = GoalFileContext;
@@ -192,11 +202,17 @@ export class GoalService {
 				events = [];
 			}
 			for (const event of events) {
-				try {
-					appendGoalEvent(ctx, event);
-				} catch {
+				const append = appendGoalEvent(ctx, event);
+				if (!append.ok) {
 					// Ledger append failure after the authoritative write keeps the
-					// successful state transition and reports diagnostics.
+					// successful state transition; surface an observable diagnostic.
+					this.ref.onDiagnostic({
+						severity: "warning",
+						source: "ledger",
+						goalId: "goalId" in event ? event.goalId : undefined,
+						eventType: event.type,
+						message: `Ledger append failed for ${event.type}${"goalId" in event ? ` (goal ${event.goalId})` : ""}: ${String(append.error)}`,
+					});
 				}
 			}
 		}
@@ -263,11 +279,26 @@ export class GoalService {
 		if (spec.ledger) {
 			try {
 				for (const event of spec.ledger(written, updatedTask)) {
-					appendGoalEvent(ctx, event);
+					const append = appendGoalEvent(ctx, event);
+					if (!append.ok) {
+						this.ref.onDiagnostic({
+							severity: "warning",
+							source: "ledger",
+							goalId: "goalId" in event ? event.goalId : undefined,
+							eventType: event.type,
+							message: `Ledger append failed for ${event.type}${"goalId" in event ? ` (goal ${event.goalId})` : ""}: ${String(append.error)}`,
+						});
+					}
 				}
-			} catch {
-				// Ledger append failure after the authoritative write keeps the
-				// successful state transition.
+			} catch (err) {
+				// Unexpected ledger-spec error after the authoritative write keeps
+				// the successful state transition.
+				this.ref.onDiagnostic({
+					severity: "warning",
+					source: "ledger",
+					goalId: spec.taskId,
+					message: `Ledger spec error during task update: ${String(err)}`,
+				});
 			}
 		}
 		this.ref.setFocused(written);
@@ -290,10 +321,16 @@ export class GoalService {
 		const written = writeActiveGoalFile(ctx, sanitizeGoalPaths(ctx, spec.goal));
 		if (spec.ledger) {
 			for (const event of spec.ledger) {
-				try {
-					appendGoalEvent(ctx, event);
-				} catch {
+				const append = appendGoalEvent(ctx, event);
+				if (!append.ok) {
 					// Best-effort ledger; creation still succeeds.
+					this.ref.onDiagnostic({
+						severity: "warning",
+						source: "ledger",
+						goalId: "goalId" in event ? event.goalId : undefined,
+						eventType: event.type,
+						message: `Ledger append failed for ${event.type}${"goalId" in event ? ` (goal ${event.goalId})` : ""}: ${String(append.error)}`,
+					});
 				}
 			}
 		}
@@ -306,10 +343,17 @@ export class GoalService {
 	/** Append ledger events best-effort (audit flow / focus changes happen mid-turn, outside apply). */
 	appendEvents(ctx: GoalServiceContext, events: GoalLedgerEvent[]): void {
 		for (const event of events) {
-			try {
-				appendGoalEvent(ctx, event);
-			} catch {
-				// Ledger append failure must not crash the surrounding flow.
+			const append = appendGoalEvent(ctx, event);
+			if (!append.ok) {
+				// Ledger append failure must not crash the surrounding flow, but it
+				// stays observable through the diagnostic hook.
+				this.ref.onDiagnostic({
+					severity: "warning",
+					source: "ledger",
+					goalId: "goalId" in event ? event.goalId : undefined,
+					eventType: event.type,
+					message: `Ledger append failed for ${event.type}${"goalId" in event ? ` (goal ${event.goalId})` : ""}: ${String(append.error)}`,
+				});
 			}
 		}
 	}

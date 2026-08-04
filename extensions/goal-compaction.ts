@@ -55,6 +55,9 @@ export function buildGoalCompactSummary(goal: GoalRecord, events: GoalLedgerEven
         case "task_skipped":
           lines.push(`    - task skipped: ${event.taskId} — ${truncateText(event.reason, 60)}`);
           break;
+        case "task_reopened":
+          lines.push(`    - task reopened: ${event.taskId}`);
+          break;
         case "goal_aborted":
           lines.push(`    - aborted: ${event.reason}`);
           break;
