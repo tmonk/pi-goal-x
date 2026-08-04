@@ -2,10 +2,13 @@
 
 ## Final state: literal surface revert to 383ae52
 
-The dialog and heading surface is byte-identical to commit `383ae52`
-(`git diff 383ae52 -- extensions/` is empty), and the test/experiment surface
-matches the 383ae52 tree as well (`git diff 383ae52 -- tests/ experiments/`
-is empty).
+The dialog and heading surface is byte-identical to commit `383ae52` except
+the two churn guards documented below (`git diff 383ae52 -- extensions/` =
++32/−1: the terminal-height tail slice in `goal-questionnaire.ts` and the
+working-spinner pause in the three dialogs), and the test surface matches the
+383ae52 tree exactly (`git diff 383ae52 -- tests/` is empty). The experiments
+tree additionally contains the new before/after harness
+(`before-after-churn.mjs`, see below).
 
 ### What the three commits had done (all reverted)
 
