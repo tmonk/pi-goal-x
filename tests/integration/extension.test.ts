@@ -47,6 +47,7 @@ function createHarness(options: HarnessOptions): Harness {
 	const commands = new Map<string, any>();
 	const notifies: Array<{ msg: string; level: string }> = [];
 	const activeToolsHistory: string[][] = [];
+	let activeTools = ["read", "bash", "edit", "write"];
 	let terminalInputHandler: ((data: string) => unknown) | null = null;
 	const pi = {
 		registerTool: (def: ToolDefinition) => { tools.set(def.name, def); },
@@ -55,8 +56,8 @@ function createHarness(options: HarnessOptions): Harness {
 		appendEntry: () => {},
 		registerMessageRenderer: () => {},
 		sendMessage: () => {},
-		getActiveTools: () => ["read", "bash", "edit", "write"],
-		setActiveTools: (next: string[]) => { activeToolsHistory.push([...next]); },
+		getActiveTools: () => [...activeTools],
+		setActiveTools: (next: string[]) => { activeTools = [...next]; activeToolsHistory.push([...next]); },
 		hasUI: options.hasUI ?? false,
 	};
 	const ctx = {

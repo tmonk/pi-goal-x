@@ -259,7 +259,13 @@ export function createGoalCore(
 			const current = new Set(pi.getActiveTools());
 			for (const knownGoalTool of ALL_REGISTERED_GOAL_TOOLS) current.delete(knownGoalTool);
 			for (const goalTool of tasksEnabledArg ? FIVE_GOAL_TOOLS : CORE_GOAL_TOOLS) current.add(goalTool);
-			pi.setActiveTools([...current]);
+			const next = [...current].sort();
+			const before = [...pi.getActiveTools()].sort();
+			// Idempotent: never rebuild (or re-report) a profile that is already
+			// installed. Lifecycle transitions must not churn the tool surface.
+			if (next.length !== before.length || next.some((name, index) => name !== before[index])) {
+				pi.setActiveTools([...current]);
+			}
 			tasksEnabled = tasksEnabledArg;
 		} catch (err) {
 			console.error("[pi-goal] installGoalToolProfile error:", err instanceof Error ? err.message : String(err));
@@ -276,7 +282,11 @@ export function createGoalCore(
 			const current = new Set(pi.getActiveTools());
 			for (const knownGoalTool of ALL_REGISTERED_GOAL_TOOLS) current.delete(knownGoalTool);
 			for (const goalTool of DRAFTING_GOAL_TOOLS) current.add(goalTool);
-			pi.setActiveTools([...current]);
+			const next = [...current].sort();
+			const before = [...pi.getActiveTools()].sort();
+			if (next.length !== before.length || next.some((name, index) => name !== before[index])) {
+				pi.setActiveTools([...current]);
+			}
 		} catch (err) {
 			console.error("[pi-goal] installDraftingToolProfile error:", err instanceof Error ? err.message : String(err));
 		}

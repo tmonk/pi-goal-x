@@ -38,6 +38,35 @@
   authoritative serial baseline.
   Timings are evidence, not portable performance guarantees.
 
+## 2026-08-04 — Stage 5.1-A: durable draft state and /goal-cancel
+
+- Replaced the module-local WeakMap-only draft marker with a branch-local
+  custom session entry (`pi-goal-draft`, version 1) plus the in-memory cache.
+  The entry is never a goal file or ledger event; a draft survives compaction
+  and tree navigation and is rehydrated on `session_start`/`session_tree`
+  (`rehydrateDraft`). Clearing appends a tombstone (`clearedAt`) — the SDK
+  exposes only append, and the last entry wins.
+- Rehydration validates a tweak draft's target against the focused goal; a
+  stale tweak draft is tombstoned, reported, and the execution profile is
+  restored. A live memory draft is validated the same way on reload.
+- Second-draft protection: starting a draft while one is active offers
+  Resume / Replace / Cancel (`ctx.ui.select`); headless replaces with an
+  explicit warning — never silently.
+- New `/goal-cancel` command (13-command palette): removes draft state and
+  the transient drafting profile, writes no goal file/focus/ledger entry;
+  a second cancel returns guidance. `/goal-abort` is not reintroduced.
+- Profile installs are now idempotent (skip `setActiveTools` when the target
+  set is already installed), reinforcing the invariant that lifecycle
+  transitions never rebuild the tool surface; the integration harness's
+  `getActiveTools` now mirrors `setActiveTools` (contract-faithful).
+- Tests (+5 in `tests/goal-drafting.test.ts`, palette/surface counts updated
+  to 13 commands): `/goal-cancel` durable no-op + tombstone; draft survives
+  `session_tree` rehydration and confirms atomically; resume/replace/cancel
+  second-draft choices including headless replacement; stale tweak
+  invalidation on rehydration; direct creation interrupting and clearing an
+  active draft.
+- Validation: `npm run check` 0 errors; `test:all` 500/0; `test:serial`
+  real-SDK 476/0; `git diff --check` clean.
 ## 2026-08-04 — Stage 5: guided drafting runtime completed and verified
 
 - The restored drafting flow (committed at `5bf4f2c`) was completed with the

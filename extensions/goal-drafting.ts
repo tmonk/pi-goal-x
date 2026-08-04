@@ -14,28 +14,142 @@ import { PROPOSE_DRAFT_TOOL_NAME, QUESTIONNAIRE_TOOL_NAME, QUESTION_TOOL_NAME } 
 
 export type GoalDraftMode = GoalDraftingFocus | "tweak";
 
+export const DRAFT_ENTRY = "pi-goal-draft";
+export const DRAFT_ENTRY_VERSION = 1;
+
+/**
+ * Branch-local durable draft session, persisted through custom session entries
+ * so an unconfirmed draft survives compaction and tree navigation. It is never
+ * a project goal file or ledger event.
+ */
+export interface GoalDraftSession {
+	version: 1;
+	mode: GoalDraftMode;
+	seed: string;
+	targetGoalId?: string;
+	startedAt: string;
+	auditorEnabled: boolean;
+	/** Tombstone marker: set when the draft is cancelled, confirmed, or replaced. */
+	clearedAt?: string;
+}
+
 interface ActiveGoalDraft {
 	mode: GoalDraftMode;
 	originalTopic: string;
 	targetGoalId?: string;
+	startedAt: string;
+	auditorEnabled: boolean;
 }
 
 const activeDrafts = new WeakMap<GoalCore, ActiveGoalDraft>();
 
 function activeDraft(core: GoalCore): ActiveGoalDraft | undefined { return activeDrafts.get(core); }
 
-export function clearGoalDrafting(core: GoalCore): void {
-	activeDrafts.delete(core);
-	core.installGoalToolProfile(core.tasksEnabled);
+export function hasActiveDraft(core: GoalCore): boolean { return activeDraft(core) !== undefined; }
+
+function draftSessionEntry(core: GoalCore, session: GoalDraftSession): void {
+	try {
+		core.pi.appendEntry(DRAFT_ENTRY, session);
+	} catch {}
 }
 
-export function startGoalDrafting(core: GoalCore, ctx: ExtensionContext, mode: GoalDraftMode, topic: string, targetGoal?: GoalRecord): void {
+export function clearGoalDrafting(core: GoalCore, ctx: ExtensionContext): void {
+	if (!activeDrafts.has(core)) return;
+	const existing = activeDrafts.get(core)!;
+	activeDrafts.delete(core);
+	// Tombstone the durable entry: the last entry wins on rehydration.
+	draftSessionEntry(core, { version: 1, mode: existing.mode, seed: existing.originalTopic, targetGoalId: existing.targetGoalId, startedAt: existing.startedAt, auditorEnabled: existing.auditorEnabled, clearedAt: nowIso() });
+	core.installGoalToolProfile(core.tasksEnabled);
+	void ctx;
+}
+
+/**
+ * Rehydrate a durable draft on session_start / session_tree. Restores the
+ * transient drafting profile only for a valid, un-cleared draft whose tweak
+ * target still matches the focused goal; stale tweak drafts are tombstoned.
+ */
+export function rehydrateDraft(core: GoalCore, ctx: ExtensionContext): void {
+	// Validate any live memory draft against the reloaded world first: a tweak
+	// draft whose target is no longer focused is stale and must not survive.
+	if (activeDraft(core)) {
+		const live = activeDraft(core)!;
+		if (live.mode === "tweak") {
+			core.reconcileFocusedGoalFromDisk(ctx);
+			if (!core.state.goal || core.state.goal.id !== live.targetGoalId) {
+				clearGoalDrafting(core, ctx);
+				ctx.ui.notify("The goal tweak draft is stale (its target goal changed); it was discarded.", "warning");
+			}
+		}
+		return;
+	}
+	let session: GoalDraftSession | null = null;
+	try {
+		const entries = ctx.sessionManager.getBranch();
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const entry = entries[i] as { type?: string; customType?: string; data?: unknown };
+			if (entry.type === "custom" && entry.customType === DRAFT_ENTRY) {
+				session = entry.data as GoalDraftSession;
+				break;
+			}
+		}
+	} catch {
+		session = null;
+	}
+	if (!session || session.version !== DRAFT_ENTRY_VERSION || session.clearedAt) {
+		// No durable draft: make sure a previous drafting profile is not left
+		// installed (e.g. after a stale entry or an interrupted session).
+		core.installGoalToolProfile(core.tasksEnabled);
+		return;
+	}
+	if (session.mode === "tweak") {
+		core.reconcileFocusedGoalFromDisk(ctx);
+		if (!core.state.goal || core.state.goal.id !== session.targetGoalId) {
+			// The tweak target is gone or no longer focused — the draft is stale.
+			draftSessionEntry(core, { ...session, clearedAt: nowIso() });
+			ctx.ui.notify("The goal tweak draft is stale (its target goal changed); it was discarded.", "warning");
+			core.installGoalToolProfile(core.tasksEnabled);
+			return;
+		}
+	}
+	activeDrafts.set(core, { mode: session.mode, originalTopic: session.seed, targetGoalId: session.targetGoalId, startedAt: session.startedAt, auditorEnabled: session.auditorEnabled });
+	core.installDraftingToolProfile();
+}
+
+async function awaitDraftChoice(core: GoalCore, ctx: ExtensionContext, label: string): Promise<"resume" | "replace" | "cancel"> {
+	void core;
+	const choices = ["Resume the existing draft", "Replace it with a new draft", "Cancel"];
+	const selected = await ctx.ui.select(`A ${label.toLowerCase()} is already active`, choices);
+	if (!selected || selected === choices[0]!) return "resume";
+	if (selected === choices[2]) return "cancel";
+	return "replace";
+}
+
+export async function startGoalDrafting(core: GoalCore, ctx: ExtensionContext, mode: GoalDraftMode, topic: string, targetGoal?: GoalRecord): Promise<void> {
 	const trimmed = topic.trim();
-	activeDrafts.set(core, { mode, originalTopic: trimmed, targetGoalId: targetGoal?.id });
+	const label = mode === "sisyphus" ? "Sisyphus draft" : mode === "tweak" ? "Goal tweak draft" : "Goal draft";
+	// A second draft must never silently discard the first.
+	if (activeDraft(core)) {
+		const choice = ctx.hasUI
+			? await awaitDraftChoice(core, ctx, label)
+			: "replace"; // headless: explicit new intent wins, but not silently (notified)
+		if (choice === "resume") {
+			ctx.ui.notify("A draft is already active; resuming it. Use /goal-cancel to discard it.", "info");
+			return;
+		}
+		if (choice === "cancel") {
+			ctx.ui.notify("Draft start cancelled; the existing draft stays active.", "info");
+			return;
+		}
+		ctx.ui.notify("Replacing the active draft with a new " + label.toLowerCase() + ".", "warning");
+		clearGoalDrafting(core, ctx);
+	}
+	const startedAt = nowIso();
+	const auditorEnabled = !loadGoalSettings(ctx.cwd).disabled;
+	activeDrafts.set(core, { mode, originalTopic: trimmed, targetGoalId: targetGoal?.id, startedAt, auditorEnabled });
+	draftSessionEntry(core, { version: 1, mode, seed: trimmed, targetGoalId: targetGoal?.id, startedAt, auditorEnabled });
 	core.clearContinuationState();
 	core.clearActiveAccounting();
 	core.installDraftingToolProfile();
-	const label = mode === "sisyphus" ? "Sisyphus draft" : mode === "tweak" ? "Goal tweak draft" : "Goal draft";
 	ctx.ui.notify(label + " started" + (trimmed ? ": " + trimmed.slice(0, 60) : "") + ". The agent will clarify, propose a goal and tasks where useful, then ask you to confirm.", "info");
 	const prompt = mode === "tweak" ? [
 		"[GOAL TWEAK DRAFT]",
@@ -47,7 +161,7 @@ export function startGoalDrafting(core: GoalCore, ctx: ExtensionContext, mode: G
 	try {
 		core.pi.sendUserMessage(prompt, { deliverAs: ctx.isIdle() ? "followUp" : "steer" });
 	} catch (err) {
-		clearGoalDrafting(core);
+		clearGoalDrafting(core, ctx);
 		ctx.ui.notify("Could not start " + label.toLowerCase() + ": " + (err instanceof Error ? err.message : String(err)), "error");
 	}
 }
@@ -159,7 +273,7 @@ export function registerDraftingTools(core: GoalCore): void {
 				? { decision: "confirm" as const, auditorEnabled: true }
 				: await showProposalDialog(ctx, proposalText(draft, objective, params.auto_continue !== false, taskResult.value, target ?? undefined), draft.mode === "sisyphus" ? "sisyphus" : "goal");
 			if (confirmation.decision === "cancel") {
-				clearGoalDrafting(core);
+				clearGoalDrafting(core, ctx);
 				return { content: [{ type: "text", text: "Draft cancelled; no goal was created. Run /goal or /sisyphus to start a new draft." }], details: goalDetails(core.state.goal) };
 			}
 			if (confirmation.decision !== "confirm") return { content: [{ type: "text", text: "Goal draft refinement requested. The goal was not changed; ask what the user wants revised before proposing again." }], details: goalDetails(core.state.goal) };
@@ -167,7 +281,7 @@ export function registerDraftingTools(core: GoalCore): void {
 			const extracted = settings.disableContracts ? { objective, verificationContract: undefined } : extractVerificationContract(objective);
 			if (draft.mode !== "tweak") {
 				core.replaceGoal({ objective: extracted.objective, autoContinue: params.auto_continue !== false, sisyphus: expectedSisyphus, taskList: taskResult.value }, ctx, true, extracted.verificationContract);
-				clearGoalDrafting(core);
+				clearGoalDrafting(core, ctx);
 				return { content: [{ type: "text", text: buildGoalCreatedReport({ objective: extracted.objective }) }], details: goalDetails(core.state.goal), terminate: true };
 			}
 			if (!target) return { content: [{ type: "text", text: "The goal changed while drafting; review it and start /goal-tweak again." }], details: goalDetails(core.state.goal) };
@@ -181,7 +295,7 @@ export function registerDraftingTools(core: GoalCore): void {
 			if (!result.ok) return { content: [{ type: "text", text: "Goal tweak was not applied: " + result.message }], details: goalDetails(core.state.goal) };
 			core.clearContinuationState();
 			core.updateUI(ctx);
-			clearGoalDrafting(core);
+			clearGoalDrafting(core, ctx);
 			return { content: [{ type: "text", text: "Goal tweak confirmed and applied." }], details: goalDetails(result.goal), terminate: true };
 		},
 		renderCall(args, theme) { return new Text(theme.fg("toolTitle", "propose_goal_draft ") + theme.fg("muted", args?.objective ?? ""), 0, 0); },

@@ -17,7 +17,7 @@ import {
 import { clearGoalCommandMessage, validateResumeGoal } from "./goal-policy.ts";
 import { mergeGoalPromptFromDisk } from "./storage/goal-files.ts";
 import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
-import { clearGoalDrafting, startGoalDrafting } from "./goal-drafting.ts";
+import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "./goal-drafting.ts";
 import type { GoalCore } from "./goal-state.ts";
 
 /**
@@ -127,7 +127,7 @@ export function registerGoalCommands(core: GoalCore): void {
 		}
 		const settings = loadGoalSettings(ctx.cwd);
 		const { objective, verificationContract } = settings.disableContracts ? { objective: raw, verificationContract: undefined } : extractVerificationContract(raw);
-		clearGoalDrafting(core);
+		clearGoalDrafting(core, ctx);
 		core.clearContinuationState();
 		core.clearActiveAccounting();
 		core.replaceGoal({ objective, autoContinue: true, sisyphus: mode === "sisyphus" }, ctx, true, verificationContract);
@@ -405,20 +405,32 @@ export function registerGoalCommands(core: GoalCore): void {
 			ctx.ui.notify(`Replacement objective exceeds 4000 characters (${trimmed.length}).`, "warning");
 			return;
 		}
-		startGoalDrafting(core, ctx, "tweak", trimmed, currentGoal);
+		await startGoalDrafting(core, ctx, "tweak", trimmed, currentGoal);
 	}
 
 	// /goal and /sisyphus are the guided default. -direct commands are the explicit bypass.
 	pi.registerCommand("goal", {
 		description: "Draft a regular goal with clarification, task planning, and confirmation.",
 		handler: async (rawArgs, ctx) => {
-			startGoalDrafting(core, ctx, "goal", rawArgs);
+			await startGoalDrafting(core, ctx, "goal", rawArgs);
 		},
 	});
 	pi.registerCommand("sisyphus", {
 		description: "Draft a Sisyphus goal with clarification, task planning, and confirmation.",
 		handler: async (rawArgs, ctx) => {
-			startGoalDrafting(core, ctx, "sisyphus", rawArgs);
+			await startGoalDrafting(core, ctx, "sisyphus", rawArgs);
+		},
+	});
+	pi.registerCommand("goal-cancel", {
+		description: "Cancel the in-progress guided draft without creating or modifying a goal.",
+		handler: async (_rawArgs, ctx) => {
+			if (!hasActiveDraft(core)) {
+				ctx.ui.notify("No active draft to cancel.", "info");
+				return;
+			}
+			clearGoalDrafting(core, ctx);
+			core.clearContinuationState();
+			ctx.ui.notify("Draft cancelled; no goal was created. The execution profile is restored.", "info");
 		},
 	});
 	pi.registerCommand("goal-direct", {
