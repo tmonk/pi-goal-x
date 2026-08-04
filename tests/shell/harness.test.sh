@@ -178,12 +178,16 @@ check "node watchdog selected when no timeout binary exists" \
 mkdir -p "${SANDBOX}/bin-gtimeout"
 touch "${SANDBOX}/bin-gtimeout/gtimeout"
 chmod +x "${SANDBOX}/bin-gtimeout/gtimeout"
+# The harness resolves its own directory with dirname before it probes the
+# timeout commands. Keep that dependency available in each restricted PATH.
+ln -s "$(command -v dirname)" "${SANDBOX}/bin-gtimeout/dirname"
 check "gtimeout preferred over the watchdog" \
   bash -c 'PATH="$1" source "$2"; [[ "${TIMEOUT_PREFIX}" == "gtimeout" ]]' _ "${SANDBOX}/bin-gtimeout" "${HARNESS_DIR}/lib.sh"
 
 mkdir -p "${SANDBOX}/bin-timeout"
 touch "${SANDBOX}/bin-timeout/timeout"
 chmod +x "${SANDBOX}/bin-timeout/timeout"
+ln -s "$(command -v dirname)" "${SANDBOX}/bin-timeout/dirname"
 check "timeout preferred over gtimeout" \
   bash -c 'PATH="$1" source "$2"; [[ "${TIMEOUT_PREFIX}" == "timeout --foreground" ]]' _ "${SANDBOX}/bin-timeout" "${HARNESS_DIR}/lib.sh"
 
