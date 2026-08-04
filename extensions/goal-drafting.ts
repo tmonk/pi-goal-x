@@ -6,7 +6,7 @@ import { buildDraftConfirmationText, buildTweakConfirmationText, goalDraftingPro
 import { goalDetails, renderGoalResult } from "./goal-format.ts";
 import { buildGoalCreatedReport } from "./goal-policy.ts";
 import { loadGoalSettings } from "./goal-settings.ts";
-import { formatQuestionnaireAnswers, runGoalQuestionnaire, shouldAutoConfirmProposal, showProposalDialog, type GoalQuestionnaireQuestion } from "./goal-questionnaire.ts";
+import { formatQuestionnaireAnswers, runGoalQuestionnaire, shouldAutoConfirmProposal, showProposalDialog, type GoalQuestionnaireQuestion, type ProposalDecision } from "./goal-questionnaire.ts";
 import { nowIso, type GoalRecord, type GoalTaskList } from "./goal-record.ts";
 import type { GoalCore } from "./goal-state.ts";
 import { countTasks, convertFlatTasks, type FlatTaskInput } from "./goal-task-tools.ts";
@@ -118,10 +118,15 @@ export function rehydrateDraft(core: GoalCore, ctx: ExtensionContext): void {
 async function awaitDraftChoice(core: GoalCore, ctx: ExtensionContext, label: string): Promise<"resume" | "replace" | "cancel"> {
 	void core;
 	const choices = ["Resume the existing draft", "Replace it with a new draft", "Cancel"];
-	const selected = await ctx.ui.select(`A ${label.toLowerCase()} is already active`, choices);
-	if (!selected || selected === choices[0]!) return "resume";
-	if (selected === choices[2]) return "cancel";
-	return "replace";
+	core.enterGoalModal();
+	try {
+		const selected = await ctx.ui.select(`A ${label.toLowerCase()} is already active`, choices);
+		if (!selected || selected === choices[0]!) return "resume";
+		if (selected === choices[2]) return "cancel";
+		return "replace";
+	} finally {
+		core.exitGoalModal();
+	}
 }
 
 export async function startGoalDrafting(core: GoalCore, ctx: ExtensionContext, mode: GoalDraftMode, topic: string, targetGoal?: GoalRecord): Promise<void> {
@@ -206,8 +211,13 @@ export function registerDraftingTools(core: GoalCore): void {
 		}, { additionalProperties: false }),
 		async execute(_id, params, _signal, _update, ctx) {
 			if (!activeDraft(core)) return { content: [{ type: "text", text: "No guided goal draft is active. Ask the user to run /goal or /sisyphus." }], details: goalDetails(core.state.goal) };
-			const result = await runGoalQuestionnaire(ctx, [{ id: "question", question: params.question, options: params.options ?? [], recommended: params.recommended, allowCustom: params.allow_custom }]);
-			return { content: [{ type: "text", text: result.cancelled ? "The user cancelled the question. Continue drafting conversationally." : formatQuestionnaireAnswers(result) }], details: goalDetails(core.state.goal) };
+			core.enterGoalModal();
+			try {
+				const result = await runGoalQuestionnaire(ctx, [{ id: "question", question: params.question, options: params.options ?? [], recommended: params.recommended, allowCustom: params.allow_custom }]);
+				return { content: [{ type: "text", text: result.cancelled ? "The user cancelled the question. Continue drafting conversationally." : formatQuestionnaireAnswers(result) }], details: goalDetails(core.state.goal) };
+			} finally {
+				core.exitGoalModal();
+			}
 		},
 		renderCall() { return new Text("goal_question", 0, 0); },
 		renderResult(result, _opts, theme) { return renderGoalResult(result, theme); },
@@ -231,8 +241,13 @@ export function registerDraftingTools(core: GoalCore): void {
 		async execute(_id, params, _signal, _update, ctx) {
 			if (!activeDraft(core)) return { content: [{ type: "text", text: "No guided goal draft is active." }], details: goalDetails(core.state.goal) };
 			const questions: GoalQuestionnaireQuestion[] = params.questions.map((q: any) => ({ ...q, allowCustom: q.allow_custom }));
-			const result = await runGoalQuestionnaire(ctx, questions);
-			return { content: [{ type: "text", text: result.cancelled ? "The user cancelled the questionnaire. Continue drafting conversationally." : formatQuestionnaireAnswers(result) }], details: goalDetails(core.state.goal) };
+			core.enterGoalModal();
+			try {
+				const result = await runGoalQuestionnaire(ctx, questions);
+				return { content: [{ type: "text", text: result.cancelled ? "The user cancelled the questionnaire. Continue drafting conversationally." : formatQuestionnaireAnswers(result) }], details: goalDetails(core.state.goal) };
+			} finally {
+				core.exitGoalModal();
+			}
 		},
 		renderCall() { return new Text("goal_questionnaire", 0, 0); },
 		renderResult(result, _opts, theme) { return renderGoalResult(result, theme); },
@@ -272,9 +287,17 @@ export function registerDraftingTools(core: GoalCore): void {
 			const auditorLine = draft.auditorEnabled
 				? "\n\nAuditor for this goal: enabled (independent approval required before completion)."
 				: "\n\nAuditor for this goal: disabled (completion skips the audit).";
-			const confirmation = shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM })
-				? { decision: "confirm" as const, auditorEnabled: draft.auditorEnabled }
-				: await showProposalDialog(ctx, proposalText(draft, objective, params.auto_continue !== false, taskResult.value, target ?? undefined) + auditorLine, draft.mode === "sisyphus" ? "sisyphus" : "goal", draft.auditorEnabled);
+			let confirmation: { decision: ProposalDecision; auditorEnabled: boolean };
+			if (shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM })) {
+				confirmation = { decision: "confirm" as const, auditorEnabled: draft.auditorEnabled };
+			} else {
+				core.enterGoalModal();
+				try {
+					confirmation = await showProposalDialog(ctx, proposalText(draft, objective, params.auto_continue !== false, taskResult.value, target ?? undefined) + auditorLine, draft.mode === "sisyphus" ? "sisyphus" : "goal", draft.auditorEnabled);
+				} finally {
+					core.exitGoalModal();
+				}
+			}
 			if (confirmation.decision === "cancel") {
 				clearGoalDrafting(core, ctx);
 				return { content: [{ type: "text", text: "Draft cancelled; no goal was created. Run /goal or /sisyphus to start a new draft." }], details: goalDetails(core.state.goal) };

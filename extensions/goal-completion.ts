@@ -270,9 +270,13 @@ if (settings.disabled === true) {
 		core.goalWidgetComponentRef.current?.invalidate();
 		core.updateUI(ctx);
 
-		core.showingEscapeDialog = true;
-		const userChoice: EscapeDialogResult = await showEscapeDialog(ctx, auditTarget.objective);
-		core.showingEscapeDialog = false;
+		core.enterGoalModal();
+		let userChoice: EscapeDialogResult;
+		try {
+			userChoice = await showEscapeDialog(ctx, auditTarget.objective);
+		} finally {
+			core.exitGoalModal();
+		}
 		// Consume the transient abort state recorded by the low-level callback.
 		core.auditAborted = false;
 		if (!core.isFocusedOperationCurrent(completionFocus)) {

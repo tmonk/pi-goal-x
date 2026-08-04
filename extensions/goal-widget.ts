@@ -50,7 +50,12 @@ export function syncTerminalInputPause(core: GoalCore, ctx: ExtensionContext): v
 			// Must return { consume: true } so the TUI doesn't also process the key
 			// and abort the running tool execution, which would cascade into pausing
 			// the entire goal (agent_end sees ctx.signal?.aborted and calls pauseActiveGoal).
-			if (core.showingEscapeDialog) return undefined;
+			// Any goal-owned modal (questionnaire, task confirmation, settings,
+			// goal picker, task-list overlay, escape dialog) owns every key while
+			// it is open: never intercept — otherwise Escape would pause the goal
+			// before the dialog could process it (bn-l pattern). Depth counter so
+			// nested goal modals remain guarded.
+			if (core.goalModalDepth > 0) return undefined;
 			if (matchesKey(data, "escape") && core.auditProgress) {
 				core.abortAudit(ctx);
 				return { consume: true };
@@ -62,7 +67,8 @@ export function syncTerminalInputPause(core: GoalCore, ctx: ExtensionContext): v
 
 			// Ctrl+Shift+T — show task list overlay for all open goals
 			if (matchesKey(data, "ctrl+shift+t")) {
-				showTaskListOverlay(ctx, core.goalsById, core.focusedGoalId);
+				core.enterGoalModal();
+				showTaskListOverlay(ctx, core.goalsById, core.focusedGoalId).finally(() => core.exitGoalModal());
 				return { consume: true };
 			}
 

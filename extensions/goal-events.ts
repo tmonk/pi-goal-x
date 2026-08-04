@@ -205,11 +205,16 @@ export function registerGoalEvents(core: GoalCore): void {
 			const open = core.openGoals();
 			const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
 			const byLabel = new Map(labels.map((label, index) => [label, open[index]?.id]));
-			const selected = await ctx.ui.select("Focus open goal", labels);
-			const selectedId = selected ? byLabel.get(selected) : undefined;
-			if (selectedId) {
-				core.setFocusedGoalId(selectedId, ctx, "selected");
-				core.armFocusedContinuation(ctx);
+			core.enterGoalModal();
+			try {
+				const selected = await ctx.ui.select("Focus open goal", labels);
+				const selectedId = selected ? byLabel.get(selected) : undefined;
+				if (selectedId) {
+					core.setFocusedGoalId(selectedId, ctx, "selected");
+					core.armFocusedContinuation(ctx);
+				}
+			} finally {
+				core.exitGoalModal();
 			}
 		}
 		// Codex behavior: prompt before reactivating a paused goal on resume.

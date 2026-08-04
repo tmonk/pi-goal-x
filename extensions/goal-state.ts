@@ -64,7 +64,9 @@ export interface GoalCore {
 	auditProgress: AuditorWidgetProgress | null;
 	auditAnimationTimer: ReturnType<typeof setInterval> | null;
 	auditAbortController: AbortController | null;
-	showingEscapeDialog: boolean;
+	goalModalDepth: number;
+	enterGoalModal(): void;
+	exitGoalModal(): void;
 	auditAborted: boolean;
 	goalWorkToolCalledThisTurn: boolean;
 	tasksEnabled: boolean;
@@ -207,7 +209,7 @@ export function createGoalCore(
 	let auditAbortController: AbortController | null = null;
 	let auditAborted = false;
 
-	let showingEscapeDialog = false;
+	let goalModalDepth = 0;
 	let debugMode = false;
 
 	// Per-turn flags reset in turn_start (#4, C9 fix).
@@ -702,6 +704,14 @@ export function createGoalCore(
 		runtime.queueContinuation(ctx, state.goal, force);
 	}
 
+	function enterGoalModal(): void {
+		goalModalDepth++;
+	}
+
+	function exitGoalModal(): void {
+		goalModalDepth = Math.max(0, goalModalDepth - 1);
+	}
+
 	function replaceGoal(config: GoalCreationConfig, ctx: ExtensionContext, startNow = true, verificationContract?: string, tokenBudget?: number): void {
 		const goal = createGoal(config);
 		if (verificationContract) goal.verificationContract = verificationContract;
@@ -776,11 +786,11 @@ export function createGoalCore(
 		set auditAbortController(value: AbortController | null) {
 			auditAbortController = value;
 		},
-		get showingEscapeDialog() {
-			return showingEscapeDialog;
+		get goalModalDepth() {
+			return goalModalDepth;
 		},
-		set showingEscapeDialog(value: boolean) {
-			showingEscapeDialog = value;
+		set goalModalDepth(value: number) {
+			goalModalDepth = value;
 		},
 		get auditAborted() {
 			return auditAborted;
@@ -832,6 +842,8 @@ export function createGoalCore(
 		isActionableContinuationGoal,
 		isStaleCheckpointBlockedToolCall,
 		clearStoppedRuntimeState,
+		enterGoalModal,
+		exitGoalModal,
 		openGoals,
 		reconcileFocusedGoalFromDisk,
 		appendFocusEntry,

@@ -15,7 +15,7 @@ import { goalDetails, renderGoalResult } from "./goal-format.ts";
 import { statusLabel, truncateText } from "./goal-core.ts";
 import { loadGoalSettings } from "./goal-settings.ts";
 import { buildTaskSummary, checkSubtasksComplete, findSubtaskDepthViolation, skipAllSubtasks } from "./goal-policy.ts";
-import { showTaskConfirmation } from "./goal-task-confirmation.ts";
+import { showTaskConfirmation, type TaskConfirmationResult } from "./goal-task-confirmation.ts";
 import {
 	SET_GOAL_TASKS_TOOL_NAME,
 	UPDATE_GOAL_TASK_TOOL_NAME,
@@ -285,7 +285,13 @@ pi.registerTool(defineTool({
 		const taskListFocus = core.focusedOperationToken(core.state.goal.id);
 		// Task-only confirmation: the complete result is the user's decision.
 		// No auditor toggle and no goal-state mutation happen here.
-		const dialogResult = await showTaskConfirmation(ctx, proposalText);
+		core.enterGoalModal();
+		let dialogResult: TaskConfirmationResult;
+		try {
+			dialogResult = await showTaskConfirmation(ctx, proposalText);
+		} finally {
+			core.exitGoalModal();
+		}
 		if (!core.isFocusedOperationCurrent(taskListFocus)) {
 			return core.focusedOperationCancelledResult("Task list proposal", taskListFocus);
 		}

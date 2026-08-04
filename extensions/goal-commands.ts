@@ -45,14 +45,19 @@ export function registerGoalCommands(core: GoalCore): void {
 		}
 		const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
 		const byLabel = new Map(labels.map((label, index) => [label, open[index]?.id]));
-		const selected = await ctx.ui.select(title, labels);
-		const selectedId = selected ? byLabel.get(selected) : undefined;
-		if (!selectedId) {
-			ctx.ui.notify("Goal focus unchanged.", "info");
-			return null;
+		core.enterGoalModal();
+		try {
+			const selected = await ctx.ui.select(title, labels);
+			const selectedId = selected ? byLabel.get(selected) : undefined;
+			if (!selectedId) {
+				ctx.ui.notify("Goal focus unchanged.", "info");
+				return null;
+			}
+			core.setFocusedGoalId(selectedId, ctx, "selected");
+			return core.state.goal;
+		} finally {
+			core.exitGoalModal();
 		}
-		core.setFocusedGoalId(selectedId, ctx, "selected");
-		return core.state.goal;
 	}
 
 	async function focusGoalCommand(ctx: ExtensionContext): Promise<void> {
@@ -75,14 +80,19 @@ export function registerGoalCommands(core: GoalCore): void {
 		}
 		const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
 		const byLabel = new Map(labels.map((label, index) => [label, open[index]?.id]));
-		const selected = await ctx.ui.select("Focus open goal", labels);
-		const selectedId = selected ? byLabel.get(selected) : undefined;
-		if (!selectedId) {
-			ctx.ui.notify("Goal focus unchanged.", "info");
-			return;
+		core.enterGoalModal();
+		try {
+			const selected = await ctx.ui.select("Focus open goal", labels);
+			const selectedId = selected ? byLabel.get(selected) : undefined;
+			if (!selectedId) {
+				ctx.ui.notify("Goal focus unchanged.", "info");
+				return;
+			}
+			core.setFocusedGoalId(selectedId, ctx, "selected");
+			core.armFocusedContinuation(ctx);
+		} finally {
+			core.exitGoalModal();
 		}
-		core.setFocusedGoalId(selectedId, ctx, "selected");
-		core.armFocusedContinuation(ctx);
 		ctx.ui.notify(`Focused goal: ${oneLineSummary(core.state.goal)}`, "info");
 	}
 
@@ -270,17 +280,19 @@ export function registerGoalCommands(core: GoalCore): void {
 				core.installGoalToolProfile(tasksEnabledNow);
 			}
 		};
-		while (true) {
-			const config = loadGoalSettingsFileConfig(ctx.cwd);
-			const options = settingsLines(config).map((line) => `  ${line}`);
-			options.unshift("─── Settings ───");
-			options.push("Done");
-			const selected = await ctx.ui.select("Goal settings", options);
-			if (!selected || selected === "Done" || selected === "─── Settings ───") return;
-			// Strip leading spaces and resolve the row from the display label.
-			const selectedTrimmed = selected.trim();
-			const colon = selectedTrimmed.indexOf(":");
-			if (colon === -1) continue;
+		core.enterGoalModal();
+		try {
+			while (true) {
+				const config = loadGoalSettingsFileConfig(ctx.cwd);
+				const options = settingsLines(config).map((line) => `  ${line}`);
+				options.unshift("─── Settings ───");
+				options.push("Done");
+				const selected = await ctx.ui.select("Goal settings", options);
+				if (!selected || selected === "Done" || selected === "─── Settings ───") break;
+				// Strip leading spaces and resolve the row from the display label.
+				const selectedTrimmed = selected.trim();
+				const colon = selectedTrimmed.indexOf(":");
+				if (colon === -1) continue;
 			const label = selectedTrimmed.slice(0, colon).trim();
 			const row = SETTING_ROWS.find((r) => r.label === label);
 			if (!row) continue;
@@ -337,6 +349,9 @@ export function registerGoalCommands(core: GoalCore): void {
 			}
 			saveSettings(next);
 			ctx.ui.notify(`Settings saved:\n${settingsLines(loadGoalSettingsFileConfig(ctx.cwd)).join("\n")}`, "info");
+			}
+		} finally {
+			core.exitGoalModal();
 		}
 	}
 
