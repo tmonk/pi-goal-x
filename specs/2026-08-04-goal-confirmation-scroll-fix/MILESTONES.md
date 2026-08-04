@@ -449,5 +449,11 @@ contexts treat it as a no-op. The 383ae52 rendering is untouched.
 Combined with part-1 (tail-slice close guard): no 2J/3J anywhere, 0 bytes per
 spinner tick, fits scenario byte-identical and 0-churn (verified rows
 24/40/60). `npm run check` 0 errors; unit suite 482 pass / 0 fail;
-`--expect-fixed` exit 0. Committed; docs updated; awaiting the user's
-real-terminal re-check.
+`--expect-fixed` exit 0. Committed; docs updated.
+
+### Signoff (task 5/5)
+
+User re-tested in the real terminal and confirmed: “Excellent, fully working.
+Finish.” — with the spinner paused, the tall proposal open/close is clean, the
+viewport stays put while reading scrollback (no more “scrolls back down after
+X seconds”), and the 383ae52 surface is intact for content that fits.
