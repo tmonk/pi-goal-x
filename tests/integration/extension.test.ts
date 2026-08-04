@@ -139,7 +139,13 @@ describe("five-tool handler integration", () => {
 				ui: { notify: () => {}, setStatus: () => {}, setWidget: () => {}, onTerminalInput: () => () => {}, select: async () => undefined, confirm: async () => false, custom: async () => undefined },
 				getSystemPrompt: () => "", isIdle: () => true, hasPendingMessages: () => false, abort: () => {},
 			} as unknown as ExtensionContext;
-			await isolatedHandlers.get("session_start")?.({ reason: "start" }, emptyCtx);
+			const originalConsoleError = console.error;
+			console.error = () => {};
+			try {
+				await isolatedHandlers.get("session_start")?.({ reason: "start" }, emptyCtx);
+			} finally {
+				console.error = originalConsoleError;
+			}
 			assert.ok(getActiveToolsCalls >= 1, "profile install at session_start calls getActiveTools once");
 		} finally {
 			try { rmSync(cwd, { recursive: true, force: true }); } catch {}

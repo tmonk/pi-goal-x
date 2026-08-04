@@ -123,3 +123,17 @@ Re-validation after the fixes: `npm run check` 0 errors; `test:unit`
 452 pass/0 fail; `test:integration` 9 pass/0 fail (two new settings-menu
 tests); `test:serial` 452 pass/0 fail; `npm pack --dry-run` clean; `git diff
 --check` clean.
+
+## 2026-08-04 — Post-implementation follow-up
+
+An independent full audit confirmed the major hardening outcomes and found a
+smaller set of remaining settings, confirmation, completion-result,
+simultaneous-writer, residual-dialog, experiment-harness, and coverage issues.
+Living docs now distinguish verified 0.23 behavior from intended behavior.
+The prioritized remediation is tracked in
+`specs/2026-08-04-goal-runtime-follow-up`.
+
+The default unit/integration path was also replaced with automatic discovery,
+one-process execution, and small SDK test adapters. It preserves 452 unit and
+9 integration cases while avoiding unrelated Pi provider/media startup;
+`test:serial` remains the real-SDK compatibility diagnostic.

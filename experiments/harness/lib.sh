@@ -8,12 +8,9 @@ set -euo pipefail
 #
 # TARGET (per goal): provider=fireworks, model=accounts/fireworks/routers/kimi-k2p6-turbo
 #
-# Key resolution: pi reads FIREWORKS_API_KEY env first. The env-shell value in
-# ~/.zshrc (fw_7xLkyEFrxWisQbgGhtLrFr) is INVALID — fireworks 401s on it. The
-# valid credential lives in ~/.pi/agent/auth.json under the "fireworks" OAuth
-# entry as fpk_Dnyvq3LCD3sXaRMTfr886E. We extract it at run time and inject it
-# as FIREWORKS_API_KEY so pi's fireworks provider authenticates correctly.
-# Verified via direct curl on 2026-05-11.
+# Credential resolution uses the Fireworks access value in
+# ~/.pi/agent/auth.json when present, then falls back to FIREWORKS_API_KEY.
+# Never record or print credential values in this repository.
 PROVIDER="${PI_GOAL_TEST_PROVIDER:-fireworks}"
 MODEL="${PI_GOAL_TEST_MODEL:-accounts/fireworks/routers/kimi-k2p6-turbo}"
 THINKING="${PI_GOAL_TEST_THINKING:-high}"

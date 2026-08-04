@@ -99,9 +99,9 @@ The curated ten-command palette:
 | `/goal-list` | List all open goals and the current focus |
 | `/goal-focus` | Choose this session's focused goal |
 | `/goal-unfocus` | Detach the session without modifying the shared goal |
-| `/goal-settings` | Auditor/settings editor |
+| `/goal-settings` | Auditor/settings editor; task/contract switches are currently display-only and auto-select remains file-only |
 | `/goal-tweak <new objective>` | Direct user-owned objective edit |
-| `/goal-clear` | Archive the focused goal (user-owned abandonment) |
+| `/goal-clear` | Archive the focused goal immediately (the intended confirmation is missing in 0.23) |
 | `/goal-pause` | Pause the focused active goal (Esc also pauses) |
 | `/goal-resume` | Resume a paused or blocked goal |
 
@@ -229,7 +229,11 @@ not claim completion unless real), and pending continuations are cancelled.
 ```text
 goal.ts (thin installer)
 ├─ goal-state.ts     GoalCore: state + service/runtime/accounting wiring
-├─ goal-tools.ts     five tools + completion/blocked flows
+├─ goal-tools.ts     registration composition only
+├─ goal-core-tools.ts create/get/update handlers + blocked flow
+├─ goal-completion.ts audit orchestration + completion commit
+├─ goal-task-tools.ts task structure/status handlers + tree helpers
+├─ goal-task-confirmation.ts task result boundary (currently uses legacy dialog labels)
 ├─ goal-commands.ts  ten-command palette
 ├─ goal-events.ts    13 lifecycle event handlers
 ├─ goal-widget.ts    terminal keybindings + debug helpers
@@ -261,8 +265,10 @@ goal.ts (thin installer)
 - **Budget exhaustion is a system transition, not completion.** The
   `budget_limited` status stops continuation and arms wrap-up steering without
   implying the goal is done.
-- **Disk is authoritative.** Reconciliation before every focused action means
-  external edits and multi-session use stay consistent; old readers keep
+- **Disk is authoritative at operation start.** Reconciliation before each
+  focused action picks up prior external edits and prevents deleted files from
+  being resurrected. There is not yet a cross-process lock or compare-and-swap,
+  so truly simultaneous writers remain last-write-wins; old readers keep
   existing data readable.
 
 ## 15. Hardening (0.23)
@@ -270,7 +276,10 @@ goal.ts (thin installer)
 This document describes the shipped 0.23 behavior. The 2026-08-04 hardening
 plan
 ([`specs/2026-08-04-goal-simplification-hardening`](../specs/2026-08-04-goal-simplification-hardening/TECH.md))
-is implemented: it also addresses paused-record resurrection, stale
-task-tree overwrites, task-confirmation audit coupling, budget validation,
-ledger semantics, legacy
-runtime code, and the E2E/experiment surface (all cases migrated to the five-tool interface; the handler-level integration suite is part of test:all).
+is implemented: it addresses paused-record resurrection, operation-start
+task reconciliation, task-confirmation auditor-state coupling, budget
+validation, ledger semantics, the primary legacy runtime surface, and the
+E2E/experiment migration. Residual legacy dialog/event vocabulary, true
+simultaneous-writer protection, settings-menu defects, and clear confirmation
+are tracked in the
+[`2026-08-04 goal runtime follow-up`](../specs/2026-08-04-goal-runtime-follow-up/TECH.md).

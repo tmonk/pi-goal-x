@@ -37,11 +37,11 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test": "node scripts/run-unit-tests.mjs",
     "test:serial": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts",
-    "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
-    "test:integration": "node --experimental-strip-types --test --test-concurrency=1 tests/integration/*.test.ts",
-    "test:all": "npm run test:unit && npm run test:integration"
+    "test:unit": "node scripts/run-unit-tests.mjs",
+    "test:integration": "node scripts/run-unit-tests.mjs integration",
+    "test:all": "node scripts/run-unit-tests.mjs all"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

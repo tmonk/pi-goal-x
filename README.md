@@ -89,7 +89,7 @@ registered so tab completion is self-explanatory):
 /goal-pause             Pause the focused active goal
 /goal-resume            Resume a paused or blocked goal
 /goal-settings          Configure pi-goal settings, including auditor model settings
-/goal-clear             Archive the focused goal after confirmation
+/goal-clear             Archive the focused goal (0.23 currently does so immediately)
 ```
 
 Pressing `Esc` or aborting an active run pauses the goal so it does not remain falsely active.
@@ -262,7 +262,10 @@ Goal paths are constrained to `.pi/goals/` and `.pi/goals/archived/`; absolute p
 
 All settings live in a single file: **`.pi/pi-goal-x-settings.json`**
 
-Configured interactively via `/goal-settings`, or edited directly:
+The auditor switch/model fields and `subtaskDepth` are editable through
+`/goal-settings`. The task/contract switches and `autoSelectSingleGoal` must
+currently be edited in the file directly; the follow-up plan below tracks
+making every displayed setting operable from the menu.
 
 ```json
 {
@@ -277,16 +280,16 @@ Configured interactively via `/goal-settings`, or edited directly:
 }
 ```
 
-| Field | Default | Purpose |
-|---|---:|---|
-| `disableTasks` | `false` | Suppress task list features entirely when `true` |
-| `disableContracts` | `false` | Suppress verification contract enforcement when `true` |
-| `subtaskDepth` | `1` | Maximum nesting depth for subtasks |
-| `autoSelectSingleGoal` | `false` | When `true`, auto-focus the single open goal when a session has no focus entry (default keeps goals session-scoped) |
-| `provider` | system default | Provider name for the auditor agent |
-| `model` | system default | Model name for the auditor agent |
-| `thinkingLevel` | system default | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
-| `disabled` | `false` | When `true`, skips the completion audit: `update_goal({status:"complete"})` records an `audit_skipped` event and completes through the normal deferred-completion path. |
+| Field | Default | `/goal-settings` | Purpose |
+|---|---:|:---:|---|
+| `disableTasks` | `false` | No (display-only in 0.23) | Suppress task list features entirely when `true` |
+| `disableContracts` | `false` | No (display-only in 0.23) | Suppress verification contract enforcement when `true` |
+| `subtaskDepth` | `1` | Yes | Maximum nesting depth for subtasks |
+| `autoSelectSingleGoal` | `false` | No (file-only in 0.23) | When `true`, auto-focus the single open goal when a session has no focus entry (default keeps goals session-scoped) |
+| `provider` | system default | Yes | Provider name for the auditor agent |
+| `model` | system default | Yes | Model name for the auditor agent |
+| `thinkingLevel` | system default | Yes | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
+| `disabled` | `false` | Yes | When `true`, skips the completion audit: `update_goal({status:"complete"})` records an `audit_skipped` event and completes through the normal deferred-completion path. |
 
 **Env var overrides:**
 - `PI_GOAL_DISABLE_TASKS=1` — disable task features (takes precedence over file)
@@ -311,17 +314,24 @@ npm run check
 npm pack --dry-run
 ```
 
-The fast suite uses Node's built-in test runner and covers records/storage,
+The unit and integration commands discover `*.test.ts` files automatically and
+run them in one Node process. Test-only adapters provide the small runtime SDK
+surface the handlers exercise, avoiding initialization of unrelated Pi model
+providers and TUI media modules. `npm run test:all` runs all 461 cases in one
+startup. The fast runner requires Node 22.15 or newer (for synchronous module
+hooks); on older supported development environments, use `test:serial`.
+The suite covers records/storage,
 lifecycle policy, the service/runtime/accounting split, the five tool handlers,
 the ten commands, tasks/contracts, auditing, compaction, prompts, and widgets.
-Use `npm run test:serial` in low-file-descriptor environments. The handler-level
+Use `npm run test:serial` as the real-SDK, process-isolated compatibility path.
+The handler-level
 integration suite (`npm run test:integration`, part of `test:all`) drives the
 actual registered tools with an auditor fixture; the legacy `tests/e2e/run.ts`
 real-model runner is manual and opt-in.
 
 The experiment harness under `experiments/` runs full pi sessions against real
-model calls and mechanical rubrics. C20-C26 target the five-tool interface;
-C1-C19 are historical pre-simplification cases until migrated. Experiments are
+model calls and mechanical rubrics. C20-C26 are the release evaluation set;
+B1-B2 and C1-C19 have also been migrated to the five-tool interface. Experiments are
 opt-in because they incur model usage.
 
 ```bash
@@ -336,13 +346,11 @@ The npm package ships only the runtime extension, docs, and package metadata. Th
 ```text
 extensions/goal.ts                 thin installer for renderers, commands, tools, and events
 extensions/goal-state.ts           shared GoalCore state and service/runtime wiring
-extensions/goal.ts                 thin installer for renderers, commands, tools, and events
-extensions/goal-state.ts           shared GoalCore state and service/runtime wiring
 extensions/goal-tools.ts           tool registration composition (core + task installers)
 extensions/goal-core-tools.ts      create_goal / get_goal / update_goal executors and the blocked flow
 extensions/goal-completion.ts      completion transaction (audit orchestration + commit)
 extensions/goal-task-tools.ts      set_goal_tasks / update_goal_task executors, flat conversion, merge, counts
-extensions/goal-task-confirmation.ts task-only confirmation boundary ({decision})
+extensions/goal-task-confirmation.ts task-only result boundary ({decision}); visual labels are legacy
 extensions/goal-commands.ts        ten slash-command handlers
 extensions/goal-events.ts          lifecycle event handlers
 extensions/goal-service.ts         ordered goal mutation boundary (incl. typed updateTask transaction)
@@ -356,7 +364,7 @@ extensions/goal-core.ts            display helpers
 extensions/goal-policy.ts          lifecycle, completion, task, and compaction policy
 extensions/goal-auditor.ts         independent pi auditor agent for completion approval, config, and progress tracking
 extensions/goal-ledger.ts          event append, read, validation, sanitization, and reconstruction (task_reopened)
-extensions/goal-questionnaire.ts   proposal dialog helpers (question tools removed)
+extensions/goal-questionnaire.ts   legacy proposal dialog still used by task confirmation/debug (question tools removed)
 extensions/goal-tool-names.ts      the five published names, fixed profiles, work/progress sets, post-stop allowlist
 extensions/prompts/goal-prompts.ts active, continuation, stale, unfocused, and budget prompts
 extensions/storage/goal-files.ts   goal file paths, serialization, parsing, archive IO
@@ -385,7 +393,10 @@ three/five tool profile is fixed and host tools are never touched, task
 operations are disk-fresh transactions with structural-clearing merge
 semantics, `token_budget` is a positive safe integer, reopening a task writes
 `task_reopened`, ledger failures surface through an observable diagnostic, and
-the drafting-era runtime coupling was removed.
+the primary drafting tool/runtime surface was removed. A focused follow-up
+assessment found residual proposal-dialog/event vocabulary plus the known
+settings and clear-command defects; remediation is specified in
+[`specs/2026-08-04-goal-runtime-follow-up`](specs/2026-08-04-goal-runtime-follow-up/PRODUCT.md).
 
 ## Relationship to pi-goal
 

@@ -17,7 +17,7 @@ handlers from their dedicated modules:
 | `goal-core-tools.ts` | `create_goal` / `get_goal` / `update_goal` executors plus the blocked flow |
 | `goal-completion.ts` | The completion transaction: `runGoalCompletionFlow` (audit orchestration) + shared `commitGoalCompletion` |
 | `goal-task-tools.ts` | `set_goal_tasks` / `update_goal_task` executors plus flat parent-linked conversion, id-stable merge, `countTasks` |
-| `goal-task-confirmation.ts` | Task-only confirmation boundary (`{decision}` result, no auditor toggle) |
+| `goal-task-confirmation.ts` | Task-only result boundary (`{decision}`, no auditor toggle); its current visual dialog still reuses legacy goal-draft labels |
 | `goal-commands.ts` | The curated ten-command palette and its handlers |
 | `goal-events.ts` | The 13 lifecycle event handlers (`context`, `turn_start`, `tool_call`, `tool_execution_end`, `turn_end`, `message_end`, `session_start`, `session_before_compact`, `session_compact`, `session_tree`, `before_agent_start`, `agent_end`, `session_shutdown`) |
 | `goal-widget.ts` | Terminal input keybindings (Esc pause / abort-audit, Ctrl+Shift+T overlay) and the hidden debug helpers |
@@ -32,7 +32,7 @@ handlers from their dedicated modules:
 | `goal-policy.ts` | Lifecycle policy and validation (completion/blocked/resume/task gates), task-tree helpers, compaction policy, result reports |
 | `goal-auditor.ts` | Independent pi auditor agent prompt/config/decision parsing and completion audit execution |
 | `goal-ledger.ts` | Single-file goal ledger append/read/reconstruction (18 event types incl. `task_reopened`) |
-| `goal-questionnaire.ts` | Proposal confirmation dialog helpers (drafting-era question tools removed) |
+| `goal-questionnaire.ts` | Legacy questionnaire/proposal-dialog implementation; question tools are removed, but task confirmation and a hidden debug path still reuse parts of it |
 | `goal-tool-names.ts` | The five published tool-name constants, fixed three/five profiles, work/progress classification, post-stop allowlist |
 | `prompts/goal-prompts.ts` | Bounded five-tool steering prompts (active-goal, continuation, stale-checkpoint, unfocused, budget-limited) |
 | `storage/goal-files.ts` | Goal path safety, serialization/parsing, active-file scanning, active-file writes, archive writes, prompt-body merge from disk |
@@ -61,7 +61,7 @@ reconcile (disk wins over stale memory)
   → expected-id / focus-revision validation (async operations invalidated on focus change)
   → mutate a clone (never the live object)
   → write or archive the active file
-  → append ledger events (best-effort; failure is currently silent)
+  → append ledger events (best-effort; failure emits a warning diagnostic)
   → commit to memory + focus
   → return effects (ok, goal, focusChanged, messages)
 ```
@@ -93,7 +93,7 @@ direct write or ledger calls.
   │    ├─ /goal-focus chooses the session focus
   │    ├─ /goal-unfocus clears only the session focus and leaves the shared goal open
   │    └─ unfocused sessions guide the user to choose instead of letting the agent decide
-  └─ /goal-clear archives the focused goal (user-owned abandonment)
+  └─ /goal-clear archives the focused goal immediately (the missing confirmation prompt is a known 0.23 defect)
 ```
 
 ## Goal pool and session focus
@@ -182,9 +182,9 @@ confirmation intent state, and no model-side objective mutation.
 - `/goal-focus` uses `ctx.ui.select` when multiple goals are open and updates only session focus.
 - `/goal-unfocus` writes a null session focus entry, clears continuation/runtime state, aborts in-flight work and audits for that session, and leaves the shared active goal file and project-global focus ledger unchanged. Focus revision tokens prevent pending completion and task-list results from mutating a goal after detachment.
 - `/goal-resume` resumes the focused paused goal; when unfocused with multiple open goals, it asks the user to choose. Choosing an already active goal only focuses it.
-- `/goal-clear` archives only the focused/selected goal and never clears the whole pool at once.
+- `/goal-clear` archives only the focused/selected goal and never clears the whole pool at once. In 0.23 it does not display the confirmation promised by its command description.
 - `/goal-pause` pauses the focused active goal; it asks the user to choose when unfocused with open goals.
-- `/goal-settings` opens extension settings (disabled, provider, model, thinking_level, subtaskDepth, autoSelectSingleGoal).
+- `/goal-settings` edits `disabled`, provider, model, `thinking_level`, and `subtaskDepth`. It displays but cannot select `disableTasks`/`disableContracts`; `autoSelectSingleGoal` is file-only because it is not displayed. These menu defects are tracked by the follow-up spec.
 
 ## Tool surface
 
@@ -265,22 +265,25 @@ use. The ledger is append-only JSONL and is never rewritten in place.
 
 ## Tests
 
-Fast local tests live in `tests/` and run with:
+Local tests live in `tests/` and run with:
 
 ```bash
-npm run test:serial
+npm run test:all
 npm run check
 ```
 
-They cover: surface baselines (exactly the five tools and ten commands
-registered), the current dynamic visibility behavior, golden file/ledger
-fixtures, stale-continuation behavior,
+`test:unit`, `test:integration`, and `test:all` automatically discover test
+entries and run them in one Node process with small test-only adapters for the
+SDK values used by handlers. This avoids loading unrelated model-provider and
+TUI media modules. The fast path requires Node 22.15+; `test:serial` remains
+the slow, real-SDK, process-isolated
+compatibility path. The suites cover: surface baselines (exactly the fixed five/three tool
+profile and ten commands), golden file/ledger fixtures, stale-continuation behavior,
 GoalService mutation boundary, runtime/accounting, token-budget transitions,
 task-tool consolidation, verification contracts, the independent auditor,
 compaction recovery, and the bounded steering prompts. The separate
-`tests/e2e/` directory is not included by the package test glob and still uses
-removed signatures. In `experiments/`, C20-C26 target the current interface;
-C1-C19 and B1-B2 remain historical until migrated.
+`tests/e2e/run.ts` real-model path is manual and opt-in. In `experiments/`,
+C20-C26 are the release set and B1-B2/C1-C19 are migrated compatibility cases.
 
 ## Hardening (0.23)
 
@@ -289,5 +292,12 @@ The 2026-08-04 hardening plan
 is implemented: paused-status normalization (status authoritative, legacy
 `autoContinue: true` records stay paused), disk-fresh task transactions with
 structural-field clearing, token-budget integer validation, `task_reopened`
-ledger semantics with observable diagnostics, drafting-era module removal, and
+ledger semantics with observable diagnostics, primary drafting-tool module removal, and
 the supported integration/experiment coverage described above.
+
+The follow-up assessment is intentionally explicit about what remains:
+simultaneous cross-process mutations are still last-write-wins after the
+operation-start reconciliation; task confirmation still presents goal-draft
+labels; the settings menu has unreachable fields; and `/goal-clear` lacks its
+documented confirmation. See
+[`specs/2026-08-04-goal-runtime-follow-up`](../specs/2026-08-04-goal-runtime-follow-up/TECH.md).

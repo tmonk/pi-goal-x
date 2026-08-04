@@ -36,7 +36,8 @@ real-model runs exercise the same tool surface as the local suites.
 ## Supported case matrix
 
 `SUPPORTED_CASES.json` is the machine-readable list of supported cases
-(B1-B2 + C1-C26 after migration). `run.sh <case-id>` resolves a case only
-inside that matrix; historical dirs are not executed by accident.
+(B1-B2 + C1-C26 after migration). In 0.23 it is documentation rather than an
+enforced allowlist: `run.sh <case-id>` accepts any existing case directory with
+an `INPUT.md`. Matrix enforcement is part of the runtime follow-up plan.
 
 Experiment outputs under `runs/` are generated artifacts and are not part of the package release.

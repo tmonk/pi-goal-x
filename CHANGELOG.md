@@ -8,6 +8,19 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- Unit and handler-integration tests are automatically discovered and run in
+  one Node process with contract-faithful test adapters for the small Pi SDK
+  runtime surface they exercise. This preserves all 461 cases while avoiding
+  unrelated provider/media startup; `test:serial` remains the real-SDK,
+  process-isolated compatibility path.
+- Living documentation now distinguishes shipped 0.23 behavior from intended
+  behavior for the settings menu, `/goal-clear`, task confirmation labels,
+  simultaneous-writer semantics, and experiment-matrix enforcement.
+
 ## [0.23.0] — 2026-08-05
 
 ### Fixed
@@ -47,8 +60,9 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 ### Changed
 
-- The task-list confirmation dialog is task-only: it returns the user's
-  `{decision}` and can no longer mutate auditor bypass state.
+- The task-list confirmation result is task-only: it returns the user's
+  `{decision}` and can no longer mutate auditor bypass state. The 0.23 visual
+  dialog still uses legacy goal-draft labels; replacement is planned.
 - `goal-tools.ts` is split into focused behavior modules (registration
   composition, core tools, completion transaction, task tools, task
   confirmation); `goal-draft.ts` is removed (contract extraction and prompt
@@ -64,7 +78,7 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 ### Removed
 
-- Drafting-era runtime coupling: legacy tool constants, `GoalToolPhase`,
+- The main drafting-era tool/runtime surface: legacy tool constants, `GoalToolPhase`,
   `lifecycleToolNamesForGoalStatus`, question-like name heuristics, the
   question-tool registrations, and obsolete abort/pause/completion-summary
   policy builders.
