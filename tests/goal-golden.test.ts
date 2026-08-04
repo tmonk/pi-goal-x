@@ -79,6 +79,7 @@ function expectedFixtureRecord(now: string): GoalRecord {
 		pauseReason: undefined,
 		pauseSuggestedAction: undefined,
 		skipAuditor: undefined,
+		revision: 0,
 		tokenBudget: undefined,
 		taskList: {
 			blockCompletion: true,

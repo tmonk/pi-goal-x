@@ -2,16 +2,20 @@ import { cloneGoal, nowIso, type GoalFocusReason, type GoalRecord, type GoalTask
 import { appendGoalEvent, type GoalLedgerEvent } from "./goal-ledger.ts";
 import { findTaskInTree, updateTaskInTree } from "./goal-policy.ts";
 import {
+	GOALS_DIR,
 	archiveGoalFile,
 	atomicWriteGoalFile,
 	ensureDirectory,
 	mergeGoalPromptFromDisk,
+	parseGoalFile,
 	readActiveGoalPool,
+	resolveGoalPath,
 	safeUnlinkGoalFile,
 	sanitizeGoalPaths,
 	writeActiveGoalFile,
 	type GoalFileContext,
 } from "./storage/goal-files.ts";
+import { acquireGoalLock, type GoalLock } from "./storage/goal-lock.ts";
 import { mergeFocusedGoalWithDisk } from "./goal-pool.ts";
 
 /**
@@ -162,11 +166,35 @@ export class GoalService {
 	}
 
 	/**
+	 * Read the goal's authoritative active file directly (no complete-status
+	 * filter, unlike the pool reader) for the optimistic revision check under
+	 * the per-goal lock. Returns null when the file is gone (external
+	 * archive/delete) or the goal has no active path.
+	 */
+	private readFreshDiskGoal(ctx: GoalServiceContext, current: GoalRecord): GoalRecord | null {
+		if (!current.activePath) return null;
+		try {
+			return parseGoalFile(resolveGoalPath(ctx, GOALS_DIR, current.activePath));
+		} catch {
+			return null;
+		}
+	}
+
+	/**
 	 * The single ordered mutation pipeline for a focused goal.
 	 * Returns the written record plus focus-change effects; the extension maps
 	 * failures to user-facing results.
+	 *
+	 * Cross-process control (follow-up Stage 4): after the session-local
+	 * validation, an exclusive per-goal lock is acquired (bounded, with stale
+	 * recovery) and the authoritative file is re-read under the lock. If the
+	 * persisted revision differs from the one captured at reconciliation, the
+	 * mutation returns a typed conflict carrying the current revision instead
+	 * of overwriting blindly. On success the revision is incremented, the file
+	 * is written atomically, ledger events are appended best-effort, memory is
+	 * committed, and the lock is released in a finally block.
 	 */
-	apply(ctx: GoalServiceContext, spec: GoalMutationSpec): GoalMutationOutcome {
+		apply(ctx: GoalServiceContext, spec: GoalMutationSpec): GoalMutationOutcome {
 		// 1. reconcile (unless the caller opts out — e.g. the tweak path, which
 		//    must not clobber the authoritative new objective with the old file).
 		if (spec.reconcile !== false && !this.reconcileFocused(ctx)) {
@@ -185,49 +213,68 @@ export class GoalService {
 			return { ok: false, message: `Mutation cancelled because goal ${spec.focusToken.goalId} is no longer focused in this session. The shared goal was not modified.` };
 		}
 
-		// 3. mutation on a clone (after an optional authoritative objective merge).
-		const base = spec.refreshFromDisk ? mergeGoalPromptFromDisk(ctx, current) : current;
-		const mutated = sanitizeGoalPaths(ctx, spec.mutate(cloneGoal(base)));
-
-		// 4. authoritative file write (active or archive). A failure here throws
-		//    and prevents any memory/ledger/focus/archive commit.
-		const written = spec.archive ? archiveGoalFile(ctx, mutated) : writeActiveGoalFile(ctx, mutated);
-
-		// 5. ledger append best effort.
-		if (spec.ledger) {
-			let events: GoalLedgerEvent[];
-			try {
-				events = typeof spec.ledger === "function" ? spec.ledger(written) : spec.ledger;
-			} catch {
-				events = [];
+		// 2b. exclusive per-goal lock + optimistic revision check (follow-up Stage 4).
+		const capturedRevision = current.revision ?? 0;
+		const lock = acquireGoalLock(ctx, current.id);
+		try {
+			const freshDisk = this.readFreshDiskGoal(ctx, current);
+			if (!freshDisk) {
+				return { ok: false, message: `Goal ${current.id} was deleted or archived by another process while this mutation was in progress; the mutation was not applied.` };
 			}
-			for (const event of events) {
-				const append = appendGoalEvent(ctx, event);
-				if (!append.ok) {
-					// Ledger append failure after the authoritative write keeps the
-					// successful state transition; surface an observable diagnostic.
-					this.ref.onDiagnostic({
-						severity: "warning",
-						source: "ledger",
-						goalId: "goalId" in event ? event.goalId : undefined,
-						eventType: event.type,
-						message: `Ledger append failed for ${event.type}${"goalId" in event ? ` (goal ${event.goalId})` : ""}: ${String(append.error)}`,
-					});
+			const diskRevision = freshDisk.revision ?? 0;
+			if (diskRevision !== capturedRevision) {
+				return { ok: false, message: `Goal ${current.id} was modified by another process (revision ${capturedRevision} -> ${diskRevision}); current revision is ${diskRevision}. Refresh and retry; the mutation was not applied.` };
+			}
+
+			// 3. mutation on a clone (after an optional authoritative objective merge).
+			const base = spec.refreshFromDisk ? mergeGoalPromptFromDisk(ctx, current) : current;
+			const mutated = sanitizeGoalPaths(ctx, {
+				...spec.mutate(cloneGoal(base)),
+				revision: capturedRevision + 1,
+			});
+
+			// 4. authoritative file write (active or archive). A failure here throws
+			//    and prevents any memory/ledger/focus/archive commit.
+			const written = spec.archive ? archiveGoalFile(ctx, mutated) : writeActiveGoalFile(ctx, mutated);
+
+			// 5. ledger append best effort.
+			if (spec.ledger) {
+				let events: GoalLedgerEvent[];
+				try {
+					events = typeof spec.ledger === "function" ? spec.ledger(written) : spec.ledger;
+				} catch {
+					events = [];
+				}
+				for (const event of events) {
+					const append = appendGoalEvent(ctx, event);
+					if (!append.ok) {
+						// Ledger append failure after the authoritative write keeps the
+						// successful state transition; surface an observable diagnostic.
+						this.ref.onDiagnostic({
+							severity: "warning",
+							source: "ledger",
+							goalId: "goalId" in event ? event.goalId : undefined,
+							eventType: event.type,
+							message: `Ledger append failed for ${event.type}${("goalId" in event) ? ` (goal ${event.goalId})` : ""}: ${String(append.error)}`,
+						});
+					}
 				}
 			}
+
+			// 6. in-memory pool/focus commit.
+			const previousGoalId = current.id;
+			const commitFocused = spec.commitFocused !== false;
+			if (commitFocused) this.ref.setFocused(written);
+			const goalId = commitFocused ? written.id : this.ref.getFocusedGoalId();
+			const focusChanged = commitFocused && previousGoalId !== written.id;
+
+			// 7. runtime/UI effects.
+			if (focusChanged) this.ref.onFocusChanged(previousGoalId, written.id);
+
+			return { ok: true, goal: written, previousGoalId, goalId, focusChanged };
+		} finally {
+			lock.release();
 		}
-
-		// 6. in-memory pool/focus commit.
-		const previousGoalId = current.id;
-		const commitFocused = spec.commitFocused !== false;
-		if (commitFocused) this.ref.setFocused(written);
-		const goalId = commitFocused ? written.id : this.ref.getFocusedGoalId();
-		const focusChanged = commitFocused && previousGoalId !== written.id;
-
-		// 7. runtime/UI effects.
-		if (focusChanged) this.ref.onFocusChanged(previousGoalId, written.id);
-
-		return { ok: true, goal: written, previousGoalId, goalId, focusChanged };
 	}
 
 
@@ -243,7 +290,24 @@ export class GoalService {
  * Expected races (removed task, removed task list) return typed failures
  * instead of throwing.
  */
-	updateTask(ctx: GoalServiceContext, spec: GoalTaskUpdateSpec): GoalTaskUpdateOutcome {
+		updateTask(ctx: GoalServiceContext, spec: GoalTaskUpdateSpec): GoalTaskUpdateOutcome {
+		return this.updateTaskAttempt(ctx, spec, 1);
+	}
+
+	/**
+	 * Disk-fresh single-task transaction (follow-up Stage 4 adds the per-goal
+	 * lock + optimistic revision check). Pipeline:
+	 *  1. reconcile the focused record;
+	 *  2. validate focus token/id;
+	 *  3. acquire the per-goal lock and re-read the authoritative file;
+	 *  4. a stale writer gets a typed conflict; it retries ONCE with the fresh
+	 *     state — the transition validation re-checks that the same task and
+	 *     relevant status/structure are unchanged, so a genuinely concurrent
+	 *     edit is rejected rather than silently merged;
+	 *  5. load the fresh task, validate the transition, update only that task;
+	 *  6. write with an incremented revision, append the ledger, and commit.
+	 */
+	private updateTaskAttempt(ctx: GoalServiceContext, spec: GoalTaskUpdateSpec, retriesLeft: number): GoalTaskUpdateOutcome {
 		if (!this.reconcileFocused(ctx)) {
 			return { ok: false, message: "The focused goal was lost during reconciliation; the task was not updated." };
 		}
@@ -254,65 +318,107 @@ export class GoalService {
 		if (spec.focusToken && !this.ref.isTokenCurrent(spec.focusToken)) {
 			return { ok: false, message: `Mutation cancelled because goal ${spec.focusToken.goalId} is no longer focused in this session. The shared goal was not modified.` };
 		}
-		const base = mergeGoalPromptFromDisk(ctx, current);
-		if (!base.taskList) {
-			return { ok: false, message: "The goal has no task list." };
-		}
-		const task = findTaskInTree(base.taskList.tasks, spec.taskId);
-		if (!task) {
-			return { ok: false, message: `Task "${spec.taskId}" not found.` };
-		}
-		if (spec.validate) {
-			const gate = spec.validate(task);
-			if (!gate.ok) return gate;
-		}
-		const updated = spec.update(task);
-		if (typeof updated === "object" && "ok" in updated && !updated.ok) return updated;
-		const updatedTask = updated as GoalTask;
-		const updatedTasks = updateTaskInTree(base.taskList.tasks, spec.taskId, () => updatedTask);
-		const mutated = sanitizeGoalPaths(ctx, {
-			...base,
-			taskList: { ...base.taskList, tasks: updatedTasks },
-			updatedAt: nowIso(),
-		});
-		const written = writeActiveGoalFile(ctx, mutated);
-		if (spec.ledger) {
-			try {
-				for (const event of spec.ledger(written, updatedTask)) {
-					const append = appendGoalEvent(ctx, event);
-					if (!append.ok) {
-						this.ref.onDiagnostic({
-							severity: "warning",
-							source: "ledger",
-							goalId: "goalId" in event ? event.goalId : undefined,
-							eventType: event.type,
-							message: `Ledger append failed for ${event.type}${"goalId" in event ? ` (goal ${event.goalId})` : ""}: ${String(append.error)}`,
-						});
-					}
-				}
-			} catch (err) {
-				// Unexpected ledger-spec error after the authoritative write keeps
-				// the successful state transition.
-				this.ref.onDiagnostic({
-					severity: "warning",
-					source: "ledger",
-					goalId: spec.taskId,
-					message: `Ledger spec error during task update: ${String(err)}`,
-				});
+		const capturedRevision = current.revision ?? 0;
+		const lock = acquireGoalLock(ctx, current.id);
+		try {
+			const freshDisk = this.readFreshDiskGoal(ctx, current);
+			if (!freshDisk) {
+				return { ok: false, message: `Goal ${current.id} was deleted or archived by another process while the task update was in progress; the task was not updated.` };
 			}
+			const diskRevision = freshDisk.revision ?? 0;
+			if (diskRevision !== capturedRevision) {
+				if (retriesLeft > 0) {
+					// Retry once against the fresh state; the transition validation
+					// below is the guard for task status/structure changes.
+					return this.updateTaskAttempt(ctx, spec, retriesLeft - 1);
+				}
+				return { ok: false, message: `Goal ${current.id} was modified by another process (revision ${capturedRevision} -> ${diskRevision}); current revision is ${diskRevision}. The task was not updated.` };
+			}
+			const base = mergeGoalPromptFromDisk(ctx, current);
+			if (!base.taskList) {
+				return { ok: false, message: "The goal has no task list." };
+			}
+			const task = findTaskInTree(base.taskList.tasks, spec.taskId);
+			if (!task) {
+				return { ok: false, message: `Task "${spec.taskId}" not found.` };
+			}
+			if (spec.validate) {
+				const gate = spec.validate(task);
+				if (!gate.ok) return gate;
+			}
+			const updated = spec.update(task);
+			if (typeof updated === "object" && "ok" in updated && !updated.ok) return updated;
+			const updatedTask = updated as GoalTask;
+			const updatedTasks = updateTaskInTree(base.taskList.tasks, spec.taskId, () => updatedTask);
+			const mutated = sanitizeGoalPaths(ctx, {
+				...base,
+				taskList: { ...base.taskList, tasks: updatedTasks },
+				updatedAt: nowIso(),
+				revision: capturedRevision + 1,
+			});
+			const written = writeActiveGoalFile(ctx, mutated);
+			if (spec.ledger) {
+				try {
+					for (const event of spec.ledger(written, updatedTask)) {
+						const append = appendGoalEvent(ctx, event);
+						if (!append.ok) {
+							this.ref.onDiagnostic({
+								severity: "warning",
+								source: "ledger",
+								goalId: "goalId" in event ? event.goalId : undefined,
+								eventType: event.type,
+								message: `Ledger append failed for ${event.type}${("goalId" in event) ? ` (goal ${event.goalId})` : ""}: ${String(append.error)}`,
+							});
+						}
+					}
+				} catch (err) {
+					// Unexpected ledger-spec error after the authoritative write keeps
+					// the successful state transition.
+					this.ref.onDiagnostic({
+						severity: "warning",
+						source: "ledger",
+						goalId: spec.taskId,
+						message: `Ledger spec error during task update: ${String(err)}`,
+					});
+				}
+			}
+			this.ref.setFocused(written);
+			return { ok: true, goal: written, task: updatedTask };
+		} finally {
+			lock.release();
 		}
-		this.ref.setFocused(written);
-		return { ok: true, goal: written, task: updatedTask };
 	}
 
-	/** Persist the focused goal: bump updatedAt, merge objective from disk, write active or archive. */
+	/**
+	 * Persist the focused goal: bump updatedAt, merge objective from disk, write
+	 * active or archive. Serialized by the per-goal lock with a short bounded
+	 * budget; if another process bumped the revision meanwhile, the persist is
+	 * skipped (returns null) so a stale usage/updatedAt snapshot never
+	 * overwrites a concurrent authoritative change.
+	 */
 	persist(ctx: GoalServiceContext): GoalRecord | null {
 		const current = this.ref.getFocused();
 		if (!current) return null;
-		const merged = mergeGoalPromptFromDisk(ctx, { ...current, updatedAt: nowIso() });
-		const written = merged.status === "complete" ? archiveGoalFile(ctx, merged) : writeActiveGoalFile(ctx, merged);
-		this.ref.setFocused(written);
-		return written;
+		const capturedRevision = current.revision ?? 0;
+		let lock: GoalLock;
+		try {
+			lock = acquireGoalLock(ctx, current.id, { attempts: 10, retryMs: 25 });
+		} catch {
+			// Another writer holds the goal lock; skip this persist tick.
+			return null;
+		}
+		try {
+			const freshDisk = this.readFreshDiskGoal(ctx, current);
+			if (!freshDisk || (freshDisk.revision ?? 0) !== capturedRevision) {
+				return null;
+			}
+			const merged = mergeGoalPromptFromDisk(ctx, { ...current, updatedAt: nowIso(), revision: capturedRevision + 1 });
+			const written = merged.status === "complete" ? archiveGoalFile(ctx, merged) : writeActiveGoalFile(ctx, merged);
+			this.ref.setFocused(written);
+			return written;
+		} finally {
+			lock.release();
+		}
 	}
 
 	/** Create a goal: write active file → ledger → memory/focus commit. */

@@ -315,7 +315,13 @@ pi.registerTool(defineTool({
 			}],
 		});
 		if (!applyResult.ok) {
-			return core.focusedOperationCancelledResult("Task list proposal", taskListFocus);
+			// A stale writer receives a typed conflict carrying the current
+			// revision; whole-tree replacement is authoritative and must not
+			// silently merge unknown new structure (follow-up Stage 4).
+			return {
+				content: [{ type: "text", text: `Task list not applied: ${applyResult.message ?? "the state mutation was rejected"}. Review the current goal and re-propose the task list.` }],
+				details: goalDetails(core.state.goal),
+			};
 		}
 		core.runtime.markTurnStopped(core.state.goal.id);
 		core.updateUI(ctx);

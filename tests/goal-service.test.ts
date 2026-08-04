@@ -6,7 +6,7 @@
  *   → 4. active-file write → 5. ledger append → 6. memory commit → 7. effects
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -16,6 +16,7 @@ import { GoalService, type GoalServiceRef } from "../extensions/goal-service.ts"
 import { createGoal, type GoalRecord } from "../extensions/goal-record.ts";
 import { writeActiveGoalFile, parseGoalFile, serializeGoalFile } from "../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../extensions/goal-ledger.ts";
+import { acquireGoalLock } from "../extensions/storage/goal-lock.ts";
 
 // ── Fake ref: in-memory pool + focus mirroring the extension's closure state ─
 
@@ -314,4 +315,207 @@ it("ledger append failure after the authoritative write keeps the state transiti
 	}
 });
 
+});
+
+
+// ── Follow-up Stage 4: cross-process mutation control ───────────────────────
+
+describe("cross-process mutation control (follow-up Stage 4)", () => {
+	/** A second GoalService instance + ref on the SAME cwd (separate session). */
+	function secondWriter(cwd: string) {
+		const active = readdirNames(path.join(cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"))[0]!;
+		const diskGoal = parseGoalFile(path.join(cwd, ".pi", "goals", active))!;
+		const { ref, log } = makeRef(diskGoal);
+		return { service: new GoalService(ref), ref, log };
+	}
+
+	it("objective race: exactly one initial write succeeds; the stale writer gets a typed conflict", () => {
+		const f = fixture();
+		try {
+			const b = secondWriter(f.cwd);
+			// Both writers are past their first read: each ref holds revision 0.
+			assert.equal(f.ref.getFocused()?.revision ?? 0, 0, "writer A read revision 0");
+			assert.equal(b.ref.getFocused()?.revision ?? 0, 0, "writer B read revision 0");
+
+			const a = f.service.apply({ cwd: f.cwd }, {
+				reconcile: false,
+				focusToken: f.ref.focusToken(f.written.id),
+				mutate: (g) => ({ ...g, objective: "=== Goal ===\nObjective: Writer A" }),
+			});
+			assert.ok(a.ok, "first writer succeeds");
+			const bRes = b.service.apply({ cwd: f.cwd }, {
+				reconcile: false,
+				focusToken: b.ref.focusToken(f.written.id),
+				mutate: (g) => ({ ...g, objective: "=== Goal ===\nObjective: Writer B" }),
+			});
+			assert.equal(bRes.ok, false, "stale writer must not overwrite blindly");
+			if (!bRes.ok) {
+				assert.ok(bRes.message.includes("revision"), `conflict message carries the revision: ${bRes.message}`);
+				assert.ok(bRes.message.includes("current revision is 1"), "current revision reported");
+			}
+			const disk = parseGoalFile(path.join(f.cwd, ".pi", "goals", activeFiles(f.cwd)[0]!))!;
+			assert.ok(disk.objective.includes("Writer A"), "only writer A's mutation landed");
+			assert.equal(disk.revision, 1, "revision incremented exactly once");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("task replacement race (set_goal_tasks-style): stale writer conflicts instead of merging", () => {
+		const f = fixture();
+		try {
+			const b = secondWriter(f.cwd);
+			const a = f.service.apply({ cwd: f.cwd }, {
+				reconcile: false,
+				focusToken: f.ref.focusToken(f.written.id),
+				mutate: (g) => ({
+					...g,
+					taskList: { tasks: [{ id: "t1", title: "Writer A task", status: "pending" as const }], blockCompletion: false, proposedAt: new Date().toISOString() },
+				}),
+			});
+			assert.ok(a.ok);
+			const bRes = b.service.apply({ cwd: f.cwd }, {
+				reconcile: false,
+				focusToken: b.ref.focusToken(f.written.id),
+				mutate: (g) => ({
+					...g,
+					taskList: { tasks: [{ id: "t9", title: "Writer B task", status: "pending" as const }], blockCompletion: true, proposedAt: new Date().toISOString() },
+				}),
+			});
+			assert.equal(bRes.ok, false, "concurrent task replacement must conflict, not silently merge unknown structure");
+			if (!bRes.ok) assert.ok(bRes.message.includes("revision"), bRes.message);
+			const disk = parseGoalFile(path.join(f.cwd, ".pi", "goals", activeFiles(f.cwd)[0]!))!;
+			assert.equal(disk.taskList?.tasks.length, 1, "only writer A's structure landed");
+			assert.equal(disk.taskList?.tasks[0]?.id, "t1");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("task status race: exactly one task completion write succeeds; the second gets a typed failure", () => {
+		const f = fixture();
+		try {
+			const seeded = f.service.apply({ cwd: f.cwd }, {
+				reconcile: false,
+				focusToken: f.ref.focusToken(f.written.id),
+				mutate: (g) => ({
+					...g,
+					taskList: { tasks: [{ id: "t1", title: "Shared task", status: "pending" as const }], blockCompletion: false, proposedAt: new Date().toISOString() },
+				}),
+			});
+			assert.ok(seeded.ok);
+			const b = secondWriter(f.cwd);
+			const complete = (task: { id: string; status: string }) => task.status === "pending"
+				? { ok: true as const }
+				: { ok: false as const, message: `Task ${task.id} is already ${task.status}; completion does not apply.` };
+			const a = f.service.updateTask({ cwd: f.cwd }, {
+				taskId: "t1",
+				validate: complete,
+				update: (task) => ({ ...task, status: "complete" as const, completedAt: new Date().toISOString() }),
+			});
+			assert.ok(a.ok, "first writer completes the task");
+			const bRes = b.service.updateTask({ cwd: f.cwd }, {
+				taskId: "t1",
+				validate: complete,
+				update: (task) => ({ ...task, status: "complete" as const, completedAt: new Date().toISOString() }),
+			});
+			assert.equal(bRes.ok, false, "second writer must fail");
+			if (!bRes.ok) assert.ok(bRes.message.includes("already complete"), `typed transition failure: ${bRes.message}`);
+			const disk = parseGoalFile(path.join(f.cwd, ".pi", "goals", activeFiles(f.cwd)[0]!))!;
+			assert.equal(disk.taskList?.tasks.find((t) => t.id === "t1")?.status, "complete");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("archive race: a goal archived by another process conflicts instead of being resurrected", () => {
+		const f = fixture();
+		try {
+			const b = secondWriter(f.cwd);
+			const a = f.service.apply({ cwd: f.cwd }, {
+				reconcile: false,
+				archive: true,
+				commitFocused: false,
+				mutate: (g) => ({ ...g, status: "complete" as const, stopReason: "user" as const }),
+			});
+			assert.ok(a.ok);
+			assert.equal(activeFiles(f.cwd).length, 0, "archived by writer A");
+			const bRes = b.service.apply({ cwd: f.cwd }, {
+				reconcile: false,
+				focusToken: b.ref.focusToken(f.written.id),
+				mutate: (g) => ({ ...g, objective: "=== Goal ===\nObjective: Resurrected" }),
+			});
+			assert.equal(bRes.ok, false, "stale writer must not resurrect the archived goal");
+			if (!bRes.ok) assert.ok(bRes.message.includes("deleted or archived"), bRes.message);
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("delete race: an externally deleted goal conflicts instead of being recreated", () => {
+		const f = fixture();
+		try {
+			rmSync(path.join(f.cwd, ".pi", "goals", activeFiles(f.cwd)[0]!));
+			const res = f.service.apply({ cwd: f.cwd }, {
+				reconcile: false,
+				focusToken: f.ref.focusToken(f.written.id),
+				mutate: (g) => ({ ...g, objective: "=== Goal ===\nObjective: Recreated" }),
+			});
+			assert.equal(res.ok, false, "deleted goal must not be resurrected");
+			if (!res.ok) assert.ok(res.message.includes("deleted or archived"), res.message);
+			assert.equal(activeFiles(f.cwd).length, 0, "no active file recreated");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("stale locks are recovered: a dead-pid lock does not block acquisition", () => {
+		const f = fixture();
+		try {
+			const lockDir = path.join(f.cwd, ".pi", "goals", ".locks");
+			mkdirSync(lockDir, { recursive: true });
+			const lockPath = path.join(lockDir, `${f.written.id}.lock`);
+			// A lock left by a process that no longer exists.
+			writeFileSync(lockPath, JSON.stringify({ pid: 99999999, startedAt: "2020-01-01T00:00:00.000Z" }), "utf8");
+			const lock = acquireGoalLock({ cwd: f.cwd }, f.written.id, { attempts: 3, retryMs: 5 });
+			lock.release();
+			assert.ok(!existsSync(lockPath), "stale lock removed and released");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("a live lock is honored and released locks are reusable", () => {
+		const f = fixture();
+		try {
+			const first = acquireGoalLock({ cwd: f.cwd }, f.written.id);
+			// A live holder must not be stolen: bounded acquisition times out.
+			assert.throws(
+				() => acquireGoalLock({ cwd: f.cwd }, f.written.id, { attempts: 3, retryMs: 5 }),
+				/Timed out acquiring/,
+			);
+			first.release();
+			// After release the lock is reusable.
+			const again = acquireGoalLock({ cwd: f.cwd }, f.written.id, { attempts: 3 });
+			again.release();
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("revision round-trips through the file and legacy records normalize to zero", () => {
+		const f = fixture();
+		try {
+			const raw = readFileSync(path.join(f.cwd, ".pi", "goals", activeFiles(f.cwd)[0]!), "utf8");
+			assert.ok(raw.includes('"revision": 0'), "revision persisted in the goal file");
+			// A legacy file without the key normalizes to zero on parse.
+			const legacy = raw.replace('"revision": 0,', "");
+			const legacyPath = path.join(f.cwd, ".pi", "goals", "legacy_goal.md");
+			writeFileSync(legacyPath, legacy, "utf8");
+			const parsed = parseGoalFile(legacyPath)!;
+			assert.equal(parsed.revision, 0, "missing revision normalizes to zero");
+		} finally {
+			f.cleanup();
+		}
+	});
 });

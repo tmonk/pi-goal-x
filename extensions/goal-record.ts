@@ -46,6 +46,13 @@ export interface GoalRecord {
 	pauseReason?: string;
 	pauseSuggestedAction?: string;
 	skipAuditor?: boolean;
+	/**
+	 * Persisted monotonic mutation counter (follow-up Stage 4). Missing
+	 * historical values normalize to zero. Cross-process writers compare the
+	 * revision captured at reconciliation with the disk value under the
+	 * per-goal lock; a mismatch is a typed conflict instead of a blind write.
+	 */
+	revision?: number;
 	/** Optional token budget (whole tokens). When accounted usage reaches it, the runtime marks the goal budget_limited. */
 	tokenBudget?: number;
 	taskList?: GoalTaskList;
@@ -163,6 +170,7 @@ export function createGoal(config: GoalCreationConfig, now = Date.now()): GoalRe
 		autoContinue: config.autoContinue,
 		usage: emptyUsage(),
 		sisyphus: config.sisyphus,
+		revision: 0,
 		createdAt: timestamp,
 		updatedAt: timestamp,
 	};
@@ -287,6 +295,7 @@ export function normalizeGoalRecord(value: unknown): GoalRecord | null {
 		pauseReason: typeof raw.pauseReason === "string" && raw.pauseReason.trim() ? raw.pauseReason : undefined,
 		pauseSuggestedAction: typeof raw.pauseSuggestedAction === "string" && raw.pauseSuggestedAction.trim() ? raw.pauseSuggestedAction : undefined,
 		skipAuditor: raw.skipAuditor === true ? true : undefined,
+		revision: Number.isSafeInteger(raw.revision) && (raw.revision as number) >= 0 ? (raw.revision as number) : 0,
 		tokenBudget: normalizePositiveSafeInteger(raw.tokenBudget),
 		taskList: normalizeTaskList(raw.taskList),
 		verificationContract: typeof raw.verificationContract === "string" ? raw.verificationContract : undefined,
