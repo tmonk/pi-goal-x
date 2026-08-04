@@ -40,11 +40,58 @@
 
 ## Planned milestones
 
-1. Settings menu made declarative and fully operable.
-2. Clear, task, and audit confirmation semantics corrected.
-3. Completion failures propagated without success reports.
-4. Cross-process revision/locking semantics implemented and race-tested.
-5. Residual drafting runtime, UI, and policy code deleted.
-6. Experiment matrix, smoke model, and timeout behavior hardened.
-7. Pi SDK development graph upgraded and audited.
-8. Integration matrix and living docs closed; release validation recorded.
+1. Complete Stage 5.1: persistent/cancellable drafts, focused status, and
+   per-draft auditor selection.
+2. Complete compatibility without tool sprawl: immediate agent pause,
+   user-authorized abandonment guidance, user-started tweak enforcement, and
+   optional untrusted completion summaries.
+3. Experiment matrix, smoke model, and timeout behavior hardened.
+4. Pi SDK development graph upgraded and audited.
+5. Integration matrix and living docs closed; release validation recorded.
+
+## 2026-08-04 — Product correction: drafting is a first-class workflow
+
+The prior simplification plan incorrectly classified the human-facing drafting
+experience as removable runtime complexity. User direction corrects this:
+
+- `/goal [seed]` and `/sisyphus [seed]` must start full guided drafting.
+- `/goal-direct <objective>` and `/sisyphus-direct <objective>` are the only
+  creation paths that skip questions, refinement, task co-design, and final
+  confirmation.
+- The agent must be able to ask structured questions, refine in conversation,
+  choose a useful task hierarchy, and propose objective, tasks, and verification
+  contract together for one atomic confirmation.
+- The fixed three/five tool profile remains the normal execution surface. A
+  separate transient drafting profile is allowed only during a user-started
+  draft and is removed before execution begins.
+
+The in-progress Stage 5 deletion of questionnaire/drafting files is superseded
+and must be reversed or repurposed, not completed.
+
+## 2026-08-04 — Guided drafting restored
+
+- Restored the questionnaire UI and drafting prompt helpers instead of
+  completing their deletion.
+- `/goal [seed]` and `/sisyphus [seed]` now enter a transient drafting tool
+  profile; bare `/goal` asks the agent to establish the objective.
+- Added explicit `/goal-direct` and `/sisyphus-direct` immediate-creation
+  paths. They clear an in-progress draft before creating a goal.
+- Added `propose_goal_draft` orchestration: it validates the selected mode,
+  converts and validates the agent-proposed flat task tree with configured
+  depth, displays objective and tasks for confirmation, and persists them in
+  the creation transaction only after confirmation.
+- `/goal-tweak` now starts a guided, confirmed refinement draft; no direct
+  objective replacement occurs.
+- Added surface and handler regression coverage for draft entry, headless
+  confirmation, task-tree persistence, direct bypass, and profile restoration.
+
+## 2026-08-04 — Post-restoration parity audit
+
+- Identified remaining reductions relative to v0.21: no dedicated draft
+  cancellation or focused-status command, no per-draft auditor toggle, no
+  immediate agent pause, no agent-requested tweak entry, and no optional
+  executor completion summary for the auditor.
+- Added Stage 5.1 to PRODUCT.md and TECH.md. It restores `/goal-cancel`,
+  `/goal-status`, persistent draft state, and per-draft auditor selection;
+  it also specifies compact-contract replacements for pause, abandonment,
+  tweak ownership, and completion claims.

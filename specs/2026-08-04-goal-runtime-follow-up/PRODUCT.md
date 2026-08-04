@@ -2,19 +2,22 @@
 
 ## Status
 
-Ready for review. This remediation plan follows the independent post-0.23
-implementation assessment. It preserves the five-tool model surface and the
-ten-command user palette.
+Implementing. Stages 1–4 are shipped; guided drafting is restored in the
+working tree, but its compatibility and lifecycle edges still need completion.
+This plan preserves the five-tool execution surface while restoring the full
+guided goal-drafting experience as a transient, user-invoked mode.
 
 ## Outcome
 
 Keep the Codex-inspired interface small and stable while making every retained
 feature predictable and easy to operate:
 
-- three core model tools, plus two task tools when tasks are enabled;
+- three core execution tools, plus two task tools when tasks are enabled;
 - separate, tab-completable slash commands for frequent user-owned actions;
 - durable goals, tasks, budgets, session-local focus, and independent audit;
-- no legacy drafting UI or vocabulary leaking into the current workflow;
+- full guided drafting with structured questions, iterative refinement,
+  agent-proposed tasks and verification contracts, and final confirmation;
+- explicit direct commands for users who intentionally want to skip drafting;
 - safe destructive actions and safe multi-session writes;
 - fast local validation and an enforceable experiment release set.
 
@@ -50,9 +53,9 @@ The follow-up audit found these remaining gaps.
 
 1. Reconciliation happens at operation start, but there is no cross-process
    lock or compare-and-swap. Truly simultaneous writers remain last-write-wins.
-2. goal-questionnaire.ts, drafting event/focus vocabulary, hidden debug
-   helpers, and unused completion-paperwork policy remain after the advertised
-   drafting cleanup.
+2. The simplification work incorrectly treated the valuable human-facing
+   drafting workflow as model-tool clutter. The questionnaire and proposal
+   runtime must be restored and maintained, not deleted.
 3. Experiment case resolution does not enforce SUPPORTED_CASES.json, the
    provider smoke test ignores a model override, and timeout behavior assumes
    GNU tooling that is not standard on macOS.
@@ -65,6 +68,14 @@ The follow-up audit found these remaining gaps.
    compatibility validation rather than an automatic audit-force rewrite.
 
 ## Product requirements
+
+### Shipped baseline
+
+The settings, confirmation/audit UX, completion-transaction, and
+cross-process mutation requirements below are retained as historical design
+records: their implementation landed in the current branch before this
+drafting-parity update. The remaining implementation scope is Stage 5.1 and
+the still-unshipped experiment, dependency, and release work.
 
 ### Settings
 
@@ -101,15 +112,41 @@ The follow-up audit found these remaining gaps.
 - Whole-tree task replacement is documented as authoritative after conflict
   validation; it must not claim to preserve structure it intentionally omits.
 
-### Runtime simplification
+### Goal creation and drafting
 
-- Remove the questionnaire/proposal implementation once task confirmation has
-  its own small component.
-- Remove or rename drafting-only event types, focus fields, debug paths,
-  comments, and tests. Preserve read compatibility only for proven historical
-  records.
-- Remove unused completion and verification paperwork from the active auditor
-  contract, or document and test a concrete consumer.
+- `/goal [seed]` starts a guided regular-goal drafting phase. It never creates
+  the durable goal immediately.
+- `/sisyphus [seed]` starts the same guided phase with ordered-step and
+  per-step-done-criteria requirements.
+- `/goal-direct <objective>` creates a regular goal immediately and skips all
+  drafting questions and confirmation.
+- `/sisyphus-direct <objective>` creates a Sisyphus goal immediately and skips
+  drafting.
+- Bare `/goal` starts drafting with no seed; it is not the status command.
+  `/goal-list` remains the human-facing status/list entry point.
+- During drafting, the agent can ask one structured question or a batch
+  questionnaire, discuss/refine answers in ordinary conversation, and submit a
+  complete proposal for confirmation.
+- The final proposal includes the full objective, success criteria,
+  boundaries, verification contract when enabled, and an agent-chosen task
+  tree when tasks are enabled.
+- Confirmation creates the goal and its tasks atomically, focuses it, clears
+  drafting state, restores the fixed execution profile, and begins normal
+  execution. Continue-refining preserves the draft; cancel creates nothing.
+- No active goal file or task list is written before final confirmation.
+
+### Drafting versus execution surface
+
+- The normal execution surface remains exactly the fixed three/five tools.
+- Guided drafting may install a separate transient drafting profile containing
+  structured question and final-proposal tools. These tools exist only while a
+  user-started draft is active and disappear on confirm, cancel, or session
+  cleanup.
+- Simplification must remove obsolete duplication, not the questionnaire,
+  proposal confirmation, task co-design, verification-contract formation, or
+  iterative refinement experience.
+- `/goal-tweak` should reuse the same refinement/questionnaire machinery for an
+  existing objective rather than silently replacing it in one step.
 
 ### Validation and experiments
 
@@ -123,19 +160,55 @@ The follow-up audit found these remaining gaps.
   the full development audit and the published/runtime audit to pass, or record
   a time-bounded exception with exact reachability analysis.
 
+## Restored-workflow parity
+
+The first restoration corrected default drafting, questionnaires, task
+proposal, and confirmation. These remaining reductions from v0.21 must be
+implemented or resolved as explicit product decisions:
+
+1. `/goal-cancel` clears an in-progress guided draft without creating,
+   archiving, pausing, or modifying a durable goal. It replaces the
+   overloaded historical `/goal-abort` draft-cancellation behavior.
+2. `/goal-status` restores the compact focused-goal summary lost when bare
+   `/goal` became the drafting entry. `/goal-list` remains the pool view.
+3. Goal-draft confirmation offers a per-draft completion-auditor choice,
+   defaulting to effective settings. Confirmation persists the selected value
+   as `skipAuditor` on a created or tweaked goal.
+4. Agent lifecycle ownership requires an explicit compatibility decision:
+   restore bounded agent pause/abandon reports, or retain user-only pause and
+   clear and document that agents can only report `blocked` after the
+   three-consecutive-turn rule.
+5. Agent-initiated objective-change proposals require the same decision. The
+   user-started `/goal-tweak` flow is restored, but `propose_goal_tweak` is
+   not. A retained user-owned model must ask the user to invoke `/goal-tweak`;
+   a restored path must enter the same confirmation flow.
+6. `update_goal({status:"complete"})` intentionally replaced `complete_goal`.
+   Decide whether an optional, non-authoritative executor completion summary
+   should again be supplied to the auditor.
+
 ## Non-goals
 
 - Collapsing the interface to one universal tool.
-- Returning to phase-dependent tool visibility.
+- Removing or weakening guided drafting, questionnaires, task co-design, or
+  final proposal confirmation.
+- Exposing drafting tools during ordinary goal execution.
 - Replacing frequent slash commands with a nested command grammar.
-- Adding agent-owned pause, resume, clear, focus, or settings tools.
+- Reintroducing an overloaded `/goal-abort` command; draft cancellation and
+  durable-goal abandonment must have unambiguous separate semantics.
 - Running paid model experiments as part of normal tests.
 
 ## Release criteria
 
 1. All P1 flows have handler-level regression tests.
-2. A deterministic two-writer test proves the chosen conflict behavior.
-3. Typecheck, dependency audits, all fast tests, the real-SDK compatibility run, package
+2. `/goal` and `/sisyphus` pass full questionnaire → refinement → proposal →
+   atomic confirmation E2E tests, including agent-chosen nested tasks.
+3. `/goal-direct` and `/sisyphus-direct` pass no-question immediate-creation
+   tests.
+4. A deterministic two-writer test proves the chosen conflict behavior.
+5. Typecheck, dependency audits, all fast tests, the real-SDK compatibility run, package
    dry-run, and diff checks pass.
-4. README, architecture, agent-flow, changelog, experiment docs, and the
+6. README, architecture, agent-flow, changelog, experiment docs, and the
    supported matrix describe only verified implementation.
+7. `/goal-cancel`, `/goal-status`, per-draft auditor selection, and the final
+   lifecycle/tweak/completion-summary compatibility decisions each have
+   handler-level tests and accurate command/tool documentation.
