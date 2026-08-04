@@ -18,6 +18,15 @@ import { clearGoalCommandMessage, validateResumeGoal } from "./goal-policy.ts";
 import { mergeGoalPromptFromDisk } from "./storage/goal-files.ts";
 import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
 import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "./goal-drafting.ts";
+import {
+	AUDITOR_THINKING_LEVELS,
+	buildAuditorModelChoices,
+	configuredAuditorModelKey,
+	filterAuditorModelChoices,
+	parseManualAuditorModel,
+	thinkingLevelChoices,
+	type AuditorChoice,
+} from "./auditor-selector.ts";
 import type { GoalCore } from "./goal-state.ts";
 
 /**
@@ -226,27 +235,27 @@ export function registerGoalCommands(core: GoalCore): void {
 	/**
 	 * One declarative row table for the settings menu (follow-up Stage 1).
 	 * Rendering and dispatch both derive from SETTING_ROWS so the displayed
-	 * fields and the selectable fields can never drift apart. All eight
-	 * persisted fields are present and operable.
+	 * fields and the selectable fields can never drift apart. Rows are grouped
+	 * into sections (Goal behavior / Task tracking / Completion auditor). All
+	 * eight persisted fields are present and operable.
 	 */
 	type SettingRow = {
 		key: keyof GoalSettings;
 		label: string;
-		kind: "boolean" | "text" | "thinking" | "positiveInteger";
+		section: "Goal behavior" | "Task tracking" | "Completion auditor";
+		kind: "boolean" | "modelSelector" | "thinking" | "positiveInteger";
 	};
 
 	const SETTING_ROWS: readonly SettingRow[] = [
-		{ key: "disabled", label: "disabled", kind: "boolean" },
-		{ key: "provider", label: "provider", kind: "text" },
-		{ key: "model", label: "model", kind: "text" },
-		{ key: "thinkingLevel", label: "thinking_level", kind: "thinking" },
-		{ key: "disableTasks", label: "disableTasks", kind: "boolean" },
-		{ key: "disableContracts", label: "disableContracts", kind: "boolean" },
-		{ key: "subtaskDepth", label: "subtaskDepth", kind: "positiveInteger" },
-		{ key: "autoSelectSingleGoal", label: "autoSelectSingleGoal", kind: "boolean" },
+		{ key: "autoSelectSingleGoal", label: "autoSelectSingleGoal", section: "Goal behavior", kind: "boolean" },
+		{ key: "disableContracts", label: "disableContracts", section: "Goal behavior", kind: "boolean" },
+		{ key: "disableTasks", label: "disableTasks", section: "Task tracking", kind: "boolean" },
+		{ key: "subtaskDepth", label: "subtaskDepth", section: "Task tracking", kind: "positiveInteger" },
+		{ key: "disabled", label: "auditor disabled", section: "Completion auditor", kind: "boolean" },
+		{ key: "provider", label: "provider", section: "Completion auditor", kind: "modelSelector" },
+		{ key: "model", label: "model", section: "Completion auditor", kind: "modelSelector" },
+		{ key: "thinkingLevel", label: "thinking_level", section: "Completion auditor", kind: "thinking" },
 	];
-
-	const THINKING_VALUES = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
 	function settingsValue(config: GoalSettings, key: keyof GoalSettings): string {
 		if (key === "disabled" || key === "disableTasks" || key === "disableContracts" || key === "autoSelectSingleGoal") {
@@ -284,11 +293,19 @@ export function registerGoalCommands(core: GoalCore): void {
 		try {
 			while (true) {
 				const config = loadGoalSettingsFileConfig(ctx.cwd);
-				const options = settingsLines(config).map((line) => `  ${line}`);
-				options.unshift("─── Settings ───");
+				const options: string[] = [];
+				let lastSection: string | null = null;
+				for (const row of SETTING_ROWS) {
+					if (row.section !== lastSection) {
+						options.push(`─── ${row.section} ───`);
+						lastSection = row.section;
+					}
+					options.push(`  ${row.label}: ${settingsValue(config, row.key)}`);
+				}
 				options.push("Done");
 				const selected = await ctx.ui.select("Goal settings", options);
-				if (!selected || selected === "Done" || selected === "─── Settings ───") break;
+				if (!selected || selected === "Done") break;
+				if (selected.startsWith("───")) continue; // section headers are not rows
 				// Strip leading spaces and resolve the row from the display label.
 				const selectedTrimmed = selected.trim();
 				const colon = selectedTrimmed.indexOf(":");
@@ -320,32 +337,54 @@ export function registerGoalCommands(core: GoalCore): void {
 			}
 			if (row.kind === "thinking") {
 				const currentValue = settingsValue(config, key);
-				const input = await ctx.ui.input(`Set ${row.label}`, currentValue === "(default)" ? "Leave empty for default" : currentValue);
-				if (input === undefined) continue;
-				const inputTrimmed = input.trim();
+				const levels = thinkingLevelChoices(currentValue === "(default)" ? undefined : currentValue);
+				const picked = await ctx.ui.select(`Set ${row.label}`, levels);
+				if (!picked) continue;
+				const trimmed = picked.trim().replace(/^\u2713\s+/, "");
 				const next: GoalSettings = { ...config };
-				if (!inputTrimmed) {
+				if (trimmed === "(default)") {
 					delete next.thinkingLevel;
-				} else if (!(THINKING_VALUES as readonly string[]).includes(inputTrimmed)) {
-					ctx.ui.notify("thinking_level must be one of: off, minimal, low, medium, high, xhigh", "warning");
-					continue;
+				} else if ((AUDITOR_THINKING_LEVELS as readonly string[]).includes(trimmed)) {
+					next.thinkingLevel = trimmed as GoalSettings["thinkingLevel"];
 				} else {
-					next.thinkingLevel = inputTrimmed as GoalSettings["thinkingLevel"];
+					continue;
 				}
 				saveSettings(next);
 				ctx.ui.notify(`Settings saved:\n${settingsLines(loadGoalSettingsFileConfig(ctx.cwd)).join("\n")}`, "info");
 				continue;
 			}
-			// text rows (provider, model)
-			const currentValue = settingsValue(config, key);
-			const input = await ctx.ui.input(`Set ${row.label}`, currentValue === "(default)" ? "Leave empty for default" : currentValue);
-			if (input === undefined) continue;
+			// modelSelector rows (provider, model): searchable auditor model
+			// picker with current-session/default, authenticated models (\u2713
+			// marker on the exact current selection), and a manual
+			// provider/model entry (ll01 pattern). Either row applies the same
+			// provider+model pair.
+			const configured = configuredAuditorModelKey(config);
+			const session = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+			const choices = buildAuditorModelChoices(ctx.modelRegistry.getAvailable(), configured, session);
+			const filter = await ctx.ui.input("Filter auditor models (provider/id/name; blank = all)", "");
+			if (filter === undefined) continue;
+			const filtered = filterAuditorModelChoices(choices, filter);
+			const picked = await ctx.ui.select("Select auditor model", filtered.map((choice) => choice.label));
+			if (!picked) continue;
+			const choice = filtered.find((candidate: AuditorChoice) => candidate.label === picked);
+			if (!choice) continue;
 			const next: GoalSettings = { ...config };
-			const inputTrimmed = input.trim();
-			if (!inputTrimmed) {
-				delete next[key];
-			} else if (key === "provider" || key === "model") {
-				next[key] = inputTrimmed;
+			if (choice.kind === "default") {
+				delete next.provider;
+				delete next.model;
+			} else if (choice.kind === "manual") {
+				const input = await ctx.ui.input("Set auditor provider/model", configured ?? "provider/model");
+				if (input === undefined) continue;
+				const parsed = parseManualAuditorModel(input);
+				if ("error" in parsed) {
+					ctx.ui.notify(parsed.error, "warning");
+					continue;
+				}
+				next.provider = parsed.provider;
+				next.model = parsed.model;
+			} else {
+				next.provider = choice.provider;
+				next.model = choice.model;
 			}
 			saveSettings(next);
 			ctx.ui.notify(`Settings saved:\n${settingsLines(loadGoalSettingsFileConfig(ctx.cwd)).join("\n")}`, "info");

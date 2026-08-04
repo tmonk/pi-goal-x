@@ -7,6 +7,7 @@ import test from "node:test";
 import {
 	buildGoalAuditorPrompt,
 	parseAuditorDecision,
+	resolveAuditorModel,
 	resolveAuditorSessionModelOptions,
 	runGoalCompletionAuditor,
 } from "../extensions/goal-auditor.ts";
@@ -363,4 +364,35 @@ test("runGoalCompletionAuditor cleans up abort listener on normal completion", a
 	} finally {
 		fs.rmSync(cwd, { recursive: true, force: true });
 	}
+});
+
+test("resolveAuditorModel refuses provider-only settings instead of choosing the first available model", () => {
+	const result = resolveAuditorModel({
+		modelRegistry: {
+			getAvailable: () => [{ provider: "deepseek", id: "first" }],
+			find: () => undefined,
+		},
+		model: undefined,
+	} as never, { provider: "deepseek" } as never);
+	assert.equal(result.model, undefined);
+	assert.match(result.error ?? "", /Provider-only auditor configuration is refused/);
+});
+
+test("resolveAuditorModel resolves explicit provider/model and falls back to the session model when unset", () => {
+	const model = { provider: "alpha", id: "fast" };
+	const explicit = resolveAuditorModel({
+		modelRegistry: {
+			getAvailable: () => [model],
+			find: (p: string, m: string) => (p === "alpha" && m === "fast" ? model : undefined),
+		},
+		model: undefined,
+	} as never, { provider: "alpha", model: "fast" } as never);
+	assert.equal(explicit.model, model);
+
+	const session = { provider: "alpha", id: "fast" };
+	const unset = resolveAuditorModel({
+		modelRegistry: { getAvailable: () => [model], find: () => undefined },
+		model: session,
+	} as never, {} as never);
+	assert.equal(unset.model, session);
 });

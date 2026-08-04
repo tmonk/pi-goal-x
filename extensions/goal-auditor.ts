@@ -211,15 +211,19 @@ function makeAuditorResourceLoader(): ResourceLoader {
 	};
 }
 
-function resolveAuditorModel(ctx: ExtensionContext, config: GoalSettings): { model: Model<any> | undefined; error?: string } {
+export function resolveAuditorModel(ctx: ExtensionContext, config: GoalSettings): { model: Model<any> | undefined; error?: string } {
 	if (!config.model && !config.provider) return { model: ctx.model };
 	if (config.provider && config.model) {
 		const model = ctx.modelRegistry.find(config.provider, config.model);
 		return model ? { model } : { model: undefined, error: `Configured auditor model not found: ${config.provider}/${config.model}` };
 	}
 	if (config.provider) {
-		const matches = ctx.modelRegistry.getAvailable().filter((model) => model.provider === config.provider);
-		return matches[0] ? { model: matches[0] } : { model: undefined, error: `No available auditor model for provider: ${config.provider}` };
+		// Refuse provider-only config: silently picking the first available model
+		// hides misconfiguration. An explicit provider/model is required.
+		return {
+			model: undefined,
+			error: `Provider-only auditor configuration is refused; select an explicit model for provider: ${config.provider}`,
+		};
 	}
 	if (!config.model) return { model: ctx.model };
 	const slash = config.model.indexOf("/");

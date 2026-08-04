@@ -162,3 +162,35 @@ test("/goal-direct and /sisyphus-direct create goals immediately", async () => {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
 	}
 });
+
+test("goal-settings renders sectioned rows with clearer auditor wording", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-settings-"));
+	mkdirSync(path.join(cwd, ".pi"), { recursive: true });
+	const h = createHarness(cwd);
+	try {
+		// The settings menu is interactive: give the harness ctx a TUI.
+		(h.ctx as { hasUI: boolean }).hasUI = true;
+		// Capture the options list passed to ctx.ui.select; answer "Done" on the
+		// first call so the menu closes immediately.
+		let captured: string[] | null = null;
+		const ui = h.ctx.ui as unknown as { select: (title: string, options: string[]) => Promise<string | undefined> };
+		ui.select = async (_title: string, options: string[]) => {
+			if (captured === null) captured = options;
+			return "Done";
+		};
+
+		await h.commands.get("goal-settings")!.handler("", h.ctx);
+
+		assert.ok(captured, "settings menu must call ui.select");
+		const opts: string[] = captured ?? [];
+		assert.ok(opts.includes("─── Goal behavior ───"), "Goal behavior section header");
+		assert.ok(opts.includes("─── Task tracking ───"), "Task tracking section header");
+		assert.ok(opts.includes("─── Completion auditor ───"), "Completion auditor section header");
+		assert.ok(opts.some((l) => l.includes("auditor disabled:")), "clearer auditor wording row");
+		assert.ok(opts.some((l) => l.includes("provider:")) && opts.some((l) => l.includes("model:")), "provider/model rows");
+		assert.equal(opts.filter((l) => l.startsWith("───")).length, 3, "exactly three sections");
+		assert.ok(opts.includes("Done"));
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
