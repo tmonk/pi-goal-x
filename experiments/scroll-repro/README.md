@@ -23,3 +23,8 @@ Findings (rows=40): scenario A open causes 4–120 viewport scrolls depending on
 chat/dialog length (the write burst at the bottom row); scenario B causes 0 in
 all configurations. See `specs/2026-08-04-goal-confirmation-scroll-fix/` for
 the full root-cause write-up.
+
+`validate-alt-screen.mjs` validates the fix: with
+`installTuiAltScreenSupport()` applied and the dialog in the alternate screen
+buffer, dialog open/close cause 0 main-screen scrolls and the post-close
+identity render writes 0 bytes (vs 78/121 with the editor swap).

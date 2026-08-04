@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { supportsAltScreen } from "./tui-alt-screen.ts";
 
 
 export type GoalDraftingFocus = "goal" | "sisyphus";
@@ -98,6 +99,23 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 		// sequences every cycle, which can cause terminal viewport snapping).
 		const wasHardwareCursorShown = tui.getShowHardwareCursor();
 		tui.setShowHardwareCursor(false);
+
+		// Alternate-screen modal: render the whole dialog in the terminal's
+		// alternate buffer so nothing writes to the main screen (viewport and
+		// scrollback position stay untouched across open/close). Falls back to
+		// pi's default editor-swap dialog when the running pi-tui lacks support.
+		const altScreen = supportsAltScreen(tui);
+		const finish = (result: GoalQuestionnaireResult) => {
+			if (altScreen) tui.exitAlternateScreen();
+			done(result);
+		};
+		// Height budget for in-dialog scrolling: the alternate buffer has no
+		// terminal scrollback, so overflowing content must scroll internally.
+		const terminalRows = (tui as { terminal?: { rows: number } }).terminal?.rows ?? 24;
+		const maxDialogHeight = Math.max(10, terminalRows - 2);
+		// Scroll offset over the rendered content; MAX_SAFE_INTEGER means
+		// "bottom-anchor" (render clamps it to the content max).
+		let scrollOffset = 0;
 		let currentTab = 0;
 		let optionIndex = 0;
 		let inputMode = false;
@@ -128,7 +146,7 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 			// Restore hardware cursor now that the dialog is closing
 			tui.setShowHardwareCursor(wasHardwareCursorShown);
 			const ordered = questions.map((q) => answers.get(q.id)).filter((a): a is GoalQuestionnaireAnswer => !!a);
-			done({ questions, answers: ordered, cancelled, auditorEnabled: auditorToggleInit ? auditorEnabled : undefined });
+			finish({ questions, answers: ordered, cancelled, auditorEnabled: auditorToggleInit ? auditorEnabled : undefined });
 		}
 
 		function currentQuestion(): GoalQuestionnaireQuestion | undefined {
@@ -174,6 +192,7 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 			const nextQ = currentQuestion();
 			if (nextQ) enterQuestion(nextQ);
 			else optionIndex = 0;
+			scrollOffset = Number.MAX_SAFE_INTEGER;
 			refresh();
 		}
 
@@ -209,6 +228,9 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 		}
 
 		enterQuestion(questions[0]);
+		// Bottom-anchor the first view so the actionable options/footer are
+		// visible immediately; PgUp/Home reveal the context above.
+		scrollOffset = Number.MAX_SAFE_INTEGER;
 
 		function handleInput(data: string) {
 			if (inputMode) {
@@ -244,6 +266,7 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 					const nextQ = currentQuestion();
 					if (nextQ) enterQuestion(nextQ);
 					else optionIndex = 0;
+					scrollOffset = Number.MAX_SAFE_INTEGER;
 					refresh();
 					return;
 				}
@@ -252,6 +275,7 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 					const nextQ = currentQuestion();
 					if (nextQ) enterQuestion(nextQ);
 					else optionIndex = 0;
+					scrollOffset = Number.MAX_SAFE_INTEGER;
 					refresh();
 					return;
 				}
@@ -260,6 +284,29 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 			if (currentTab === questions.length) {
 				if (matchesKey(data, Key.enter) && allAnswered()) submit(false);
 				else if (matchesKey(data, Key.escape)) submit(true);
+				return;
+			}
+
+			// In-dialog scrolling (PgUp/PgDn/Home/End) — only meaningful in the
+			// alternate screen, where the terminal provides no scrollback.
+			if (matchesKey(data, "pageUp")) {
+				scrollOffset = Math.max(0, scrollOffset - (maxDialogHeight - 2));
+				refresh();
+				return;
+			}
+			if (matchesKey(data, "pageDown")) {
+				scrollOffset = scrollOffset + (maxDialogHeight - 2);
+				refresh();
+				return;
+			}
+			if (matchesKey(data, "home")) {
+				scrollOffset = 0;
+				refresh();
+				return;
+			}
+			if (matchesKey(data, "end")) {
+				scrollOffset = Number.MAX_SAFE_INTEGER;
+				refresh();
 				return;
 			}
 
@@ -497,11 +544,36 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 					lines[i] = truncateToWidth(lines[i], safeWidth);
 				}
 			}
-			cachedLines = lines;
-			return lines;
+			cachedLines = windowLines(lines);
+			return cachedLines;
 		}
 
-		return { render, invalidate: () => { cachedLines = undefined; }, handleInput };
+		/**
+		 * Bound the rendered lines to the terminal height with in-place
+		 * scrolling (the alternate buffer has no terminal scrollback). Shows a
+		 * ▴/▾ indicator when content overflows; the footer/options stay in view
+		 * because the default view is bottom-anchored.
+		 */
+		function windowLines(all: string[]): string[] {
+			if (all.length <= maxDialogHeight) {
+				scrollOffset = 0;
+				return all;
+			}
+			const maxOffset = all.length - maxDialogHeight;
+			scrollOffset = Math.min(scrollOffset, maxOffset);
+			const canScrollUp = scrollOffset > 0;
+			const canScrollDown = scrollOffset < maxOffset;
+			const out: string[] = [];
+			if (canScrollUp) out.push(theme.fg("dim", `▴ ${scrollOffset}/${all.length} lines`));
+			const contentRows = maxDialogHeight - (canScrollUp ? 1 : 0) - (canScrollDown ? 1 : 0);
+			for (let i = scrollOffset; i < scrollOffset + contentRows; i++) out.push(all[i]);
+			if (canScrollDown) out.push(theme.fg("dim", `▾ ${scrollOffset + contentRows}/${all.length} lines`));
+			return out;
+		}
+
+		const component = { render, invalidate: () => { cachedLines = undefined; }, handleInput };
+		if (altScreen) tui.enterAlternateScreen(component);
+		return component;
 	});
 }
 

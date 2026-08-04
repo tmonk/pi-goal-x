@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { runGoalCompletionAuditor } from "./goal-auditor.ts";
 import { registerGoalCommands } from "./goal-commands.ts";
 import { registerGoalEvents } from "./goal-events.ts";
+import { installTuiAltScreenSupport } from "./tui-alt-screen.ts";
 import {
 	GOAL_AUDIT_ENTRY,
 	GOAL_EVENT_ENTRY,
@@ -25,6 +26,12 @@ export default function goalExtension(
 ): void {
 	pi.registerMessageRenderer<GoalEventDetails>(GOAL_EVENT_ENTRY, renderGoalEvent);
 	pi.registerMessageRenderer<GoalAuditEventDetails>(GOAL_AUDIT_ENTRY, renderGoalAuditEvent);
+
+	// Enable alternate-screen rendering for confirmation/questionnaire dialogs
+	// (keeps terminal scrollback and the user's reading position intact across
+	// dialog open/close). Idempotent; no-op against pi-tui builds that already
+	// provide the methods natively.
+	installTuiAltScreenSupport();
 
 	const core = createGoalCore(pi, dependencies);
 	registerGoalCommands(core);

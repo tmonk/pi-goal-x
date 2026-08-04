@@ -59,3 +59,51 @@ main-screen write exits scrollback). Only an alternate-screen modal (DECSET
   regression coverage.
 - Task-3: PR #11 port (full wrapped headings, no truncation).
 - Task-4: adapted regression tests, CHANGELOG, docs, full validation.
+
+## 2026-08-04 — Task-2 implemented: alternate-screen dialogs, fully isolated
+
+### Implemented
+
+- `extensions/tui-alt-screen.ts`: self-contained, idempotent augmentation of
+  the pi TUI prototype (`installTuiAltScreenSupport`) adding
+  `enterAlternateScreen` / `exitAlternateScreen` / `isAlternateScreenActive`
+  (DECSET 1049), with differential-state save/restore, a re-entrancy guard,
+  and a one-shot suppression of the post-close identity render's cosmetic
+  cursor write (zero bytes reach the main screen after the dialog closes).
+  Installed from `extensions/goal.ts` at load; feature-detected at use, so
+  unpatched environments fall back to pi's default dialogs.
+- `extensions/goal-questionnaire.ts`: `runGoalQuestionnaire` enters the
+  alternate screen on open and exits before `done`; gained height-aware
+  rendering with internal scrolling (▴/▾ indicators, PgUp/PgDn/Home/End,
+  bottom-anchored default so options/footer are visible immediately).
+- `extensions/goal-task-confirmation.ts` and
+  `extensions/widgets/goal-escape-dialog.ts`: same alt-screen wiring
+  (replacing their previous overlay options).
+- `tests/stubs/pi-tui.ts`: re-exports `Container` and `TUI` from
+  `dist/tui.js` so the test suites can exercise the real class.
+
+### Validation
+
+- `npm run check` — 0 errors.
+- `npm run test:unit` — 494 pass / 0 fail (incl. 12 new tests:
+  `tests/tui-alt-screen.test.ts` ×5, `tests/goal-questionnaire-alt-screen.test.ts`
+  ×4, `tests/goal-dialog-alt-screen.test.ts` ×3).
+- `npm run test:integration` — green; `npm run test:serial` — 494 pass / 0 fail.
+- `tests/.test-manifest.json` regenerated; `test:selfcheck` green.
+- `experiments/scroll-repro/validate-alt-screen.mjs` (real TUI + patch,
+  buffer-aware ANSI emulation): main-screen scrolls on dialog open/close are
+  0/0 and the post-close identity render writes 0 bytes — vs 78/121 scrolls
+  with the old editor swap at chat=120/dialog=80.
+- `tests/no-status-refresh-timer.test.ts` still green (no periodic redraws).
+
+### Manual reproduction (for interactive confirmation)
+
+1. Run pi with the patched extension in a real terminal (iTerm2/kitty/etc.).
+2. Have a long conversation / long goal objective so the chat buffer exceeds
+   the screen, then scroll up to read earlier content.
+3. Invoke /goal and let the agent propose a goal (propose_goal_draft).
+4. Expected: the terminal viewport does NOT move when the Confirm / Continue
+   Chatting dialog opens or closes; the dialog occupies a blank full screen;
+   PgUp/PgDn scroll inside the dialog when the proposal exceeds the terminal
+   height; after confirming, the user's scrollback view is exactly where it
+   was before the dialog.

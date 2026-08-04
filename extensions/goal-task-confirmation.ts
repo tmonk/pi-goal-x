@@ -1,6 +1,7 @@
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { supportsAltScreen } from "./tui-alt-screen.ts";
 import type { GoalTask } from "./goal-record.ts";
 
 /** Render a task tree for confirmation dialogs (structural view). */
@@ -48,6 +49,15 @@ async function showTaskListConfirmationDialog(ctx: ExtensionContext, proposalTex
 		(tui: TUI, theme: Theme, _keybindings: unknown, done: (result: TaskConfirmationResult) => void): Component => {
 			const wasHardwareCursorShown = tui.getShowHardwareCursor();
 			tui.setShowHardwareCursor(false);
+
+			// Alternate-screen modal: isolate all dialog rendering from the main
+			// screen so open/close cannot scroll the viewport or yank the user
+			// out of scrollback. Falls back to pi's default dialog otherwise.
+			const altScreen = supportsAltScreen(tui);
+			const finish = (result: TaskConfirmationResult) => {
+				if (altScreen) tui.exitAlternateScreen();
+				done(result);
+			};
 
 			// Default: "Confirm task list" (matches the pre-existing default).
 			let selectedIndex = 0;
@@ -131,38 +141,30 @@ async function showTaskListConfirmationDialog(ctx: ExtensionContext, proposalTex
 					return lines;
 				},
 
-				handleInput(data: string): void {
-					if (matchesKey(data, "up")) {
-						selectedIndex = (selectedIndex - 1 + OPTIONS.length) % OPTIONS.length;
-						tui.requestRender();
-						return;
-					}
-					if (matchesKey(data, "down")) {
-						selectedIndex = (selectedIndex + 1) % OPTIONS.length;
-						tui.requestRender();
-						return;
-					}
-					if (matchesKey(data, "enter")) {
-						done({ decision: OPTIONS[selectedIndex].value });
-						return;
-					}
-					if (matchesKey(data, "escape")) {
-						done({ decision: "cancel" });
-						return;
-					}
-				},
-			};
+					handleInput(data: string): void {
+						if (matchesKey(data, "up")) {
+							selectedIndex = (selectedIndex - 1 + OPTIONS.length) % OPTIONS.length;
+							tui.requestRender();
+							return;
+						}
+						if (matchesKey(data, "down")) {
+							selectedIndex = (selectedIndex + 1) % OPTIONS.length;
+							tui.requestRender();
+							return;
+						}
+						if (matchesKey(data, "enter")) {
+							finish({ decision: OPTIONS[selectedIndex].value });
+							return;
+						}
+						if (matchesKey(data, "escape")) {
+							finish({ decision: "cancel" });
+							return;
+						}
+					},
+				};
 
-			return component;
-		},
-		{
-			overlay: true,
-			overlayOptions: {
-				anchor: "center",
-				width: "70%",
-				minWidth: 50,
-				maxHeight: "60%",
+				if (altScreen) tui.enterAlternateScreen(component);
+				return component;
 			},
-		},
-	);
+		);
 }

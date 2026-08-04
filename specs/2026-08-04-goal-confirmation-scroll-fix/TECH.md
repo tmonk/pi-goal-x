@@ -106,20 +106,47 @@ both locations):
 
 ### pi-goal-x change
 
-`runGoalQuestionnaire` and `showTaskConfirmation` opt in by calling
-`tui.enterAlternateScreen(component)` from the `ctx.ui.custom` factory and
-`tui.exitAlternateScreen()` before invoking `done` (wrapping the `done`
-callback so the alternate screen is exited before pi's close path restores the
-editor and requests a render). The `setShowHardwareCursor(false)` workaround
-is retained as belt-and-braces but becomes mostly irrelevant since all dialog
-writes are isolated.
+A self-contained module, `extensions/tui-alt-screen.ts`, augments the pi TUI
+class at extension load time (`installTuiAltScreenSupport()`, called from
+goal.ts): it adds `enterAlternateScreen(component)` / `exitAlternateScreen()` /
+`isAlternateScreenActive()` to `TUI.prototype` (idempotent, feature-detected,
+and deliberately inert unless called). This means the published extension
+works against unpatched pi installs — no manual surgery on the global pi
+package is required — and the same code doubles as the reference
+implementation for an upstream pi-tui addition.
+
+`runGoalQuestionnaire`, `showTaskListConfirmationDialog`, and
+`showEscapeDialog` opt in from their `ctx.ui.custom` factories:
+
+- `const altScreen = supportsAltScreen(tui)` (feature-detect);
+- `tui.enterAlternateScreen(component)` before returning the component;
+- a wrapped `finish` calls `tui.exitAlternateScreen()` BEFORE `done`, so pi's
+  close path (restore editor + identity re-render) runs after the main screen
+  has been restored;
+- without support, the dialogs fall back to pi's default rendering (the
+  previous behavior).
+
+`exitAlternateScreen` also sets a one-shot suppression flag that makes the
+identity re-render pi triggers after close write ZERO bytes: the terminal
+restored the main screen byte-for-byte, and even the cosmetic
+cursor-positioning write would yank a scrolled-up user back to the bottom.
+
+The questionnaire gained height-aware rendering: the alternate buffer has no
+terminal scrollback, so when its content exceeds the terminal height it shows
+a ▴/▾-indicated window (bottom-anchored by default so the actionable options
+and footer are immediately visible) and scrolls internally with
+PgUp/PgDn/Home/End. The task-list confirmation and escape dialog kept their
+boxed, bounded layouts (task confirmation previously used the overlay path;
+both now render in the alternate screen for consistent reading-position
+preservation).
 
 Note: the running pi loads its own bundled pi-tui from
-`/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/`,
-so the patch must be applied there to take effect in the user's sessions, and
-documented as an isolated pi-level patch (the published pi-goal-x package
-cannot vendor pi internals through peerDependencies). The repo's devDependency
-copy is patched identically so the unit suites exercise the same code.
+`/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/`.
+The patch reaches pi's TUI instances because the extension imports
+`TUI` from `@earendil-works/pi-tui` (a peerDependency, resolved to pi's copy)
+and augments the shared prototype; if resolution ever yields a different
+module instance, `supportsAltScreen` returns false and the dialogs degrade
+gracefully to pi's default rendering instead of breaking.
 
 ## PR #11 port plan (task-3)
 
@@ -139,11 +166,20 @@ copy is patched identically so the unit suites exercise the same code.
 ## Validation plan
 
 - `npm run check` — 0 errors; `npm run test:all` — 0 failures.
-- New tests: pi-tui alt-screen unit test (smcup/rmcup emitted, state saved and
-  restored, post-restore identity render writes nothing); pi-goal-x dialog
-  tests (factory enters/exits the alternate screen, exit precedes done);
-  heading-rendering regression tests (full, wrapped, never truncated).
+- New tests: `tests/tui-alt-screen.test.ts` (real TUI + fake terminal: smcup/
+  rmcup emitted, render isolated, state restored, post-close identity render
+  writes zero bytes, re-entrancy guard, idempotent install);
+  `tests/goal-questionnaire-alt-screen.test.ts` (enter on open, exit before
+  done, fallback, height windowing + PgUp/PgDn/Home/End scrolling);
+  `tests/goal-dialog-alt-screen.test.ts` (task confirmation and escape dialog
+  enter/exit ordering + fallback).
+- Headless end-to-end validation: `experiments/scroll-repro/validate-alt-screen.mjs`
+  runs the real TUI + patch with a buffer-aware ANSI emulator — main-screen
+  scrolls on dialog open/close: 0/0 and 0 bytes after close (vs. 78/121 with
+  the editor swap at chat=120/dialog=80).
+- Manual terminal reproduction (documented in MILESTONES for interactive
+  confirmation): run pi with a long conversation, scroll up to read earlier
+  content, trigger propose_goal_draft — the viewport must not move when the
+  Confirm dialog opens or closes.
 - `tests/no-status-refresh-timer.test.ts` still green (no periodic redraws).
-- Manual terminal reproduction: long objective + scrollback review →
-  propose_goal_draft → viewport must not move on open or close.
 - `npm pack --dry-run` clean; `git diff --check` clean; CHANGELOG updated.
