@@ -162,9 +162,11 @@ checkpoint runs, the checkpoint becomes stale and cannot drive task work.
 `update_goal({status: "complete"})` has no verification-summary parameter. The
 runtime validates that the goal is in a completable status, optionally warns
 about pending tasks (`blockCompletion`), appends a `completion_requested`
-ledger event, and starts the auditor. The global disabled-auditor branch is
-currently defective in 0.22: it still requires a removed model bypass field
-and therefore rejects completion.
+ledger event, and starts the auditor. When `settings.disabled` is true the
+auditor is skipped immediately: the flow records `audit_skipped` and completes
+through the normal deferred-completion path. Legacy persisted
+`skipAuditor: true` records are honored the same way; Escape during a running
+audit remains the explicit per-attempt user bypass.
 
 ### 9.2 The audit appears in the conversation
 
@@ -263,11 +265,12 @@ goal.ts (thin installer)
   external edits and multi-session use stay consistent; old readers keep
   existing data readable.
 
-## 15. Current hardening plan
+## 15. Hardening (0.23)
 
-This document describes 0.22 as implemented, including the deviations called
-out above. The prioritized correction plan is
-[`specs/2026-08-04-goal-simplification-hardening`](../specs/2026-08-04-goal-simplification-hardening/TECH.md).
-It also addresses paused-record resurrection, stale task-tree overwrites,
-task-confirmation audit coupling, budget validation, ledger semantics, legacy
-runtime code, and unsupported E2E/experiment assets.
+This document describes the shipped 0.23 behavior. The 2026-08-04 hardening
+plan
+([`specs/2026-08-04-goal-simplification-hardening`](../specs/2026-08-04-goal-simplification-hardening/TECH.md))
+is implemented: it also addresses paused-record resurrection, stale
+task-tree overwrites, task-confirmation audit coupling, budget validation,
+ledger semantics, legacy
+runtime code, and the E2E/experiment surface (all cases migrated to the five-tool interface; the handler-level integration suite is part of test:all).

@@ -98,3 +98,28 @@ commit with the suite green:
 - C20-C26 real-model pass rates are not recorded in this goal: per the
   confirmed decision, verification is author-only with mechanical rubrics and
   no model budget spent.
+
+## 2026-08-05 — Independent-audit round: fixes applied
+
+The first completion audit (independent auditor agent) found two blocking
+items; both were fixed and re-validated:
+
+1. **Settings-menu regression (goal-commands.ts).** The Stage 2
+   `saveSettings` closure recursively called itself instead of
+   `saveGoalSettingsFileConfig`, so every /goal-settings edit crashed with
+   `RangeError: Maximum call stack size exceeded` and never persisted. Fixed
+   the call site; added two handler-level regression tests that drive the
+   actual goal-settings command through a UI stub (toggle `disabled` persists;
+   field editing does not overflow). The tests fail on the old code.
+2. **Living-doc closure.** README, docs/architecture.md, and
+   docs/agent-flow-design.md still presented the pre-hardening 0.22 gaps
+   (phase-dependent tool subset, host-tool force-enable, unreachable
+   disabled-auditor completion, silent ledger failures, legacy e2e/experiment
+   surfaces, "known 0.22 hardening gaps" section) as current. Rewrote every
+   such passage to the implemented, tested 0.23 behavior; zero "0.22"/gap
+   phrasing remains in the three living docs.
+
+Re-validation after the fixes: `npm run check` 0 errors; `test:unit`
+452 pass/0 fail; `test:integration` 9 pass/0 fail (two new settings-menu
+tests); `test:serial` 452 pass/0 fail; `npm pack --dry-run` clean; `git diff
+--check` clean.

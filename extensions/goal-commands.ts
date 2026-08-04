@@ -238,7 +238,7 @@ export function registerGoalCommands(core: GoalCore): void {
 		// transitions never touch the profile.
 		const tasksEnabledAtMenuStart = !loadGoalSettings(ctx.cwd).disableTasks;
 		const saveSettings = (next: GoalSettings): void => {
-			saveSettings(next);
+			saveGoalSettingsFileConfig(ctx.cwd, next);
 			const tasksEnabledNow = !loadGoalSettings(ctx.cwd).disableTasks;
 			if (tasksEnabledNow !== tasksEnabledAtMenuStart) {
 				core.installGoalToolProfile(tasksEnabledNow);

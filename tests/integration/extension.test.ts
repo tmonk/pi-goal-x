@@ -23,44 +23,54 @@ import { goalLedgerPath } from "../../extensions/goal-ledger.ts";
 interface Harness {
 	handlers: Map<string, Function>;
 	tools: Map<string, ToolDefinition>;
+	commands: Map<string, any>;
 	ctx: ExtensionContext;
 }
 
-function createHarness(cwd: string, sessionEntries: unknown[], runCompletionAuditor?: (...args: any[]) => Promise<any>): Harness {
+interface HarnessOptions {
+	cwd: string;
+	sessionEntries: unknown[];
+	runCompletionAuditor?: (...args: any[]) => Promise<any>;
+	hasUI?: boolean;
+	select?: (prompt: string, options: string[]) => Promise<string | undefined>;
+}
+
+function createHarness(options: HarnessOptions): Harness {
 	const handlers = new Map<string, Function>();
 	const tools = new Map<string, ToolDefinition>();
+	const commands = new Map<string, any>();
 	const pi = {
 		registerTool: (def: ToolDefinition) => { tools.set(def.name, def); },
-		registerCommand: () => {},
+		registerCommand: (name: string, def: any) => { commands.set(name, def); },
 		on: (event: string, handler: Function) => { handlers.set(event, handler); },
 		appendEntry: () => {},
 		registerMessageRenderer: () => {},
 		sendMessage: () => {},
 		getActiveTools: () => ["read", "bash", "edit", "write"],
 		setActiveTools: () => {},
-		hasUI: false,
+		hasUI: options.hasUI ?? false,
 	};
 	const ctx = {
-		cwd,
-		hasUI: false,
+		cwd: options.cwd,
+		hasUI: options.hasUI ?? false,
 		sessionManager: {
-			getBranch: () => sessionEntries,
-			getCwd: () => cwd,
+			getBranch: () => options.sessionEntries,
+			getCwd: () => options.cwd,
 			getSessionId: () => "integration-session",
-			getRoot: () => cwd,
+			getRoot: () => options.cwd,
 		},
 		ui: {
 			notify: () => {}, setStatus: () => {}, setWidget: () => {},
-			onTerminalInput: () => () => {}, select: async () => undefined,
-			confirm: async () => false, custom: async () => undefined,
+			onTerminalInput: () => () => {}, select: options.select ?? (async () => undefined),
+			input: async () => undefined, confirm: async () => false, custom: async () => undefined,
 		},
 		getSystemPrompt: () => "base",
 		isIdle: () => true,
 		hasPendingMessages: () => false,
 		abort: () => {},
 	} as unknown as ExtensionContext;
-	goalExtension(pi as any, runCompletionAuditor ? { runCompletionAuditor } : {});
-	return { handlers, tools, ctx };
+	goalExtension(pi as any, options.runCompletionAuditor ? { runCompletionAuditor: options.runCompletionAuditor } : {});
+	return { handlers, tools, commands, ctx };
 }
 
 async function start(h: Harness): Promise<void> {
@@ -140,10 +150,10 @@ describe("five-tool handler integration", () => {
 		const f = fixture();
 		let auditArgs: any = null;
 		try {
-			const h = createHarness(f.cwd, f.sessionEntries, async (args: any) => {
+			const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries, runCompletionAuditor: async (args: any) => {
 				auditArgs = args;
 				return { approved: true, disapproved: false, output: "All good\n<approved/>", model: "fixture" };
-			});
+			} });
 			await start(h);
 			const update = h.tools.get("update_goal")!;
 			const result = await (update.execute as any)("u-1", { status: "complete" }, new AbortController().signal, undefined, h.ctx);
@@ -164,8 +174,8 @@ describe("five-tool handler integration", () => {
 	it("update_goal(complete) with a disapproved auditor fixture stays open with feedback", async () => {
 		const f = fixture();
 		try {
-			const h = createHarness(f.cwd, f.sessionEntries, async () =>
-				({ approved: false, disapproved: true, output: "Missing requirement\n<disapproved/>", model: "fixture" }));
+			const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries, runCompletionAuditor: async () =>
+				({ approved: false, disapproved: true, output: "Missing requirement\n<disapproved/>", model: "fixture" }) });
 			await start(h);
 			const update = h.tools.get("update_goal")!;
 			const result = await (update.execute as any)("u-2", { status: "complete" }, new AbortController().signal, undefined, h.ctx);
@@ -182,7 +192,7 @@ describe("five-tool handler integration", () => {
 		let auditorCalled = 0;
 		try {
 			writeFileSync(path.join(f.cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ disabled: true }));
-			const h = createHarness(f.cwd, f.sessionEntries, async () => { auditorCalled++; throw new Error("must not run"); });
+			const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries, runCompletionAuditor: async () => { auditorCalled++; throw new Error("must not run"); } });
 			await start(h);
 			const update = h.tools.get("update_goal")!;
 			const result = await (update.execute as any)("u-3", { status: "complete" }, new AbortController().signal, undefined, h.ctx);
@@ -201,7 +211,7 @@ describe("five-tool handler integration", () => {
 		const f = fixture({ skipAuditor: true });
 		let auditorCalled = 0;
 		try {
-			const h = createHarness(f.cwd, f.sessionEntries, async () => { auditorCalled++; throw new Error("must not run"); });
+			const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries, runCompletionAuditor: async () => { auditorCalled++; throw new Error("must not run"); } });
 			await start(h);
 			const update = h.tools.get("update_goal")!;
 			const result = await (update.execute as any)("u-4", { status: "complete" }, new AbortController().signal, undefined, h.ctx);
@@ -216,7 +226,7 @@ describe("five-tool handler integration", () => {
 	it("set_goal_tasks + update_goal_task work end-to-end through the registered handlers", async () => {
 		const f = fixture();
 		try {
-			const h = createHarness(f.cwd, f.sessionEntries);
+			const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries });
 			await start(h);
 			const setTasks = h.tools.get("set_goal_tasks")!;
 			const result = await (setTasks.execute as any)("s-1", {
@@ -240,7 +250,7 @@ describe("five-tool handler integration", () => {
 	it("tasks-disabled settings install the three-core profile", async () => {
 		const f = fixture({ tasksEnabled: false });
 		try {
-			const h = createHarness(f.cwd, f.sessionEntries);
+			const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries });
 			await start(h);
 			for (const present of ["create_goal", "get_goal", "update_goal"]) {
 				assert.ok(h.tools.has(present), `${present} registered`);
@@ -256,3 +266,46 @@ describe("five-tool handler integration", () => {
 		}
 	});
 });
+
+	it("goal-settings menu toggles the disabled switch through the registered handler", async () => {
+		const f = fixture();
+		try {
+			const selects: string[] = ["  disabled: (default)", "Done"];
+			const h = createHarness({
+				cwd: f.cwd,
+				sessionEntries: f.sessionEntries,
+				hasUI: true,
+				select: async () => selects.shift(),
+			});
+			await start(h);
+			const settingsCmd = h.commands.get("goal-settings");
+			assert.ok(settingsCmd, "goal-settings command registered");
+			await settingsCmd.handler("", h.ctx); // must not throw (regression: recursive saveSettings)
+			const settingsPath = path.join(f.cwd, ".pi", "pi-goal-x-settings.json");
+			const saved = JSON.parse(readFileSync(settingsPath, "utf8"));
+			assert.equal(saved.disabled, true, "menu toggle must persist disabled: true");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("goal-settings menu editing persists a field without stack overflow", async () => {
+		const f = fixture();
+		try {
+			writeFileSync(path.join(f.cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ disabled: true }));
+			const selects: string[] = ["  thinking_level: off", "off", "Done"];
+			const h = createHarness({
+				cwd: f.cwd,
+				sessionEntries: f.sessionEntries,
+				hasUI: true,
+				select: async () => selects.shift(),
+			});
+			await start(h);
+			const settingsCmd = h.commands.get("goal-settings");
+			await settingsCmd.handler("", h.ctx);
+			const saved = JSON.parse(readFileSync(path.join(f.cwd, ".pi", "pi-goal-x-settings.json"), "utf8"));
+			assert.equal(saved.disabled, true, "existing setting preserved");
+		} finally {
+			f.cleanup();
+		}
+	});

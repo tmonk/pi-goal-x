@@ -14,7 +14,7 @@ The extension is designed around one rule: **the user owns intent; the agent exe
 - **Structured task lists with subtasks** — Break goals into trackable tasks. Agents can mark individual tasks or subtasks complete without stopping the turn. Subtask IDs are validated for uniqueness and depth.
 - **Verification contracts** — Attach plain-text requirements to a goal or task (e.g. "Run npm test, zero failures"). The independent auditor verifies them from actual evidence; per-task contracts require evidence on `update_goal_task`.
 - **Independent completion auditor** — When a goal is marked complete, a separate pi agent inspects the workspace, verifies every success criterion, and approves or rejects before the goal is archived. You can press Escape during an audit to abort it. Configure the auditor model via `/goal-settings`.
-- **Compact five-tool vocabulary** — The extension registers `create_goal`, `get_goal`, `update_goal`, and (when tasks are enabled) `set_goal_tasks` / `update_goal_task`. The current 0.22 implementation still advertises a state-dependent subset; the hardening plan below makes the three/five profile truly stable.
+- **Compact five-tool vocabulary** — The extension registers exactly five goal tools (`create_goal`, `get_goal`, `update_goal`, `set_goal_tasks`, `update_goal_task`), or exactly the three core tools when tasks are disabled. The profile is fixed: lifecycle transitions never add, remove, or restore goal tools, and the extension never touches your ordinary work tools.
 - **Immutable objective** — The agent cannot silently change your goal. Objective updates happen through user-owned `/goal-tweak`.
 - **User-owned lifecycle** — Pause, resume, clear, focus, and settings are immediate user commands; the model reports only complete/blocked outcomes.
 - **Disk-backed state** — Active and archived goals persist in `.pi/goals/`. Goal state survives session compaction, workspace switches, and context churn.
@@ -139,11 +139,12 @@ Creating a goal with `/goal <objective>` or `/sisyphus <objective>` never clears
 
 ## Agent tools
 
-The extension registers five model tools. In 0.22, the active subset is still
-recomputed from focus and lifecycle state: `create_goal` and `get_goal` are
-always active; `update_goal` requires a focused non-complete goal; task tools
-are further gated by task settings and status. This is a known implementation
-gap against the intended stable three/five profile.
+The extension registers a fixed profile of five model tools (three core tools
+when tasks are disabled). The profile is installed once at session start (and
+after a settings change that toggles `disableTasks`); focus, status, budget,
+completion, audit, and compaction transitions never change it. Invalid
+lifecycle calls are rejected by the tool handler with a concise state-aware
+result rather than by hiding tools.
 
 | Tool | Purpose |
 |---|---|
@@ -153,10 +154,9 @@ gap against the intended stable three/five profile.
 | `set_goal_tasks` | Create or structurally replace the task tree (flat parent-linked input, confirmation dialog, matching ids keep status/evidence). |
 | `update_goal_task` | Update one task without stopping the turn: complete (evidence for contracted tasks), skipped (reason), pending (reopens skipped). |
 
-Plus ordinary Pi work tools. The 0.22 synchronizer currently force-enables
-`write`, `read`, `bash`, and `edit`; the hardening plan changes this so the
-extension preserves the user's host-tool selection. Lifecycle actions the
-model does not own (pause, resume, clear, focus, tweak, settings) are
+Plus ordinary Pi work tools, which the extension never adds, removes, or
+force-enables: the user's host-tool selection is preserved. Lifecycle actions
+the model does not own (pause, resume, clear, focus, tweak, settings) are
 user-owned slash commands. When `disableTasks` is enabled, only the three core
 tools are advertised.
 
@@ -286,7 +286,7 @@ Configured interactively via `/goal-settings`, or edited directly:
 | `provider` | system default | Provider name for the auditor agent |
 | `model` | system default | Model name for the auditor agent |
 | `thinkingLevel` | system default | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
-| `disabled` | `false` | Intended to skip completion audit. In 0.22 this setting exposes a known bug: `update_goal(complete)` is rejected because a removed internal bypass flag is still required. Keep it `false` until the hardening fix lands. |
+| `disabled` | `false` | When `true`, skips the completion audit: `update_goal({status:"complete"})` records an `audit_skipped` event and completes through the normal deferred-completion path. |
 
 **Env var overrides:**
 - `PI_GOAL_DISABLE_TASKS=1` — disable task features (takes precedence over file)
@@ -314,9 +314,10 @@ npm pack --dry-run
 The fast suite uses Node's built-in test runner and covers records/storage,
 lifecycle policy, the service/runtime/accounting split, the five tool handlers,
 the ten commands, tasks/contracts, auditing, compaction, prompts, and widgets.
-Use `npm run test:serial` in low-file-descriptor environments. The legacy
-`tests/e2e/` runner is not included by `npm test` and is currently unsupported;
-it is scheduled for replacement in the hardening plan.
+Use `npm run test:serial` in low-file-descriptor environments. The handler-level
+integration suite (`npm run test:integration`, part of `test:all`) drives the
+actual registered tools with an auditor fixture; the legacy `tests/e2e/run.ts`
+real-model runner is manual and opt-in.
 
 The experiment harness under `experiments/` runs full pi sessions against real
 model calls and mechanical rubrics. C20-C26 target the five-tool interface;
@@ -373,15 +374,18 @@ extensions/widgets/goal-notifications.ts widget-style notification text
 - **Disk-backed continuity**: goal state survives context churn and can be audited from `.pi/goals/`.
 - **Human-owned focus**: the agent may work on the focused goal, but only user commands/UI selection switch focus.
 
-## Known 0.22 hardening gaps
+## Hardening (0.23)
 
-The implementation assessment found two release-blocking bugs and several
-simplification gaps: paused legacy records can reactivate during normalization;
-disabled-auditor completion is unreachable; the advertised tool subset remains
-phase-dependent; task confirmation still owns an unrelated auditor toggle; and
-the legacy E2E/experiment surfaces are stale. The complete prioritized repair
-plan is in
-[`specs/2026-08-04-goal-simplification-hardening`](specs/2026-08-04-goal-simplification-hardening/PRODUCT.md).
+The 2026-08-04 hardening pass
+([`specs/2026-08-04-goal-simplification-hardening`](specs/2026-08-04-goal-simplification-hardening/PRODUCT.md))
+is implemented and validated in 0.23: persisted lifecycle status is
+authoritative (paused stays paused, including legacy `autoContinue: true`
+records), disabled-auditor completion works and records `audit_skipped`, the
+three/five tool profile is fixed and host tools are never touched, task
+operations are disk-fresh transactions with structural-clearing merge
+semantics, `token_budget` is a positive safe integer, reopening a task writes
+`task_reopened`, ledger failures surface through an observable diagnostic, and
+the drafting-era runtime coupling was removed.
 
 ## Relationship to pi-goal
 

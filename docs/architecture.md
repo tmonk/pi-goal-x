@@ -67,10 +67,10 @@ reconcile (disk wins over stale memory)
 ```
 
 If the write fails, nothing commits and nothing is appended. If the ledger
-append fails after a successful write, the transition still stands. The 0.22
-implementation silently drops that append failure despite older documentation
-claiming a surfaced diagnostic; the hardening plan adds an observable service
-diagnostic. Handlers keep validation and
+append fails after a successful write, the transition still stands and the
+failure is surfaced through the `onDiagnostic` hook (an observable
+`severity: warning, source: ledger` diagnostic) without rolling back the
+authoritative state write. Handlers keep validation and
 runtime/UI effects; they never touch storage directly. `goal.ts` has zero
 direct write or ledger calls.
 
@@ -198,14 +198,12 @@ The extension registers a five-tool model vocabulary:
 | `set_goal_tasks` | Create or structurally replace the task tree (flat parent-linked input, confirmation dialog, id-stable merge). |
 | `update_goal_task` | Update one task without stopping the turn: complete (evidence for contracted tasks), skipped (reason), pending (reopens skipped). |
 
-The 0.22 active subset is still phase-dependent. `get_goal` and `create_goal`
-are always present; `update_goal` appears whenever a non-complete goal is
-focused; both task tools appear for active goals, and only `set_goal_tasks`
-appears for paused goals. Blocked/budget-limited/no-focus states therefore do
-not expose the intended fixed three/five set. `syncGoalTools()` is called from
-commands, tools, events, runtime effects, and UI paths and also force-adds
-`read`, `write`, `edit`, and `bash`. This is an implementation gap, not the
-target design; see the 2026-08-04 hardening spec.
+The advertised profile is FIXED: exactly five goal tools when tasks are
+enabled, exactly three when disabled. `installGoalToolProfile` is called only
+at session start and after a settings change that toggles `disableTasks`;
+focus, status, budget, completion, audit, and compaction transitions never add,
+remove, or restore goal tools, and ordinary pi work tools are never touched.
+Invalid lifecycle calls return concise state-aware tool results instead.
 
 The `tool_call` interceptor blocks work tools after a stop tool has fired in
 the same turn, and blocks work tools when the checkpoint that triggered the
@@ -248,8 +246,8 @@ The auditor uses the current/default model unless
 The user can Escape an in-flight audit to choose "complete without audit" or
 "continue working". Archival is deferred to `turn_end` so the agent can see the
 auditor result before the goal is archived. The global `disabled` setting is
-intended to skip this audit, but 0.22 currently rejects completion because the
-flow still requires a removed internal bypass flag.
+an explicit user-owned switch: completion skips the auditor, records
+`audit_skipped`, and proceeds through the normal deferred-completion path.
 
 ## Disk format and old-data reads
 
@@ -284,11 +282,12 @@ compaction recovery, and the bounded steering prompts. The separate
 removed signatures. In `experiments/`, C20-C26 target the current interface;
 C1-C19 and B1-B2 remain historical until migrated.
 
-## Assessed implementation gaps
+## Hardening (0.23)
 
-The complete remediation plan lives in
-[`specs/2026-08-04-goal-simplification-hardening`](../specs/2026-08-04-goal-simplification-hardening/TECH.md).
-In addition to the tool and audit gaps above, it covers paused-status
-normalization, disk-fresh task transactions, structural-field clearing, token
-budget integer validation, ledger reopen semantics/diagnostics, legacy module
-removal, and supported E2E/experiment coverage.
+The 2026-08-04 hardening plan
+([`specs/2026-08-04-goal-simplification-hardening`](../specs/2026-08-04-goal-simplification-hardening/TECH.md))
+is implemented: paused-status normalization (status authoritative, legacy
+`autoContinue: true` records stay paused), disk-fresh task transactions with
+structural-field clearing, token-budget integer validation, `task_reopened`
+ledger semantics with observable diagnostics, drafting-era module removal, and
+the supported integration/experiment coverage described above.
