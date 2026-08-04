@@ -2,10 +2,12 @@
 
 > **Historical proposal (partly implemented, superseded 2026-08-03).** Tool
 > names, drafting flow, and non-goals below describe the design at the time and
-> are not the current 0.22 API. Current behavior is documented in
-> [`docs/architecture.md`](architecture.md); remaining corrections are planned
-> in the
-> [2026-08-04 hardening spec](../specs/2026-08-04-goal-simplification-hardening/PRODUCT.md).
+> are not the current API. Current behavior is documented in
+> [`docs/architecture.md`](architecture.md); the governing implemented plans
+> are the
+> [2026-08-04 hardening spec](../specs/2026-08-04-goal-simplification-hardening/PRODUCT.md)
+> and the
+> [2026-08-04 runtime follow-up](../specs/2026-08-04-goal-runtime-follow-up/PRODUCT.md).
 
 ## 1. Summary
 

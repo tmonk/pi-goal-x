@@ -16,9 +16,9 @@ The extension is designed around one rule: **the user owns intent; the agent exe
 - **Independent completion auditor** — When a goal is marked complete, a separate pi agent inspects the workspace, verifies every success criterion, and approves or rejects before the goal is archived. You can press Escape during an audit to abort it. Configure the auditor model via `/goal-settings`.
 - **Compact execution surface** — Normal work uses five goal tools (`create_goal`, `get_goal`, `update_goal`, `set_goal_tasks`, `update_goal_task`), or three when tasks are disabled. A user-started draft temporarily exposes only `goal_question`, `goal_questionnaire`, and `propose_goal_draft`; confirmation restores the execution profile without touching ordinary Pi work tools.
 - **Immutable objective** — The agent cannot silently change your goal. Objective updates happen through user-owned `/goal-tweak`.
-- **User-owned lifecycle** — Pause, resume, clear, focus, and settings are immediate user commands; the model reports only complete/blocked outcomes.
+- **User-owned lifecycle** — Pause, resume, clear, focus, and settings are immediate user commands; the model reports complete, blocked, or (with a reason) paused outcomes.
 - **Disk-backed state** — Active and archived goals persist in `.pi/goals/`. Goal state survives session compaction, workspace switches, and context churn.
-- **Configurable settings** — Tune the auditor model and subtask depth through `/goal-settings`; task/contract toggles and the auditor-disable switch live in `.pi/pi-goal-x-settings.json`.
+- **Configurable settings** — Every persisted setting (task/contract toggles, subtask depth, auditor provider/model/thinking, auto-select, disable) is selectable and operable through `/goal-settings`; the file `.pi/pi-goal-x-settings.json` remains the durable store.
 
 > **Fork of [@capyup/pi-goal](https://github.com/capyup/pi-goal)** — pi-goal-x is now maintained independently. It adds verification contracts, recursive task lists, multiple durable goals with session-local focus, an immutable objective, deferred archival, a configurable completion auditor, token budgets, compaction recovery, and a live progress widget.
 
@@ -76,7 +76,7 @@ If the objective is already final, use `/goal-direct <objective>` or
 
 ## User commands
 
-The curated twelve-command palette (each lifecycle action is independently
+The curated fourteen-command palette (each lifecycle action is independently
 registered so tab completion is self-explanatory):
 
 ```text
@@ -85,13 +85,15 @@ registered so tab completion is self-explanatory):
 /goal-direct <objective> Create and focus a regular goal immediately, without drafting.
 /sisyphus-direct <objective> Create and focus a Sisyphus goal immediately, without drafting.
 /goal-list              List all open goals in .pi/goals/ and the current focus
+/goal-status            Show the focused goal and how many other goals are open (read-only)
 /goal-focus             Choose this session's focused goal
 /goal-unfocus           Stop this session's goal work without modifying the shared goal
 /goal-tweak <change>    Guide a confirmed refinement of the focused objective and task plan
 /goal-pause             Pause the focused active goal
 /goal-resume            Resume a paused or blocked goal
 /goal-settings          Configure pi-goal settings, including auditor model settings
-/goal-clear             Archive the focused goal (0.23 currently does so immediately)
+/goal-clear             Archive the focused goal after confirmation
+/goal-cancel            Cancel the in-progress guided draft without creating a goal
 ```
 
 Pressing `Esc` or aborting an active run pauses the goal so it does not remain falsely active.
@@ -100,7 +102,7 @@ Pressing `Esc` or aborting an active run pauses the goal so it does not remain f
 
 | Legacy command | New command |
 |---|---|
-| `/goal-status` | `/goal-list` (pool) or the visible status widget |
+| `/goal-status` | restored as the read-only focused-status command |
 | `/goals-set <x>` | `/goal-direct <x>` |
 | `/sisyphus-set <x>` | `/sisyphus-direct <x>` |
 | `/goal-abort` | `/goal-clear` |
@@ -114,7 +116,7 @@ Pressing `Esc` or aborting an active run pauses the goal so it does not remain f
 | Legacy tool (removed) | Replacement |
 |---|---|
 | `complete_goal` | `update_goal({status: "complete"})` — audited from actual evidence, no verification-summary field |
-| `pause_goal` | `/goal-pause` (user-owned); `update_goal({status: "blocked"})` only after the same blocker recurs on three consecutive turns |
+| `pause_goal` | `/goal-pause` (user-owned); `update_goal({status: "paused"})` with a required reason for an immediate agent pause; `update_goal({status: "blocked"})` only after the same blocker recurs on three consecutive turns |
 | `abort_goal` | `/goal-clear` (user-owned abandonment) |
 | `propose_goal_draft` | Used only in the temporary guided draft entered by `/goal`, `/sisyphus`, or `/goal-tweak` |
 | `propose_goal_tweak` | `/goal-tweak <change>` (a guided, user-confirmed revision) |
@@ -152,7 +154,7 @@ replaces the goal tools with `goal_question`, `goal_questionnaire`, and
 |---|---|
 | `create_goal` | Create and focus a new goal after an explicit user request (objective 1–4000 chars, optional `mode` regular/sisyphus and `token_budget`). Never infer a goal from an ordinary task. |
 | `get_goal` | Read-only complete focused goal snapshot: objective, status, mode, usage, budget + remaining, task summary, verification contract, blocker details, paths, other-open count. |
-| `update_goal` | Report one of two terminal outcomes: `complete` (runs the independent auditor, which verifies from actual evidence — no paperwork field) or `blocked` (distinct agent-blocked state, only after the same blocker recurs on three consecutive turns). |
+| `update_goal` | Report a run outcome: `complete` (runs the independent auditor, which verifies from actual evidence; an optional `completion_summary` is an untrusted claim, never evidence), `blocked` (distinct agent-blocked state, only after the same blocker recurs on three consecutive turns), or `paused` (immediate agent pause with a required `reason` and optional `suggested_action`). |
 | `set_goal_tasks` | Create or structurally replace the task tree (flat parent-linked input, confirmation dialog, matching ids keep status/evidence). |
 | `update_goal_task` | Update one task without stopping the turn: complete (evidence for contracted tasks), skipped (reason), pending (reopens skipped). |
 
@@ -162,7 +164,7 @@ During a user-started draft, these replace the execution tools:
 |---|---|
 | `goal_question` | Ask one focused structured clarification question. |
 | `goal_questionnaire` | Ask a small multi-question questionnaire. |
-| `propose_goal_draft` | Present the complete objective and the agent-selected flat task tree for Confirm or Continue Chatting. |
+| `propose_goal_draft` | Present the complete objective and the agent-selected flat task tree for Confirm, Continue Chatting, or Cancel. |
 
 Plus ordinary Pi work tools, which the extension never adds, removes, or
 force-enables: the user's host-tool selection is preserved. Lifecycle actions
@@ -194,13 +196,15 @@ Completion is explicit and checked by an independent pi auditor agent. The
 model calls `update_goal` with the terminal outcome:
 
 ```json
-{ "status": "complete" }
+{ "status": "complete", "completion_summary": "optional untrusted claim" }
 ```
 
 There is no paperwork field: the auditor derives the requirements from the
 objective and any verification contract, and inspects the actual workspace
-evidence (including the task tree and its evidence). `update_goal` accepts only
-`complete` or `blocked`.
+evidence (including the task tree and its evidence). An optional
+`completion_summary` reaches the auditor as an UNTRUSTED claim — it is never
+evidence and cannot make a disapproved goal complete. `update_goal` accepts
+`complete`, `blocked`, or `paused` (with a required `reason`).
 
 Before archiving the goal, completion starts a separate pi agent in an isolated
 in-memory session. The auditor receives the objective, mode, verification
@@ -223,9 +227,10 @@ By default the auditor uses the current/default pi model. Configure it via
 align with Codex behavior, the tool description and continuation prompt require
 the same blocker to recur on three consecutive goal turns before the model
 reports blocked; there is no separate attempt counter. A user pause
-(`/goal-pause`, Esc) remains an immediate, distinct state. The model cannot
-abort a goal — obsolete or abandoned goals are cleared by the user through
-`/goal-clear`.
+(`/goal-pause`, Esc) remains an immediate, distinct state, and the agent can
+pause immediately with `update_goal({status: "paused"})` plus a reason. The
+model cannot abort a goal — obsolete or abandoned goals are cleared by the user
+through `/goal-clear`.
 
 Sisyphus goals use the same lifecycle tools as regular goals; the difference is
 the prompt/criteria execution standard. A paused goal can also be completed
@@ -273,10 +278,12 @@ Goal paths are constrained to `.pi/goals/` and `.pi/goals/archived/`; absolute p
 
 All settings live in a single file: **`.pi/pi-goal-x-settings.json`**
 
-The auditor switch/model fields and `subtaskDepth` are editable through
-`/goal-settings`. The task/contract switches and `autoSelectSingleGoal` must
-currently be edited in the file directly; the follow-up plan below tracks
-making every displayed setting operable from the menu.
+All eight persisted fields are selectable and operable through
+`/goal-settings`: booleans toggle directly, `provider`/`model` edit and clear,
+`thinkingLevel` accepts every level and rejects unknown values, and
+`subtaskDepth` validates the full input string (whole positive safe integers
+only). The file remains the durable store and env-var overrides take
+precedence.
 
 ```json
 {
@@ -293,10 +300,10 @@ making every displayed setting operable from the menu.
 
 | Field | Default | `/goal-settings` | Purpose |
 |---|---:|:---:|---|
-| `disableTasks` | `false` | No (display-only in 0.23) | Suppress task list features entirely when `true` |
-| `disableContracts` | `false` | No (display-only in 0.23) | Suppress verification contract enforcement when `true` |
-| `subtaskDepth` | `1` | Yes | Maximum nesting depth for subtasks |
-| `autoSelectSingleGoal` | `false` | No (file-only in 0.23) | When `true`, auto-focus the single open goal when a session has no focus entry (default keeps goals session-scoped) |
+| `disableTasks` | `false` | Yes | Suppress task list features entirely when `true` |
+| `disableContracts` | `false` | Yes | Suppress verification contract enforcement when `true` |
+| `subtaskDepth` | `1` | Yes | Maximum nesting depth for subtasks (whole positive integers only) |
+| `autoSelectSingleGoal` | `false` | Yes | When `true`, auto-focus the single open goal when a session has no focus entry (default keeps goals session-scoped) |
 | `provider` | system default | Yes | Provider name for the auditor agent |
 | `model` | system default | Yes | Model name for the auditor agent |
 | `thinkingLevel` | system default | Yes | Thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
@@ -328,12 +335,14 @@ npm pack --dry-run
 The unit and integration commands discover `*.test.ts` files automatically and
 run them in one Node process. Test-only adapters provide the small runtime SDK
 surface the handlers exercise, avoiding initialization of unrelated Pi model
-providers and TUI media modules. `npm run test:all` runs all 461 cases in one
-startup. The fast runner requires Node 22.15 or newer (for synchronous module
-hooks); on older supported development environments, use `test:serial`.
+providers and TUI media modules. `npm run test:all` runs all 510 cases in one
+startup; `npm run test:selfcheck` asserts the discovered test entries match the
+pinned manifest. The fast runner requires Node 22.15 or newer (for synchronous
+module hooks); on older supported development environments, use `test:serial`.
 The suite covers records/storage,
 lifecycle policy, the service/runtime/accounting split, the five tool handlers,
-the ten commands, tasks/contracts, auditing, compaction, prompts, and widgets.
+the fourteen commands, tasks/contracts, auditing, drafting, compaction,
+prompts, widgets, and the experiment harness.
 Use `npm run test:serial` as the real-SDK, process-isolated compatibility path.
 The handler-level
 integration suite (`npm run test:integration`, part of `test:all`) drives the
@@ -358,11 +367,11 @@ The npm package ships only the runtime extension, docs, and package metadata. Th
 extensions/goal.ts                 thin installer for renderers, commands, tools, and events
 extensions/goal-state.ts           shared GoalCore state and service/runtime wiring
 extensions/goal-tools.ts           tool registration composition (core + task installers)
-extensions/goal-core-tools.ts      create_goal / get_goal / update_goal executors and the blocked flow
+extensions/goal-core-tools.ts      create_goal / get_goal / update_goal executors, and the blocked and agent-pause flows
 extensions/goal-completion.ts      completion transaction (audit orchestration + commit)
 extensions/goal-task-tools.ts      set_goal_tasks / update_goal_task executors, flat conversion, merge, counts
-extensions/goal-task-confirmation.ts task-only result boundary ({decision}); visual labels are legacy
-extensions/goal-commands.ts        ten slash-command handlers
+extensions/goal-task-confirmation.ts task-only result boundary ({decision}) with neutral Confirm task list / Keep current tasks labels
+extensions/goal-commands.ts        fourteen slash-command handlers
 extensions/goal-events.ts          lifecycle event handlers
 extensions/goal-service.ts         ordered goal mutation boundary (incl. typed updateTask transaction)
 extensions/goal-runtime.ts         continuation, stale-checkpoint, and turn-stop state
@@ -375,7 +384,9 @@ extensions/goal-core.ts            display helpers
 extensions/goal-policy.ts          lifecycle, completion, task, and compaction policy
 extensions/goal-auditor.ts         independent pi auditor agent for completion approval, config, and progress tracking
 extensions/goal-ledger.ts          event append, read, validation, sanitization, and reconstruction (task_reopened)
-extensions/goal-questionnaire.ts   legacy proposal dialog still used by task confirmation/debug (question tools removed)
+extensions/goal-draft.ts           drafting prompt/confirmation text helpers and Sisyphus sufficiency guidance
+extensions/goal-drafting.ts         guided drafting orchestration (durable draft sessions, questionnaire tools, propose_goal_draft)
+extensions/goal-questionnaire.ts    structured question/answer UI used by the drafting tools and confirmation dialogs
 extensions/goal-tool-names.ts      the five published names, fixed profiles, work/progress sets, post-stop allowlist
 extensions/prompts/goal-prompts.ts active, continuation, stale, unfocused, and budget prompts
 extensions/storage/goal-files.ts   goal file paths, serialization, parsing, archive IO
@@ -385,8 +396,8 @@ extensions/widgets/goal-notifications.ts widget-style notification text
 
 ## Design principles
 
-- **User owns mutable intent**: the user controls objective changes, pause/resume, clear, focus, and settings; the agent may create only on explicit request and may report only complete or repeatedly blocked outcomes.
-- **Direct explicit creation**: `/goal`, `/sisyphus`, or an explicit conversational request creates the durable goal without a second drafting protocol.
+- **User owns mutable intent**: the user controls objective changes, pause/resume, clear, focus, settings, and cancellation; the agent may create only on explicit request and may report complete, blocked, or paused (with a reason) outcomes.
+- **Guided creation with an explicit direct bypass**: `/goal` and `/sisyphus` always run the guided draft (clarify, propose, confirm); `/goal-direct` and `/sisyphus-direct` are the explicit no-drafting paths.
 - **Schema beats prompt walls**: recurring failure modes are handled by validators and tool-call interceptors.
 - **Visible contracts**: created goals and completion reports are printed fully into the conversation.
 - **Small stable target surface**: three core model tools plus two task tools; lifecycle validity belongs in handlers, not phase-specific tool rebuilding.
@@ -403,11 +414,35 @@ records), disabled-auditor completion works and records `audit_skipped`, the
 three/five tool profile is fixed and host tools are never touched, task
 operations are disk-fresh transactions with structural-clearing merge
 semantics, `token_budget` is a positive safe integer, reopening a task writes
-`task_reopened`, ledger failures surface through an observable diagnostic, and
-the primary drafting tool/runtime surface was removed. A focused follow-up
-assessment found residual proposal-dialog/event vocabulary plus the known
-settings and clear-command defects; remediation is specified in
-[`specs/2026-08-04-goal-runtime-follow-up`](specs/2026-08-04-goal-runtime-follow-up/PRODUCT.md).
+`task_reopened`, and ledger failures surface through an observable diagnostic.
+
+### Runtime follow-up (current branch)
+
+The 2026-08-04 follow-up
+([`specs/2026-08-04-goal-runtime-follow-up`](specs/2026-08-04-goal-runtime-follow-up/PRODUCT.md))
+landed the remaining work:
+
+- The settings menu is fully operable (all eight persisted fields, exact
+  `subtaskDepth` validation, correct repeated task toggles).
+- `/goal-clear` asks for confirmation (cancel is a byte-for-byte no-op);
+  task-list confirmation uses neutral labels; an aborted audit produces one
+  canonical ledger event and continue-working leaves the goal active.
+- Completion commits are failure-checked transactions.
+- Cross-process mutations are serialized with persisted revisions and
+  per-goal locks (typed conflicts, no blind overwrites).
+- **Guided drafting is restored as a first-class workflow** (a product
+  correction to the 0.23 removal): `/goal`, `/sisyphus`, and `/goal-tweak`
+  run a transient draft with `goal_question`, `goal_questionnaire`, and
+  `propose_goal_draft` (Confirm / Continue / Cancel); durable draft sessions
+  survive compaction; `/goal-cancel` and `/goal-status` complete the
+  fourteen-command palette; per-draft auditor selection persists on create
+  and tweak; the agent can pause with a reason, abandonment stays
+  user-owned via `/goal-clear`, and `completion_summary` is an untrusted
+  auditor claim.
+- The experiment harness enforces `SUPPORTED_CASES.json`, uses the selected
+  model in the smoke check, and runs on portable timeouts; the test runner
+  has a self-check; the Pi SDK family is upgraded to 0.83 with both
+  dependency audits clean.
 
 ## Relationship to pi-goal
 

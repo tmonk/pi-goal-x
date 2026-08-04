@@ -10,16 +10,74 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 ## [Unreleased]
 
-### Changed
+No version bump or release on this branch: all branch work (0.23 hardening
+plus the runtime follow-up) consolidates into a single future release.
 
-- Unit and handler-integration tests are automatically discovered and run in
-  one Node process with contract-faithful test adapters for the small Pi SDK
-  runtime surface they exercise. This preserves all 461 cases while avoiding
-  unrelated provider/media startup; `test:serial` remains the real-SDK,
-  process-isolated compatibility path.
-- Living documentation now distinguishes shipped 0.23 behavior from intended
-  behavior for the settings menu, `/goal-clear`, task confirmation labels,
-  simultaneous-writer semantics, and experiment-matrix enforcement.
+### Fixed
+
+- **Settings menu is fully operable.** Every persisted field is selectable and
+  editable through `/goal-settings` (`disableTasks`, `disableContracts`,
+  `autoSelectSingleGoal`, `disabled`, `provider`, `model`, `thinkingLevel`,
+  `subtaskDepth`); `subtaskDepth` validates the full input string (whole
+  positive safe integers only) and repeated task toggles in one menu session
+  reinstall the correct fixed three/five profile every time.
+- **`/goal-clear` asks for confirmation.** Cancelling changes no file, focus
+  entry, ledger entry, or runtime state (byte-for-byte no-op); headless runs
+  return guidance without mutation. The focus is re-validated after the
+  dialog so a stale confirmation never archives the wrong goal.
+- **Task-list confirmation uses neutral labels.** The dialog offers Confirm
+  task list / Keep current tasks and returns only a task decision — no
+  goal-creation wording, questionnaire state, or auditor toggle.
+- **Completion commits are failure-checked.** `commitGoalCompletion` returns a
+  discriminated result and inspects `GoalService.apply`; a failed state
+  mutation never renders a success report, a `goal_completed` event, or a
+  focus clear, and deferred-archive failures surface as observable warnings.
+- **Audit aborts produce one canonical outcome.** Escape during an audit
+  records transient state only; the eventual user choice writes exactly one
+  ledger event — `audit_skipped(user_aborted)` for complete-without-audit,
+  nothing for continue-working — and continue-working leaves the goal active.
+- **Cross-process mutations are serialized.** Goals carry a persisted
+  monotonic `revision` (legacy records normalize to zero); `GoalService`
+  acquires a per-goal filesystem lock, re-reads the authoritative file under
+  it, and returns typed conflicts to stale writers instead of overwriting
+  blindly. `update_goal_task` retries once only when the same task and
+  status/structure remain unchanged; `set_goal_tasks` surfaces the typed
+  conflict.
+- **Guided drafting is restored as a first-class workflow** (product
+  correction to the 0.23 removal). `/goal`, `/sisyphus`, and `/goal-tweak`
+  run a transient, user-invoked draft with `goal_question`,
+  `goal_questionnaire`, and `propose_goal_draft` (Confirm / Continue / Cancel
+  with per-draft auditor selection); confirmation atomically creates the
+  objective, verification contract, and task tree and restores the execution
+  profile. Drafts persist in branch-local session entries (survive compaction
+  and tree navigation), a second draft offers Resume/Replace/Cancel, and the
+  new `/goal-cancel` discards a draft as a durable no-op. Sisyphus proposals
+  require ordered-step structure; contracts-disabled settings keep contract
+  lines as plain prose.
+- **`/goal-status` restores the read-only focused-goal summary**; the palette
+  is now fourteen tab-completable commands.
+- **Capability parity without tool sprawl.** `update_goal` gains
+  `{status: "paused"}` (required `reason`, optional `suggested_action`;
+  immediate agent pause recording `goal_paused` with source `agent`);
+  abandonment stays user-owned via `/goal-clear`; objective changes stay
+  user-started via `/goal-tweak`; and an optional `completion_summary` is
+  passed to the auditor as an untrusted claim — never evidence, never an
+  approval bypass.
+- **Experiment harness is enforced and portable.** `SUPPORTED_CASES.json`
+  membership is required before a run directory is created (raw dirs need
+  `--allow-unsupported`); the provider smoke uses the selected model and
+  validates HTTP status and JSON shape; the outer timeout discovers `timeout`,
+  `gtimeout`, then a bundled Node watchdog; shell tests with stubbed
+  curl/pi cover resolution, payload, missing configuration, and timeout
+  selection; an observations index marks old runs as historical evidence.
+- **Test runner self-check.** `npm run test:selfcheck` asserts the discovered
+  test entries match the pinned manifest; the runner reports counts and
+  timings.
+- **Pi SDK family upgraded to 0.83** (`pi-ai`, `pi-coding-agent`, `pi-tui`
+  together; no forced audit-fix split). Both the full development graph and
+  the published/runtime graph audit clean (transitive advisories fixed with
+  same-major overrides; the lock was generated with npm 12 because npm 11
+  ignores overrides and `npm ci` replays the resolved versions).
 
 ## [0.23.0] — 2026-08-05
 
@@ -62,7 +120,8 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 - The task-list confirmation result is task-only: it returns the user's
   `{decision}` and can no longer mutate auditor bypass state. The 0.23 visual
-  dialog still uses legacy goal-draft labels; replacement is planned.
+  dialog used legacy goal-draft labels at that release; the follow-up work
+  replaced them with neutral task labels (see [Unreleased]).
 - `goal-tools.ts` is split into focused behavior modules (registration
   composition, core tools, completion transaction, task tools, task
   confirmation); `goal-draft.ts` is removed (contract extraction and prompt

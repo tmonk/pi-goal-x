@@ -38,6 +38,27 @@
   authoritative serial baseline.
   Timings are evidence, not portable performance guarantees.
 
+## 2026-08-04 — Stage 8: living-doc closure, no-release changelog, full validation
+
+- README, docs/architecture.md, docs/agent-flow-design.md, and the PRD
+  header corrected to verified behavior only: fourteen-command palette with
+  `/goal-status` and `/goal-cancel`, fully operable settings menu, confirmed
+  `/goal-clear`, neutral task labels, failure-checked completion commits,
+  per-goal revision/lock serialization with typed conflicts, restored guided
+  drafting (durable sessions, transient profile, per-draft auditor
+  selection), capability parity (agent pause, untrusted completion claim),
+  enforced experiment matrix, runner self-check, and the Pi SDK 0.83 family.
+  Historical 0.23 entries were left intact except forward-looking claims
+  that are now obsolete.
+- CHANGELOG: all branch work consolidated under `[Unreleased]` with NO
+  version bump or release section; only 0.23/current claims corrected.
+- SPECS.yaml: added the missing 2026-05-17 spec entry and marked the
+  follow-up spec completed (registry complete).
+- Final validation matrix (TECH §11): `npm run check` 0 errors; `test:all`
+  510/0; `test:selfcheck` OK (39 unit + 1 integration manifest match);
+  `test:serial` real-SDK 482/0; `npm audit` 0 on the full development graph
+  AND the published/runtime graph; `npm pack --dry-run` 42 files;
+  `git diff --check` clean.
 ## 2026-08-04 — Stage 7: runner self-check, integration expansion, Pi SDK upgrade
 
 - Runner self-check: `scripts/run-unit-tests.mjs` gained `--selfcheck`

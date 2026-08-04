@@ -17,8 +17,8 @@ handlers from their dedicated modules:
 | `goal-core-tools.ts` | `create_goal` / `get_goal` / `update_goal` executors plus the blocked flow |
 | `goal-completion.ts` | The completion transaction: `runGoalCompletionFlow` (audit orchestration) + shared `commitGoalCompletion` |
 | `goal-task-tools.ts` | `set_goal_tasks` / `update_goal_task` executors plus flat parent-linked conversion, id-stable merge, `countTasks` |
-| `goal-task-confirmation.ts` | Task-only result boundary (`{decision}`, no auditor toggle); its current visual dialog still reuses legacy goal-draft labels |
-| `goal-commands.ts` | The curated twelve-command palette and its handlers |
+| `goal-task-confirmation.ts` | Task-only result boundary (`{decision}`, no auditor toggle) with neutral Confirm task list / Keep current tasks labels |
+| `goal-commands.ts` | The curated fourteen-command palette and its handlers |
 | `goal-events.ts` | The 13 lifecycle event handlers (`context`, `turn_start`, `tool_call`, `tool_execution_end`, `turn_end`, `message_end`, `session_start`, `session_before_compact`, `session_compact`, `session_tree`, `before_agent_start`, `agent_end`, `session_shutdown`) |
 | `goal-widget.ts` | Terminal input keybindings (Esc pause / abort-audit, Ctrl+Shift+T overlay) and the hidden debug helpers |
 | `goal-format.ts` | Pure formatting/message-introspection helpers and renderers |
@@ -32,7 +32,9 @@ handlers from their dedicated modules:
 | `goal-policy.ts` | Lifecycle policy and validation (completion/blocked/resume/task gates), task-tree helpers, compaction policy, result reports |
 | `goal-auditor.ts` | Independent pi auditor agent prompt/config/decision parsing and completion audit execution |
 | `goal-ledger.ts` | Single-file goal ledger append/read/reconstruction (18 event types incl. `task_reopened`) |
-| `goal-questionnaire.ts` | Legacy questionnaire/proposal-dialog implementation; question tools are removed, but task confirmation and a hidden debug path still reuse parts of it |
+| `goal-draft.ts` | Drafting prompt/confirmation text helpers (goalDraftingPrompt, buildDraftConfirmationText, renderConfirmationTasks, GoalDraftingFocus) |
+| `goal-drafting.ts` | Guided drafting orchestration: durable `pi-goal-draft` session entries (survive compaction/tree navigation), resume/replace/cancel protection, transient drafting profile, `goal_question`/`goal_questionnaire`/`propose_goal_draft` tools, per-draft auditor selection |
+| `goal-questionnaire.ts` | Structured question/answer UI (`runGoalQuestionnaire`, `showProposalDialog`) used by the drafting tools and confirmations |
 | `goal-tool-names.ts` | The five published tool-name constants, fixed three/five profiles, work/progress classification, post-stop allowlist |
 | `prompts/goal-prompts.ts` | Bounded five-tool steering prompts (active-goal, continuation, stale-checkpoint, unfocused, budget-limited) |
 | `storage/goal-files.ts` | Goal path safety, serialization/parsing, active-file scanning, active-file writes, archive writes, prompt-body merge from disk |
@@ -183,9 +185,9 @@ user confirms.
 - `/goal-focus` uses `ctx.ui.select` when multiple goals are open and updates only session focus.
 - `/goal-unfocus` writes a null session focus entry, clears continuation/runtime state, aborts in-flight work and audits for that session, and leaves the shared active goal file and project-global focus ledger unchanged. Focus revision tokens prevent pending completion and task-list results from mutating a goal after detachment.
 - `/goal-resume` resumes the focused paused goal; when unfocused with multiple open goals, it asks the user to choose. Choosing an already active goal only focuses it.
-- `/goal-clear` archives only the focused/selected goal and never clears the whole pool at once. In 0.23 it does not display the confirmation promised by its command description.
+- `/goal-clear` asks for confirmation (with the goal's one-line summary) and archives only the focused/selected goal; cancelling is a byte-for-byte no-op with no file, focus, or ledger change, and headless runs return guidance without mutating anything.
 - `/goal-pause` pauses the focused active goal; it asks the user to choose when unfocused with open goals.
-- `/goal-settings` edits `disabled`, provider, model, `thinking_level`, and `subtaskDepth`. It displays but cannot select `disableTasks`/`disableContracts`; `autoSelectSingleGoal` is file-only because it is not displayed. These menu defects are tracked by the follow-up spec.
+- `/goal-settings` renders and dispatches every persisted field from one declarative row table: booleans (`disableTasks`, `disableContracts`, `autoSelectSingleGoal`, `disabled`) toggle directly, `provider`/`model` edit and clear, `thinkingLevel` accepts every level and rejects unknown values, and `subtaskDepth` validates the full input string (whole positive safe integers).
 
 ## Tool surface
 
@@ -195,7 +197,7 @@ The extension registers five normal-execution tools and three drafting-only tool
 |---|---|
 | `create_goal` | Create and focus a new goal after an explicit user request (objective 1–4000 chars, optional `mode` regular/sisyphus and `token_budget`). |
 | `get_goal` | Read-only complete focused goal snapshot. |
-| `update_goal` | Terminal outcomes only: `complete` (audited from actual evidence) or `blocked` (after three consecutive identical blockers). |
+| `update_goal` | Run outcomes: `complete` (audited from actual evidence; optional `completion_summary` is an untrusted claim), `blocked` (after three consecutive identical blockers), or `paused` (immediate agent pause with required `reason`). |
 | `set_goal_tasks` | Create or structurally replace the task tree (flat parent-linked input, confirmation dialog, id-stable merge). |
 | `update_goal_task` | Update one task without stopping the turn: complete (evidence for contracted tasks), skipped (reason), pending (reopens skipped). |
 | `goal_question` | Drafting-only structured clarification question. |
@@ -281,7 +283,7 @@ SDK values used by handlers. This avoids loading unrelated model-provider and
 TUI media modules. The fast path requires Node 22.15+; `test:serial` remains
 the slow, real-SDK, process-isolated
 compatibility path. The suites cover: surface baselines (exactly the fixed five/three tool
-profile and ten commands), golden file/ledger fixtures, stale-continuation behavior,
+profile and fourteen commands), golden file/ledger fixtures, stale-continuation behavior,
 GoalService mutation boundary, runtime/accounting, token-budget transitions,
 task-tool consolidation, verification contracts, the independent auditor,
 compaction recovery, and the bounded steering prompts. The separate
@@ -295,12 +297,19 @@ The 2026-08-04 hardening plan
 is implemented: paused-status normalization (status authoritative, legacy
 `autoContinue: true` records stay paused), disk-fresh task transactions with
 structural-field clearing, token-budget integer validation, `task_reopened`
-ledger semantics with observable diagnostics, primary drafting-tool module removal, and
-the supported integration/experiment coverage described above.
+ledger semantics with observable diagnostics, the three/five fixed tool
+profile, and the supported integration/experiment coverage described above.
+(0.23's drafting-surface removal was later reversed by the product correction
+in the runtime follow-up, which restores guided drafting as a first-class
+workflow; see the follow-up section below.)
 
-The follow-up assessment is intentionally explicit about what remains:
-simultaneous cross-process mutations are still last-write-wins after the
-operation-start reconciliation; task confirmation still presents goal-draft
-labels; the settings menu has unreachable fields; and `/goal-clear` lacks its
-documented confirmation. See
-[`specs/2026-08-04-goal-runtime-follow-up`](../specs/2026-08-04-goal-runtime-follow-up/TECH.md).
+The runtime follow-up
+([`specs/2026-08-04-goal-runtime-follow-up`](../specs/2026-08-04-goal-runtime-follow-up/TECH.md))
+then shipped the remaining work: guided drafting is restored as a
+first-class, transient user-invoked workflow (questionnaire, proposal
+confirmation, atomic creation, durable draft sessions, `/goal-cancel`,
+`/goal-status`, per-draft auditor selection); the settings menu is fully
+operable; `/goal-clear` confirms; task confirmation uses neutral labels;
+completion commits are failure-checked; and cross-process mutations are
+serialized with persisted revisions plus per-goal filesystem locks that
+return typed conflicts to stale writers instead of overwriting blindly.

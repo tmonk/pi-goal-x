@@ -90,7 +90,7 @@ in place.
 
 ## 5. Command palette: the user owns intent
 
-The curated twelve-command palette:
+The curated fourteen-command palette:
 
 | Command | Behavior |
 |---|---|
@@ -99,11 +99,13 @@ The curated twelve-command palette:
 | `/goal-direct <objective>` | Direct regular-goal creation without drafting |
 | `/sisyphus-direct <objective>` | Direct Sisyphus creation without drafting |
 | `/goal-list` | List all open goals and the current focus |
+| `/goal-status` | Read-only focused-goal summary plus other-open-goal count |
 | `/goal-focus` | Choose this session's focused goal |
 | `/goal-unfocus` | Detach the session without modifying the shared goal |
-| `/goal-settings` | Auditor/settings editor; task/contract switches are currently display-only and auto-select remains file-only |
-| `/goal-tweak <new objective>` | Direct user-owned objective edit |
-| `/goal-clear` | Archive the focused goal immediately (the intended confirmation is missing in 0.23) |
+| `/goal-settings` | Fully operable settings editor for all eight persisted fields |
+| `/goal-tweak <change>` | Guided, user-confirmed refinement of the focused objective and task plan |
+| `/goal-clear` | Archive the focused goal after confirmation (cancel is a durable no-op) |
+| `/goal-cancel` | Cancel the in-progress guided draft without creating a goal |
 | `/goal-pause` | Pause the focused active goal (Esc also pauses) |
 | `/goal-resume` | Resume a paused or blocked goal |
 
@@ -233,11 +235,13 @@ not claim completion unless real), and pending continuations are cancelled.
 goal.ts (thin installer)
 ├─ goal-state.ts     GoalCore: state + service/runtime/accounting wiring
 ├─ goal-tools.ts     registration composition only
-├─ goal-core-tools.ts create/get/update handlers + blocked flow
+├─ goal-core-tools.ts create/get/update handlers + blocked and agent-pause flows
 ├─ goal-completion.ts audit orchestration + completion commit
 ├─ goal-task-tools.ts task structure/status handlers + tree helpers
-├─ goal-task-confirmation.ts task result boundary (currently uses legacy dialog labels)
-├─ goal-commands.ts  twelve-command palette
+├─ goal-task-confirmation.ts task result boundary with neutral labels
+├─ goal-draft.ts     drafting prompt/confirmation text helpers
+├─ goal-drafting.ts  guided drafting orchestration + durable draft sessions
+├─ goal-commands.ts  fourteen-command palette
 ├─ goal-events.ts    13 lifecycle event handlers
 ├─ goal-widget.ts    terminal keybindings + debug helpers
 ├─ goal-format.ts    pure formatting/message helpers
@@ -270,19 +274,32 @@ goal.ts (thin installer)
   implying the goal is done.
 - **Disk is authoritative at operation start.** Reconciliation before each
   focused action picks up prior external edits and prevents deleted files from
-  being resurrected. There is not yet a cross-process lock or compare-and-swap,
-  so truly simultaneous writers remain last-write-wins; old readers keep
-  existing data readable.
+  being resurrected.
+- **Cross-process mutations are serialized.** Each goal carries a persisted
+  monotonic `revision` (missing historical values normalize to zero). A
+  short per-goal filesystem lock (atomic create under `.pi/goals/.locks` with
+  bounded acquisition and stale-lock recovery) guards reads, and
+  `GoalService.apply` re-reads the authoritative file under the lock: a stale
+  writer receives a typed conflict carrying the current revision instead of
+  overwriting blindly. `update_goal_task` retries once only when the same task
+  and status/structure remain unchanged; `set_goal_tasks` surfaces the typed
+  conflict. Old readers keep existing data readable.
 
-## 15. Hardening (0.23)
+## 15. Hardening (0.23) and runtime follow-up
 
-This document describes the shipped 0.23 behavior. The 2026-08-04 hardening
-plan
+This document describes the shipped behavior. The 2026-08-04 hardening plan
 ([`specs/2026-08-04-goal-simplification-hardening`](../specs/2026-08-04-goal-simplification-hardening/TECH.md))
 is implemented: it addresses paused-record resurrection, operation-start
 task reconciliation, task-confirmation auditor-state coupling, budget
 validation, ledger semantics, the primary legacy runtime surface, and the
-E2E/experiment migration. Residual legacy dialog/event vocabulary, true
-simultaneous-writer protection, settings-menu defects, and clear confirmation
-are tracked in the
-[`2026-08-04 goal runtime follow-up`](../specs/2026-08-04-goal-runtime-follow-up/TECH.md).
+E2E/experiment migration.
+
+The runtime follow-up
+([`2026-08-04 goal runtime follow-up`](../specs/2026-08-04-goal-runtime-follow-up/TECH.md))
+then shipped the remaining work: guided drafting restored as a transient
+user-invoked workflow (durable draft sessions, `/goal-cancel`, `/goal-status`,
+per-draft auditor selection), a fully operable settings menu, `/goal-clear`
+confirmation, neutral task-confirmation labels, failure-checked completion
+commits, per-goal revision/lock serialization with typed conflicts, the
+agent-pause outcome, untrusted `completion_summary` claims, the enforced
+experiment matrix, the runner self-check, and the Pi SDK 0.83 family upgrade.
