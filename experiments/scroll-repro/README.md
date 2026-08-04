@@ -23,11 +23,3 @@ Findings (rows=40): scenario A open causes 4–120 viewport scrolls depending on
 chat/dialog length (the write burst at the bottom row); scenario B causes 0 in
 all configurations. See `specs/2026-08-04-goal-confirmation-scroll-fix/` for
 the full root-cause write-up.
-
-`validate-panel-overlay.mjs` validates the shipped fix (bounded
-bottom-anchored overlay panels): the dialog flow emits no DECSET 1049
-alternate-buffer sequences and no `\x1b[2J` clears, and causes 0 main-screen
-scrolls on open, in-dialog navigation, and close (long and short chats). The
-previous DECSET 1049 alternate-screen approach (deleted; see the spec's
-"Attempt 1 — reverted") blanked the main screen and disabled terminal
-scrollback while a dialog was open.

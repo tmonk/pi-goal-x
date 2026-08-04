@@ -262,3 +262,77 @@ bottom and bounded.
    up in the terminal scrollback at any time, including while the dialog is
    open; PgUp/PgDn scroll inside the panel when the proposal exceeds the panel
    height; closing the dialog leaves the viewport where it was (no jump).
+
+---
+
+## Milestone (final): full-surface revert to 383ae52, scrollback in full
+
+Date: same session. User directive (two clarifications): "by revert, I mean
+go back to 383ae52… just allowing scrollback!" and "revert to 383ae52 AND
+enable scrollback IN FULL". This supersedes the overlay-panel direction above.
+
+### Decision
+
+The overlay/windowing machinery (61db55e) caused the reported "goal questions
+overlap text at the bottom" regression (the bottom-center panel composites
+via pi's `compositeLineAt`, which only replaces columns `[col, col+width)` —
+chat/footer/editor text bled through on panel rows). The user rejected
+bounding the dialog render ("by revert, I mean go back to 383ae52") and the
+alt-screen and full-heading work. Final: the goal dialog + heading surface is
+byte-identical to 383ae52, and terminal scrollback is verified fully enabled.
+
+### Root cause of the overlap (documented)
+
+The 61db55e panel used `overlayOptions: { anchor: "bottom-center", width:
+"95%", maxHeight: "45%" }`. pi-tui's `compositeOverlays`/`compositeLineAt`
+replaces only the panel's column span of each covered base line; the base
+line's left/right margins and the frame text (chat, `─ footer ─`, `❯`
+editor prompt) remain visible on panel rows. For a 120-col terminal with a
+95%-wide panel, chat text bleeds through the panel's left and right edges —
+the visible overlap.
+
+### Implementation (smallest possible change)
+
+- `git checkout 383ae52 --` the five extension files (`goal-questionnaire.ts`,
+  `goal-task-confirmation.ts`, `widgets/goal-escape-dialog.ts`,
+  `goal-core-tools.ts`, `goal-task-tools.ts`); `extensions/goal.ts` verified
+  identical already. `git diff 383ae52 -- extensions/` → empty.
+- Deleted the three tests added by the commits (`goal-dialog-panel.test.ts`,
+  `goal-questionnaire-panel.test.ts`, `goal-lifecycle-rendering.test.ts`),
+  restored `tests/.test-manifest.json`; `git diff 383ae52 -- tests/` → empty.
+- Deleted `experiments/scroll-repro/validate-panel-overlay.mjs` and the
+  session's temporary repro scripts, restored README.md; `git diff 383ae52 --
+  experiments/` → empty. The 383ae52 harness
+  (`repro-dialog-render.mjs` + README.md) remains.
+
+### Validation (task-1 evidence, real components + real renderer)
+
+Drove the real `runGoalQuestionnaire` / `showTaskConfirmation` /
+`showEscapeDialog` through the real pi-tui differential renderer with a fake
+terminal (rows=40, cols=120), mirroring pi's `showExtensionCustom` (editor
+swap for non-overlay, `showOverlay` for the centered dialogs). Emulator
+tracked viewport scrolls, DECSET 1049, `2J`, `3J`; `previousLines` inspected
+for full content.
+
+- short chat + short proposal (fits): open 0 / nav 0 / close 0 scrolls, no
+  1049, no 2J/3J, full dialog in buffer, chat visible above.
+- short chat + long proposal (73-line): open 87 scrolls (pre-existing
+  383ae52 churn), nav 0, close 0 scrolls; full 40 detail + 30 task lines in
+  buffer; chat above. Close emits 2J+3J — pre-existing pi-tui shrink path
+  (`targetRow < prevViewportTop` → `fullRender(true)`), present at 383ae52,
+  outside the reverted surface (the original spec's "close scroll churn").
+- long chat (120) + short proposal: open 13 scrolls (pre-existing), nav 0,
+  close 0, no clears.
+- task-list confirmation / escape dialog (centered overlays): open 0 / close
+  0 scrolls, no 1049, no 2J/3J, chat visible.
+- `npm run check`: 0 errors. Unit suite: 482 pass / 0 fail (383ae52 test
+  surface).
+
+### Finding for the user (signoff decision)
+
+Closing a questionnaire whose opened frame exceeded the terminal height
+emits pi-tui's generic shrink `\x1b[2J\x1b[H\x1b[3J`, erasing terminal
+scrollback. Present at 383ae52 (pi-tui untouched by the three commits);
+fixing it requires either bounding the dialog render (rejected: new
+machinery) or touching the pi-tui dependency (out of scope). Documented in
+PRODUCT.md/TECH.md; left to the user's call at signoff.

@@ -12,7 +12,7 @@ import { defineTool, type AgentToolResult, type ExtensionContext, type Theme } f
 import { Text } from "@earendil-works/pi-tui";
 
 import { goalDetails, renderGoalResult } from "./goal-format.ts";
-import { statusLabel } from "./goal-core.ts";
+import { statusLabel, truncateText } from "./goal-core.ts";
 import { loadGoalSettings } from "./goal-settings.ts";
 import { buildTaskSummary, checkSubtasksComplete, findSubtaskDepthViolation, skipAllSubtasks } from "./goal-policy.ts";
 import { showTaskConfirmation } from "./goal-task-confirmation.ts";
@@ -333,9 +333,7 @@ pi.registerTool(defineTool({
 		};
 	},
 	renderCall(args, theme) {
-		// Port PR #11's full-text heading behavior: the change summary renders
-		// in full, wrapped by the Text component — never truncated.
-		const summary = args?.change_summary ?? `${args?.tasks?.length ?? 0} tasks`;
+		const summary = args?.change_summary ? truncateText(args.change_summary, 80) : `${args?.tasks?.length ?? 0} tasks`;
 		return new Text(theme.fg("toolTitle", "set_goal_tasks ") + theme.fg("muted", summary), 0, 0);
 	},
 	renderResult(result, _options, theme) {

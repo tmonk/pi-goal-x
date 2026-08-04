@@ -131,40 +131,38 @@ async function showTaskListConfirmationDialog(ctx: ExtensionContext, proposalTex
 					return lines;
 				},
 
-					handleInput(data: string): void {
-						if (matchesKey(data, "up")) {
-							selectedIndex = (selectedIndex - 1 + OPTIONS.length) % OPTIONS.length;
-							tui.requestRender();
-							return;
-						}
-						if (matchesKey(data, "down")) {
-							selectedIndex = (selectedIndex + 1) % OPTIONS.length;
-							tui.requestRender();
-							return;
-						}
-						if (matchesKey(data, "enter")) {
-							done({ decision: OPTIONS[selectedIndex].value });
-							return;
-						}
-						if (matchesKey(data, "escape")) {
-							done({ decision: "cancel" });
-							return;
-						}
-					},
-				};
-
-				return component;
-			},
-			{
-				// Bottom-anchored main-screen panel: composites into the frame in
-				// place (no viewport scroll churn), keeps history visible above, and
-				// leaves terminal scrollback fully usable while the dialog is open.
-				overlay: true,
-				overlayOptions: {
-					anchor: "bottom-center",
-					width: "95%",
-					maxHeight: "45%",
+				handleInput(data: string): void {
+					if (matchesKey(data, "up")) {
+						selectedIndex = (selectedIndex - 1 + OPTIONS.length) % OPTIONS.length;
+						tui.requestRender();
+						return;
+					}
+					if (matchesKey(data, "down")) {
+						selectedIndex = (selectedIndex + 1) % OPTIONS.length;
+						tui.requestRender();
+						return;
+					}
+					if (matchesKey(data, "enter")) {
+						done({ decision: OPTIONS[selectedIndex].value });
+						return;
+					}
+					if (matchesKey(data, "escape")) {
+						done({ decision: "cancel" });
+						return;
+					}
 				},
+			};
+
+			return component;
+		},
+		{
+			overlay: true,
+			overlayOptions: {
+				anchor: "center",
+				width: "70%",
+				minWidth: 50,
+				maxHeight: "60%",
 			},
-		);
+		},
+	);
 }

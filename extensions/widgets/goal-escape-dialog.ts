@@ -134,14 +134,12 @@ export async function showEscapeDialog(
 			return component;
 		},
 		{
-			// Bottom-anchored main-screen panel: composites into the frame in
-			// place (no viewport scroll churn), keeps history visible above, and
-			// leaves terminal scrollback fully usable while the dialog is open.
 			overlay: true,
 			overlayOptions: {
-				anchor: "bottom-center",
-				width: "95%",
-				maxHeight: "45%",
+				anchor: "center",
+				width: "70%",
+				minWidth: 50,
+				maxHeight: "50%",
 			},
 		},
 	);

@@ -98,20 +98,6 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 		// sequences every cycle, which can cause terminal viewport snapping).
 		const wasHardwareCursorShown = tui.getShowHardwareCursor();
 		tui.setShowHardwareCursor(false);
-
-		// Bottom-anchored main-screen panel (overlay): composites into the
-		// existing frame in place, so opening/closing/navigating cause no
-		// viewport scroll churn; chat history stays visible above the panel and
-		// terminal scrollback remains fully usable (no alternate screen, which
-		// would blank the main screen and disable scrollback).
-		// Panel height budget: the panel occupies at most ~45% of the terminal
-		// height; content taller than the panel scrolls internally (the overlay
-		// caps the rendered height with the same bound).
-		const terminalRows = (tui as { terminal?: { rows: number } }).terminal?.rows ?? 24;
-		const maxDialogHeight = Math.max(8, Math.floor(terminalRows * 0.45));
-		// Scroll offset over the rendered content; MAX_SAFE_INTEGER means
-		// "bottom-anchor" (render clamps it to the content max).
-		let scrollOffset = 0;
 		let currentTab = 0;
 		let optionIndex = 0;
 		let inputMode = false;
@@ -188,7 +174,6 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 			const nextQ = currentQuestion();
 			if (nextQ) enterQuestion(nextQ);
 			else optionIndex = 0;
-			scrollOffset = Number.MAX_SAFE_INTEGER;
 			refresh();
 		}
 
@@ -224,9 +209,6 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 		}
 
 		enterQuestion(questions[0]);
-		// Bottom-anchor the first view so the actionable options/footer are
-		// visible immediately; PgUp/Home reveal the context above.
-		scrollOffset = Number.MAX_SAFE_INTEGER;
 
 		function handleInput(data: string) {
 			if (inputMode) {
@@ -262,7 +244,6 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 					const nextQ = currentQuestion();
 					if (nextQ) enterQuestion(nextQ);
 					else optionIndex = 0;
-					scrollOffset = Number.MAX_SAFE_INTEGER;
 					refresh();
 					return;
 				}
@@ -271,7 +252,6 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 					const nextQ = currentQuestion();
 					if (nextQ) enterQuestion(nextQ);
 					else optionIndex = 0;
-					scrollOffset = Number.MAX_SAFE_INTEGER;
 					refresh();
 					return;
 				}
@@ -280,29 +260,6 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 			if (currentTab === questions.length) {
 				if (matchesKey(data, Key.enter) && allAnswered()) submit(false);
 				else if (matchesKey(data, Key.escape)) submit(true);
-				return;
-			}
-
-			// In-dialog scrolling (PgUp/PgDn/Home/End) — scrolls the bounded panel
-			// window; the terminal scrollback above stays fully usable.
-			if (matchesKey(data, "pageUp")) {
-				scrollOffset = Math.max(0, scrollOffset - (maxDialogHeight - 2));
-				refresh();
-				return;
-			}
-			if (matchesKey(data, "pageDown")) {
-				scrollOffset = scrollOffset + (maxDialogHeight - 2);
-				refresh();
-				return;
-			}
-			if (matchesKey(data, "home")) {
-				scrollOffset = 0;
-				refresh();
-				return;
-			}
-			if (matchesKey(data, "end")) {
-				scrollOffset = Number.MAX_SAFE_INTEGER;
-				refresh();
 				return;
 			}
 
@@ -540,46 +497,11 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 					lines[i] = truncateToWidth(lines[i], safeWidth);
 				}
 			}
-			cachedLines = windowLines(lines);
-			return cachedLines;
+			cachedLines = lines;
+			return lines;
 		}
 
-		/**
-		 * Bound the rendered lines to the panel height with in-place
-		 * scrolling (the panel is capped to a fraction of the terminal, so
-		 * overflowing content scrolls internally). Shows a ▴/▾ indicator when
-		 * content overflows; the footer/options stay in view because the
-		 * default view is bottom-anchored.
-		 */
-		function windowLines(all: string[]): string[] {
-			if (all.length <= maxDialogHeight) {
-				scrollOffset = 0;
-				return all;
-			}
-			const maxOffset = all.length - maxDialogHeight;
-			scrollOffset = Math.min(scrollOffset, maxOffset);
-			const canScrollUp = scrollOffset > 0;
-			const canScrollDown = scrollOffset < maxOffset;
-			const out: string[] = [];
-			if (canScrollUp) out.push(theme.fg("dim", `▴ ${scrollOffset}/${all.length} lines`));
-			const contentRows = maxDialogHeight - (canScrollUp ? 1 : 0) - (canScrollDown ? 1 : 0);
-			for (let i = scrollOffset; i < scrollOffset + contentRows; i++) out.push(all[i]);
-			if (canScrollDown) out.push(theme.fg("dim", `▾ ${scrollOffset + contentRows}/${all.length} lines`));
-			return out;
-		}
-
-		const component = { render, invalidate: () => { cachedLines = undefined; }, handleInput };
-		return component;
-	}, {
-		// Bottom-anchored main-screen panel (overlay): composites into the frame
-		// in place (no viewport scroll churn), keeps history visible above, and
-		// leaves terminal scrollback fully usable while the dialog is open.
-		overlay: true,
-		overlayOptions: {
-			anchor: "bottom-center",
-			width: "95%",
-			maxHeight: "45%",
-		},
+		return { render, invalidate: () => { cachedLines = undefined; }, handleInput };
 	});
 }
 
