@@ -44,3 +44,15 @@ export function extractVerificationContract(objective: string): { objective: str
 export function promptSafeObjective(objective: string): string {
 	return objective.replace(/<\/?untrusted_objective>/gi, (tag) => tag.replace(/</g, "&lt;").replace(/>/g, "&gt;"));
 }
+
+/**
+ * A Sisyphus objective must express ordered work: numbered items in the body
+ * ("1)", "1.", "1:") or explicit "Step N" markers. Without any such marker the
+ * objective cannot be executed in patient ordered fashion, so the guided
+ * /sisyphus flow (or a corrected /sisyphus-direct argument) is required.
+ */
+export function sisyphusObjectiveSufficient(objective: string): boolean {
+	// Ordered work can be written inline ("Refactor: 1) extract. 2) wire.")
+	// or as a numbered block; any explicit item marker counts as sufficient.
+	return /\b\d{1,2}\s*[).:]|\bstep\s*\d+/i.test(objective.trim());
+}

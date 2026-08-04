@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { extractVerificationContract } from "./goal-contract.ts";
+import { extractVerificationContract, sisyphusObjectiveSufficient } from "./goal-contract.ts";
 import { detailedSummary, oneLineSummary } from "./goal-format.ts";
 import {
 	goalSettingsPath,
@@ -121,7 +121,12 @@ export function registerGoalCommands(core: GoalCore): void {
 			ctx.ui.notify(`No objective provided. Use ${command}.`, "warning");
 			return;
 		}
-		const { objective, verificationContract } = extractVerificationContract(raw);
+		if (mode === "sisyphus" && !sisyphusObjectiveSufficient(raw)) {
+			ctx.ui.notify("A Sisyphus objective needs ordered steps with per-step done criteria. Use /sisyphus for guided drafting, or provide numbered steps (1) ..., 2) ...) in the objective.", "warning");
+			return;
+		}
+		const settings = loadGoalSettings(ctx.cwd);
+		const { objective, verificationContract } = settings.disableContracts ? { objective: raw, verificationContract: undefined } : extractVerificationContract(raw);
 		clearGoalDrafting(core);
 		core.clearContinuationState();
 		core.clearActiveAccounting();

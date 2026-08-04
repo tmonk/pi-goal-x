@@ -63,6 +63,7 @@ test("proposal confirmation helpers keep headless and cancel semantics stable", 
 	assert.equal(proposalDecisionFromQuestionnaireResult({ cancelled: true, answer: "Confirm — create this goal now" }), "continue");
 	assert.equal(proposalDecisionFromQuestionnaireResult({ cancelled: false, answer: "Confirm — create this goal now" }), "confirm");
 	assert.equal(proposalDecisionFromQuestionnaireResult({ cancelled: false, answer: "Continue chatting — keep refining" }), "continue");
+	assert.equal(proposalDecisionFromQuestionnaireResult({ cancelled: false, answer: "Cancel — discard this draft" }), "cancel");
 	assert.match(proposalDialogFailureMessage(new Error("boom")), /NOT created/);
 	assert.match(proposalDialogFailureMessage(new Error("boom")), /drafting remains active/);
 });

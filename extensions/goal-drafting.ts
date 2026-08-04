@@ -1,7 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { extractVerificationContract } from "./goal-contract.ts";
+import { extractVerificationContract, sisyphusObjectiveSufficient } from "./goal-contract.ts";
 import { buildDraftConfirmationText, buildTweakConfirmationText, goalDraftingPrompt, renderConfirmationTasks, type GoalDraftingFocus } from "./goal-draft.ts";
 import { goalDetails, renderGoalResult } from "./goal-format.ts";
 import { buildGoalCreatedReport } from "./goal-policy.ts";
@@ -154,11 +154,17 @@ export function registerDraftingTools(core: GoalCore): void {
 			core.reconcileFocusedGoalFromDisk(ctx);
 			const target = draft.mode === "tweak" ? core.state.goal : undefined;
 			if (draft.mode === "tweak" && (!target || target.id !== draft.targetGoalId)) return { content: [{ type: "text", text: "The goal changed while drafting; review it and start /goal-tweak again." }], details: goalDetails(core.state.goal) };
+			if (draft.mode === "sisyphus" && !sisyphusObjectiveSufficient(objective)) return { content: [{ type: "text", text: "A Sisyphus goal needs ordered steps with explicit per-step done criteria. Refine the objective with numbered steps (1) ..., 2) ...) or Step N: blocks before proposing again." }], details: goalDetails(core.state.goal) };
 			const confirmation = shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM })
 				? { decision: "confirm" as const, auditorEnabled: true }
 				: await showProposalDialog(ctx, proposalText(draft, objective, params.auto_continue !== false, taskResult.value, target ?? undefined), draft.mode === "sisyphus" ? "sisyphus" : "goal");
+			if (confirmation.decision === "cancel") {
+				clearGoalDrafting(core);
+				return { content: [{ type: "text", text: "Draft cancelled; no goal was created. Run /goal or /sisyphus to start a new draft." }], details: goalDetails(core.state.goal) };
+			}
 			if (confirmation.decision !== "confirm") return { content: [{ type: "text", text: "Goal draft refinement requested. The goal was not changed; ask what the user wants revised before proposing again." }], details: goalDetails(core.state.goal) };
-			const extracted = extractVerificationContract(objective);
+			const settings = loadGoalSettings(ctx.cwd);
+			const extracted = settings.disableContracts ? { objective, verificationContract: undefined } : extractVerificationContract(objective);
 			if (draft.mode !== "tweak") {
 				core.replaceGoal({ objective: extracted.objective, autoContinue: params.auto_continue !== false, sisyphus: expectedSisyphus, taskList: taskResult.value }, ctx, true, extracted.verificationContract);
 				clearGoalDrafting(core);

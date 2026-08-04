@@ -38,6 +38,39 @@
   authoritative serial baseline.
   Timings are evidence, not portable performance guarantees.
 
+## 2026-08-04 — Stage 5: guided drafting runtime completed and verified
+
+- The restored drafting flow (committed at `5bf4f2c`) was completed with the
+  remaining TECH §6 behaviors:
+  - Explicit **Cancel — discard this draft** choice in the confirmation
+    dialog (`ProposalDecision` now `confirm | continue | cancel`). Cancel
+    clears draft state and drafting tools, restores the execution profile, and
+    performs no durable goal/file/ledger mutation. Escape still maps to
+    continue-refining so the user is never trapped.
+  - **Sisyphus structural sufficiency** (`sisyphusObjectiveSufficient` in
+    goal-contract.ts): numbered item markers (`1)`, `1.`, `Step N`) required
+    for both `/sisyphus-direct` and guided sisyphus proposals; insufficient
+    objectives are rejected with guidance to the guided flow.
+  - **Contracts-disabled gating**: with `disableContracts` set, a
+    `Verification contract:` line stays plain objective prose and is never
+    promoted to the structured contract field (guided proposal and direct
+    creation alike).
+- Added `tests/goal-drafting.test.ts` (12 handler-level tests): dialog
+  cancel durable no-op; continue-refining preserves answers and proposed
+  tasks across a second proposal; atomic confirmation persists verification
+  contract + nested parent-linked task tree and restores the execution
+  profile; sisyphus mode mismatch and sufficiency validation; tasks-disabled
+  and contracts-disabled variants; `/goal-tweak` confirmation under focus
+  validation; stale-tweak-target rejection without mutation; explicit
+  headless auto-confirm semantics (default confirm, `PI_GOAL_AUTO_CONFIRM=0`
+  keeps pending, `=1` confirms with UI); batch questionnaire and single
+  dependent-follow-up question handler tests. Plus unit coverage for
+  `sisyphusObjectiveSufficient`.
+- Compaction/tree restoration of an unconfirmed draft and migration tests
+  for legacy draft-session entries are deferred to Stage 5.1-A (durable
+  branch-local draft state replaces the module WeakMap).
+- Validation: `npm run check` 0 errors; `test:all` 495/0; `test:serial`
+  real-SDK 471/0; `git diff --check` clean.
 ## 2026-08-04 — Baseline reconciliation after the product correction
 
 - The working tree was re-baselined at `5bf4f2c` (restore guided drafting

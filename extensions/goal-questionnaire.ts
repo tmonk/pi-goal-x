@@ -27,7 +27,7 @@ export interface GoalQuestionnaireResult {
 	auditorEnabled?: boolean;
 }
 
-export type ProposalDecision = "confirm" | "continue";
+export type ProposalDecision = "confirm" | "continue" | "cancel";
 
 export function normalizeQuestionnaireQuestions(rawQuestions: GoalQuestionnaireQuestion[]): GoalQuestionnaireQuestion[] {
 	const seenIds = new Set<string>();
@@ -60,8 +60,10 @@ export function shouldAutoConfirmProposal(args: { hasUI: boolean; autoConfirmEnv
 }
 
 export function proposalDecisionFromQuestionnaireResult(args: { cancelled: boolean; answer?: string }): ProposalDecision {
-	if (args.cancelled) return "continue";
-	return (args.answer ?? "").startsWith("Confirm") ? "confirm" : "continue";
+	if (args.cancelled) return "continue"; // never trapped; escape keeps refining
+	if ((args.answer ?? "").startsWith("Confirm")) return "confirm";
+	if ((args.answer ?? "").startsWith("Cancel")) return "cancel";
+	return "continue";
 }
 
 export function isHeadlessQuestionSufficientForDraft(args: { topic: string; questionText: string }): boolean {
@@ -518,7 +520,7 @@ export async function showProposalDialog(
 		id: "confirm",
 		question: headerTitle,
 		context: confirmationText,
-		options: ["Confirm — create this goal now", "Continue chatting — keep refining"],
+		options: ["Confirm — create this goal now", "Continue chatting — keep refining", "Cancel — discard this draft"],
 		recommended: 0,
 		allowCustom: false,
 	}], defaultAuditorEnabled !== undefined ? { defaultEnabled: defaultAuditorEnabled } : undefined);

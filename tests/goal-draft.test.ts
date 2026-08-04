@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extractVerificationContract, promptSafeObjective } from "../extensions/goal-contract.ts";
+import { extractVerificationContract, promptSafeObjective, sisyphusObjectiveSufficient } from "../extensions/goal-contract.ts";
 import { renderConfirmationTasks } from "../extensions/goal-task-confirmation.ts";
 
 test("extractVerificationContract splits contract line from objective", () => {
@@ -28,4 +28,12 @@ test("renderConfirmationTasks renders a flat and nested task tree", () => {
 	assert.ok(lines.some((l) => l.includes("a: A")));
 	assert.ok(lines.some((l) => l.includes("b: B")));
 	assert.ok(lines.some((l) => l.includes("b1: B1")));
+});
+
+test("sisyphusObjectiveSufficient accepts inline and block ordered steps", () => {
+	assert.equal(sisyphusObjectiveSufficient("Refactor the auth flow: 1) extract token validation. 2) wire it into login. 3) update tests."), true, "inline numbered items");
+	assert.equal(sisyphusObjectiveSufficient("Step 1: extract\nStep 2: wire\nStep 3: test"), true, "Step N blocks");
+	assert.equal(sisyphusObjectiveSufficient("1. extract token validation\n2. wire it into login"), true, "numbered block");
+	assert.equal(sisyphusObjectiveSufficient("Just do the thing cleanly"), false, "no step markers");
+	assert.equal(sisyphusObjectiveSufficient(""), false, "empty objective");
 });
