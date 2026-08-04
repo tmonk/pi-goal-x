@@ -1,42 +1,43 @@
 [
   {
-    "id": "propose-goal-draft-called",
-    "desc": "Agent should propose via propose_goal_draft.",
+    "id": "create-goal-called",
+    "desc": "create_goal is called.",
     "kind": "tool-called",
-    "tool": "propose_goal_draft"
+    "tool": "create_goal"
   },
   {
-    "id": "final-proposal-is-sisyphus",
-    "desc": "/goal-sisyphus must produce sisyphus=true.",
+    "id": "sisyphus-mode",
+    "desc": "create_goal mode must be sisyphus.",
     "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": ".sisyphus == true"
+    "tool": "create_goal",
+    "jq": ".mode == \"sisyphus\""
   },
   {
-    "id": "objective-has-only-two-numbered-steps",
-    "desc": "Final accepted objective must preserve the user's two requested steps without adding a third task step.",
+    "id": "two-steps-preserved",
+    "desc": "The objective must contain step 1) and step 2).",
     "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": "(.objective | test(\"(1[.)]|Step 1)\")) and (.objective | test(\"(2[.)]|Step 2)\")) and ((.objective | test(\"(3[.)]|Step 3)\")) | not)"
+    "tool": "create_goal",
+    "jq": "(.objective | contains(\"1)\")) and (.objective | contains(\"2)\"))"
   },
   {
-    "id": "a-txt-created",
+    "id": "no-step-zero",
+    "desc": "The objective must NOT contain an invented step 0).",
+    "kind": "tool-args-jq-none",
+    "tool": "create_goal",
+    "jq": ".objective | contains(\"0)\")"
+  },
+  {
+    "id": "a-txt",
     "desc": "a.txt exists with 'alpha'.",
     "kind": "sandbox-file-contains",
     "path": "a.txt",
     "pattern": "^alpha$"
   },
   {
-    "id": "b-txt-created",
+    "id": "b-txt",
     "desc": "b.txt exists with 'beta'.",
     "kind": "sandbox-file-contains",
     "path": "b.txt",
     "pattern": "^beta$"
-  },
-  {
-    "id": "update-goal-complete",
-    "desc": "Goal reaches completion.",
-    "kind": "tool-called",
-    "tool": "complete_goal"
   }
 ]

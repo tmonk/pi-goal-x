@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "note": "Supported experiment case matrix. Every case here targets the current five-tool surface (create_goal, get_goal, update_goal, set_goal_tasks, update_goal_task) and the ten-command palette. Removed tool names appear only in negative rubric assertions. Real-model runs are opt-in release gates and are NOT part of npm test.",
+  "supported": [
+    "B1-repeated-blocker",
+    "B2-task-completion",
+    "C1-vague-goal-set",
+    "C10-verify-command-gate",
+    "C11-drafting-tool-whitelist",
+    "C12-focus-gate",
+    "C13-step-inflation-gate",
+    "C14-post-stop-block",
+    "C16-compact-mid-sisyphus",
+    "C18-abort-mid-turn",
+    "C19-iteration-frustration-benchmark",
+    "C2-fullspec-goal-set",
+    "C20-core-tool-selection",
+    "C21-user-lifecycle-ownership",
+    "C22-blocked-three-turns",
+    "C23-audit-without-paperwork",
+    "C24-multi-goal-focus",
+    "C25-task-tool-consolidation",
+    "C26-budget-limit",
+    "C3-sisyphus-drafts-steps",
+    "C4-tweak-objective",
+    "C5-impossible-pause",
+    "C6-sisyphus-blocked",
+    "C7-resume-after-pause",
+    "C8-premature-complete",
+    "C9-clear-mid-sisyphus"
+  ],
+  "unsupported_dirs": [
+    "_smoke"
+  ],
+  "npm_test": "not included"
+}

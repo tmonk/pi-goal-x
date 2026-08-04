@@ -1,9 +1,11 @@
-# C1 — `/goal-set` vague topic should enter drafting interview
+# C1 — vague topic should trigger clarifying questions, not goal creation
 
 ## Behavior under test
 
-`/goal-set <vague topic>` should enter the drafting interview: it must not create a goal immediately and must not start executing work.
+A vague topic must NOT create a goal immediately and must NOT start executing
+work. The agent should ask the user clarifying questions (plain chat) before
+any `create_goal` call.
 
 ## Prompts (one turn per line)
 
-TURN: /goal-set help me organize my notes
+TURN: /goal help me organize my notes

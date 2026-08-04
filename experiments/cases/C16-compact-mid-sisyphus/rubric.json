@@ -1,16 +1,16 @@
 [
   {
-    "id": "propose-goal-draft-called",
-    "desc": "Agent should propose via propose_goal_draft.",
+    "id": "goal-created",
+    "desc": "The sisyphus goal is created.",
     "kind": "tool-called",
-    "tool": "propose_goal_draft"
+    "tool": "create_goal"
   },
   {
-    "id": "objective-is-sisyphus",
-    "desc": "sisyphus=true.",
+    "id": "sisyphus-mode",
+    "desc": "create_goal mode must be sisyphus.",
     "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": ".sisyphus == true"
+    "tool": "create_goal",
+    "jq": ".mode == \"sisyphus\""
   },
   {
     "id": "f1-created",
@@ -48,9 +48,10 @@
     "pattern": "^five$"
   },
   {
-    "id": "update-goal-complete",
-    "desc": "Final completion after all 5 verified steps.",
-    "kind": "tool-called",
-    "tool": "complete_goal"
+    "id": "completed",
+    "desc": "update_goal(complete) is called.",
+    "kind": "tool-args-jq",
+    "tool": "update_goal",
+    "jq": ".status == \"complete\""
   }
 ]

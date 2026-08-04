@@ -1,59 +1,55 @@
 [
   {
     "id": "goal-created",
-    "desc": "Agent should create the goal from the clear spec.",
+    "desc": "The goal is created via create_goal.",
     "kind": "tool-called",
-    "tool": "propose_goal_draft"
+    "tool": "create_goal"
   },
   {
-    "id": "task-list-proposed",
-    "desc": "Agent must propose the task list via propose_task_list.",
+    "id": "task-list-set",
+    "desc": "set_goal_tasks is called.",
     "kind": "tool-called",
-    "tool": "propose_task_list"
+    "tool": "set_goal_tasks"
   },
   {
-    "id": "tasks-completed",
-    "desc": "Agent must mark tasks complete via complete_task.",
-    "kind": "tool-called",
-    "tool": "complete_task"
+    "id": "task-updates",
+    "desc": "update_goal_task is called at least twice.",
+    "kind": "tool-call-count",
+    "tool": "update_goal_task",
+    "op": "ge",
+    "count": 2
   },
   {
-    "id": "evidence-provided",
-    "desc": "At least one complete_task call must carry a non-empty evidence note.",
+    "id": "completed",
+    "desc": "update_goal(complete) is called.",
     "kind": "tool-args-jq",
-    "tool": "complete_task",
-    "jq": ".evidence | type == \"string\" and (length > 0)"
+    "tool": "update_goal",
+    "jq": ".status == \"complete\""
   },
   {
-    "id": "goal-completed",
-    "desc": "Agent must call complete_goal once both tasks are done.",
-    "kind": "tool-called",
-    "tool": "complete_goal"
-  },
-  {
-    "id": "alpha-txt-created",
-    "desc": "alpha.txt exists in the sandbox.",
-    "kind": "sandbox-file-exists",
-    "path": "alpha.txt"
-  },
-  {
-    "id": "beta-txt-created",
-    "desc": "beta.txt exists in the sandbox.",
-    "kind": "sandbox-file-exists",
-    "path": "beta.txt"
-  },
-  {
-    "id": "alpha-txt-content",
-    "desc": "alpha.txt content is exactly 'one'.",
+    "id": "alpha-txt",
+    "desc": "alpha.txt exists with content 'one'.",
     "kind": "sandbox-file-contains",
     "path": "alpha.txt",
     "pattern": "^one$"
   },
   {
-    "id": "beta-txt-content",
-    "desc": "beta.txt content is exactly 'two'.",
+    "id": "beta-txt",
+    "desc": "beta.txt exists with content 'two'.",
     "kind": "sandbox-file-contains",
     "path": "beta.txt",
     "pattern": "^two$"
+  },
+  {
+    "id": "no-legacy-task-tools",
+    "desc": "Legacy task tools are removed.",
+    "kind": "tool-not-called",
+    "tool": "propose_task_list"
+  },
+  {
+    "id": "no-complete-tool",
+    "desc": "complete_goal is removed.",
+    "kind": "tool-not-called",
+    "tool": "complete_goal"
   }
 ]

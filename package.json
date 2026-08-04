@@ -38,7 +38,10 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "test:serial": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts"
+    "test:serial": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts",
+    "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:integration": "node --experimental-strip-types --test --test-concurrency=1 tests/integration/*.test.ts",
+    "test:all": "npm run test:unit && npm run test:integration"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

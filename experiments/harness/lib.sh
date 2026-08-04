@@ -125,6 +125,11 @@ resolve_case_dir() {
     echo "${arg}"; return
   fi
   local d="${EXPERIMENTS_DIR}/cases/${arg}"
-  [[ -d "${d}" ]] || { echo "No such case: ${arg}" >&2; exit 2; }
+  if [[ ! -d "${d}" ]]; then
+    echo "No such case: ${arg}" >&2
+    echo "Supported cases are listed in ${EXPERIMENTS_DIR}/SUPPORTED_CASES.json" >&2
+    echo "Use: run.sh <case-id> (e.g. C20-core-tool-selection)" >&2
+    exit 2
+  fi
   echo "${d}"
 }

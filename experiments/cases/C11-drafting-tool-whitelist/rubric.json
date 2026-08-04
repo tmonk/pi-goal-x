@@ -1,48 +1,27 @@
 [
   {
-    "id": "propose-goal-draft-called",
-    "desc": "Agent should commit via propose_goal_draft.",
+    "id": "create-goal-called",
+    "desc": "create_goal is called with the full objective.",
     "kind": "tool-called",
-    "tool": "propose_goal_draft"
-  },
-  {
-    "id": "create-goal-not-called",
-    "desc": "create_goal is hidden during drafting; only propose_goal_draft should be the commit path.",
-    "kind": "tool-not-called",
     "tool": "create_goal"
   },
   {
-    "id": "drafting-not-sisyphus",
-    "desc": "Topic came via /goal-set, must not be sisyphus.",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": ".sisyphus == false or .sisyphus == null"
-  },
-  {
     "id": "readme-created",
-    "desc": "Final outcome: README.md exists.",
-    "kind": "sandbox-file-exists",
-    "path": "README.md"
-  },
-  {
-    "id": "readme-content",
-    "desc": "README.md content matches 'Test C11'.",
+    "desc": "README.md exists with 'Test C11'.",
     "kind": "sandbox-file-contains",
     "path": "README.md",
-    "pattern": "Test C11"
+    "pattern": "^Test C11$"
   },
   {
-    "id": "drafting-converged-quickly",
-    "desc": "C3 gate teaches the agent to skip drafting-time recon. If the gate works, total tool calls before propose_goal_draft should be 0 or 1. Note: this rubric is approximate — it counts all bash calls (pre-confirm + post-confirm). For now we tolerate up to 6 bash calls overall (post-confirm verify activity is normal).",
-    "kind": "tool-call-count",
-    "tool": "bash",
-    "op": "le",
-    "count": 6
+    "id": "no-draft-tools",
+    "desc": "Drafting tools are removed.",
+    "kind": "tool-not-called",
+    "tool": "propose_goal_draft"
   },
   {
-    "id": "update-goal-complete",
-    "desc": "Goal should reach completion after autoContinue.",
-    "kind": "tool-called",
-    "tool": "complete_goal"
+    "id": "no-question-tools",
+    "desc": "Question tools are removed.",
+    "kind": "tool-not-called",
+    "tool": "goal_questionnaire"
   }
 ]

@@ -1,14 +1,15 @@
-# C10 — verifyCommand schema gate prevents hallucinated step completion
+# C10 — evidence-gated completion: every task carries evidence; the auditor verifies actual files
 
 ## Behavior under test
 
-In a Sisyphus goal, when the agent calls `step_complete` it must pass `verifyCommand`. If the agent calls step_complete without actually finishing the step, the framework runs verifyCommand which fails (non-zero exit), and the schema rejects advancing stepsCompleted. This is a step-level replica of the pi-autoresearch `checks.sh` pattern.
-
-Specific test:
-- the steps themselves are simple file creations
-- the INPUT explicitly requires every `step_complete` to carry a `verifyCommand`
-- rubric checks: every step_complete has a verifyCommand; all files eventually exist with correct content; the agent did not fake completion
+In the current interface, per-step verification is owned by the independent
+auditor (from actual evidence) plus task evidence via `update_goal_task`. The
+agent must:
+- create the three files;
+- set a task list and mark each task complete via `update_goal_task` with an
+  evidence note that a verifier could re-run;
+- call `update_goal({status:"complete"})` only after all tasks are done.
 
 ## Prompts
 
-TURN: /goal-sisyphus "Sisyphus 3 steps with strict verification: 1) create file alpha.txt containing exactly 'hello' (no newline). 2) create file beta.txt containing exactly 'world' (no newline). 3) create file gamma.txt containing exactly 'hello world' (no newline). For EVERY step_complete call you MUST pass a verifyCommand argument that the framework will run via bash -c to PROVE the step's done criterion. Example for step 1: `[ \"$(cat alpha.txt)\" = \"hello\" ]`. Step 3 verifyCommand must check gamma.txt content equals 'hello world'. Do NOT call step_complete without verifyCommand. Do NOT call complete_goal until all 3 step_complete calls have succeeded. autoContinue: true."
+TURN: /sisyphus "Sisyphus 3 steps with strict verification: 1) create file alpha.txt containing exactly 'hello' (no newline). 2) create file beta.txt containing exactly 'world' (no newline). 3) create file gamma.txt containing exactly 'hello world' (no newline). After the goal is created, use set_goal_tasks with three tasks, mark each complete via update_goal_task with an evidence note that proves the file content (e.g. a bash -c check), and only then call update_goal(status=complete). Do NOT call update_goal(status=complete) until all 3 tasks have succeeded. autoContinue: true."

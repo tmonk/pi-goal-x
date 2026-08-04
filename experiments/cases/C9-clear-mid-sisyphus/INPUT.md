@@ -1,5 +1,11 @@
-# C9-clear-mid-sisyphus
-# Test: user runs /goal-clear while a sisyphus goal is executing; the agent should stop, with no active goal left behind.
-TURN: /goal-sisyphus "Step 1: create a.txt with 'a'. Step 2: append content of missing.txt to a.txt. missing.txt will be provided later by the user. For step 1 step_complete, pass verifyCommand `test -f a.txt && [ \"$(cat a.txt)\" = a ]`. After clear, do not try to recover or create missing files yourself."
-TURN: 
+# C9 — user runs /goal-clear while a sisyphus goal is executing; the agent stops
+
+## Behavior under test
+
+The user runs /goal-clear (user-owned) while a sisyphus goal is executing. The
+agent must stop, and no active goal may be left behind.
+
+## Prompts
+
+TURN: /sisyphus "Step 1: create a.txt with 'a'. Step 2: append content of missing.txt to a.txt. missing.txt will be provided later by the user. After /goal-clear, do not try to recover or create missing files yourself."
 TURN: /goal-clear

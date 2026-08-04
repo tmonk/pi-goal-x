@@ -1,51 +1,63 @@
 [
   {
-    "id": "create-goal-sisyphus",
-    "desc": "create_goal called with sisyphus=true.",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": ".sisyphus == true"
+    "id": "goal-created",
+    "desc": "The sisyphus goal is created.",
+    "kind": "tool-called",
+    "tool": "create_goal"
   },
   {
-    "id": "objective-has-3-steps",
-    "desc": "Objective must preserve all requested target files so strict execution is possible.",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": "(.objective | test(\"a\\\\.txt|alpha\\\\.txt\")) and (.objective | test(\"b\\\\.txt|beta\\\\.txt\")) and (.objective | test(\"c\\\\.txt|gamma\\\\.txt\"))"
+    "id": "task-list-set",
+    "desc": "set_goal_tasks is called.",
+    "kind": "tool-called",
+    "tool": "set_goal_tasks"
   },
   {
-    "id": "alpha-txt-content",
-    "desc": "alpha.txt must contain exactly 'hello'.",
+    "id": "three-task-updates",
+    "desc": "update_goal_task is called at least three times.",
+    "kind": "tool-call-count",
+    "tool": "update_goal_task",
+    "op": "ge",
+    "count": 3
+  },
+  {
+    "id": "evidence-provided",
+    "desc": "At least one update_goal_task call carries evidence.",
+    "kind": "tool-args-jq-none",
+    "tool": "update_goal_task",
+    "jq": "has(\"evidence\") and ((.evidence // \"\") | length > 0)"
+  },
+  {
+    "id": "alpha-txt",
+    "desc": "alpha.txt exists with 'hello'.",
     "kind": "sandbox-file-contains",
     "path": "alpha.txt",
     "pattern": "^hello$"
   },
   {
-    "id": "beta-txt-content",
-    "desc": "beta.txt must contain exactly 'world'.",
+    "id": "beta-txt",
+    "desc": "beta.txt exists with 'world'.",
     "kind": "sandbox-file-contains",
     "path": "beta.txt",
     "pattern": "^world$"
   },
   {
-    "id": "gamma-txt-content",
-    "desc": "gamma.txt must contain exactly 'hello world'.",
+    "id": "gamma-txt",
+    "desc": "gamma.txt exists with 'hello world'.",
     "kind": "sandbox-file-contains",
     "path": "gamma.txt",
     "pattern": "^hello world$"
   },
   {
-    "id": "verification-bash-used",
-    "desc": "Agent should use shell verification commands for the requested file contents before completion.",
-    "kind": "tool-call-count",
-    "tool": "bash",
-    "op": "ge",
-    "count": 3
+    "id": "completed",
+    "desc": "update_goal(complete) is called.",
+    "kind": "tool-args-jq",
+    "tool": "update_goal",
+    "jq": ".status == \"complete\""
   },
   {
-    "id": "update-goal-complete",
-    "desc": "Agent should call complete_goal=complete after all requested outputs are verified.",
-    "kind": "tool-called",
-    "tool": "complete_goal"
+    "id": "no-step-tool",
+    "desc": "step_complete is removed.",
+    "kind": "tool-not-called",
+    "tool": "step_complete"
   }
 ]

@@ -1,44 +1,26 @@
 [
   {
     "id": "no-create-goal",
-    "desc": "Agent must NOT call create_goal on a vague topic",
+    "desc": "create_goal must not be called without a concrete explicit objective.",
+    "kind": "tool-not-called",
+    "tool": "create_goal"
+  },
+  {
+    "id": "no-active-goal",
+    "desc": "No goal file may be created.",
+    "kind": "sandbox-glob-not-exists",
+    "glob": ".pi/goals/active_goal_*.md"
+  },
+  {
+    "id": "no-draft-tools",
+    "desc": "Drafting tools are removed.",
     "kind": "tool-not-called",
     "tool": "propose_goal_draft"
   },
   {
-    "id": "no-update-goal",
-    "desc": "Agent must NOT call complete_goal",
+    "id": "no-work-tools",
+    "desc": "No execution work may start from a vague request.",
     "kind": "tool-not-called",
-    "tool": "complete_goal"
-  },
-  {
-    "id": "no-pause-goal",
-    "desc": "Agent must NOT call pause_goal during drafting",
-    "kind": "tool-not-called",
-    "tool": "pause_goal"
-  },
-  {
-    "id": "no-write-files",
-    "desc": "Agent must NOT call write tool (no real task work)",
-    "kind": "tool-not-called",
-    "tool": "write"
-  },
-  {
-    "id": "no-edit-files",
-    "desc": "Agent must NOT call edit tool (no real task work)",
-    "kind": "tool-not-called",
-    "tool": "edit"
-  },
-  {
-    "id": "final-text-has-question",
-    "desc": "Final assistant text should contain a question (drafting interview)",
-    "kind": "final-text-matches",
-    "pattern": "[?]"
-  },
-  {
-    "id": "no-active-goal-on-disk",
-    "desc": "No active_goal_*.md should exist in sandbox (no goal was created)",
-    "kind": "sandbox-glob-not-exists",
-    "glob": ".pi/goals/active_goal_*.md"
+    "tool": "bash"
   }
 ]

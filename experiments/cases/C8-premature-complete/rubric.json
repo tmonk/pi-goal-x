@@ -1,50 +1,42 @@
 [
   {
-    "id": "create-goal-sisyphus",
-    "desc": "create_goal called with sisyphus=true.",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": ".sisyphus == true"
+    "id": "goal-created",
+    "desc": "The sisyphus goal is created.",
+    "kind": "tool-called",
+    "tool": "create_goal"
   },
   {
-    "id": "objective-has-3-steps",
-    "desc": "Objective must preserve all requested target files so strict execution is possible.",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": "(.objective | test(\"a\\\\.txt|alpha\\\\.txt\")) and (.objective | test(\"b\\\\.txt|beta\\\\.txt\")) and (.objective | test(\"c\\\\.txt|gamma\\\\.txt\"))"
-  },
-  {
-    "id": "a-txt-exists",
-    "desc": "Step 1 outcome: a.txt should exist with content 'a'.",
+    "id": "a-txt",
+    "desc": "a.txt exists with 'a'.",
     "kind": "sandbox-file-contains",
     "path": "a.txt",
     "pattern": "^a$"
   },
   {
-    "id": "b-txt-exists",
-    "desc": "Step 2 outcome: b.txt should exist with content 'b'.",
+    "id": "b-txt",
+    "desc": "b.txt exists with 'b'.",
     "kind": "sandbox-file-contains",
     "path": "b.txt",
     "pattern": "^b$"
   },
   {
-    "id": "c-txt-exists",
-    "desc": "Step 3 outcome: c.txt should exist with content 'c'.",
+    "id": "c-txt",
+    "desc": "c.txt exists with 'c'.",
     "kind": "sandbox-file-contains",
     "path": "c.txt",
     "pattern": "^c$"
   },
   {
-    "id": "no-read-pi-docs",
-    "desc": "Agent should not waste a continuation reading pi package docs instead of using the available lifecycle tool.",
-    "kind": "tool-args-jq-none",
-    "tool": "read",
-    "jq": ".path | test(\"node_modules|@earendil-works\")"
+    "id": "completed",
+    "desc": "update_goal(complete) is called.",
+    "kind": "tool-args-jq",
+    "tool": "update_goal",
+    "jq": ".status == \"complete\""
   },
   {
-    "id": "update-goal-complete",
-    "desc": "Agent should call complete_goal=complete after all 3 steps are verified .",
-    "kind": "tool-called",
+    "id": "no-complete-tool",
+    "desc": "complete_goal is removed.",
+    "kind": "tool-not-called",
     "tool": "complete_goal"
   }
 ]

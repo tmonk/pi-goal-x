@@ -1,61 +1,28 @@
 [
   {
     "id": "create-goal-called",
-    "desc": "Agent SHOULD call create_goal in turn 1 because the topic is fully specified.",
+    "desc": "create_goal is called with the full objective.",
     "kind": "tool-called",
-    "tool": "propose_goal_draft"
+    "tool": "create_goal"
   },
   {
-    "id": "create-goal-objective-mentions-hello-txt",
-    "desc": "create_goal.objective should reference the file 'hello.txt'.",
+    "id": "objective-complete",
+    "desc": "The objective must include the full spec.",
     "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": ".objective | test(\"hello\\\\.txt\")"
+    "tool": "create_goal",
+    "jq": ".objective | contains(\"Hello, Goal!\")"
   },
   {
-    "id": "create-goal-not-sisyphus",
-    "desc": "/goal-set should not create a sisyphus goal.",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": "(.sisyphus == false) or (.sisyphus == null)"
-  },
-  {
-    "id": "no-pause-goal",
-    "desc": "No pause_goal calls (drafting → execution should be normal).",
-    "kind": "tool-not-called",
-    "tool": "pause_goal"
-  },
-  {
-    "id": "update-goal-complete-called",
-    "desc": "Because autoContinue=true and the task is small, agent should finish and call complete_goal(complete).",
-    "kind": "tool-called",
-    "tool": "complete_goal"
-  },
-  {
-    "id": "no-get-goal-loop",
-    "desc": "Agent should not loop on get_goal instead of doing the file work.",
-    "kind": "tool-call-count",
-    "tool": "get_goal",
-    "op": "le",
-    "count": 1
-  },
-  {
-    "id": "goal-file-on-disk",
-    "desc": "A goal file must land on disk somewhere under .pi/goals (active OR archived).",
-    "kind": "sandbox-glob-exists",
-    "glob": ".pi/goals/**.md"
-  },
-  {
-    "id": "hello-txt-created",
-    "desc": "The actual task outcome: hello.txt exists in the sandbox.",
-    "kind": "sandbox-file-exists",
-    "path": "hello.txt"
-  },
-  {
-    "id": "hello-txt-content-correct",
-    "desc": "hello.txt content should be exactly 'Hello, Goal!' (one line).",
+    "id": "hello-txt",
+    "desc": "hello.txt exists with exactly 'Hello, Goal!'.",
     "kind": "sandbox-file-contains",
     "path": "hello.txt",
     "pattern": "^Hello, Goal!$"
+  },
+  {
+    "id": "no-question-tools",
+    "desc": "Question tools are removed.",
+    "kind": "tool-not-called",
+    "tool": "goal_question"
   }
 ]

@@ -1,0 +1,29 @@
+[
+  {
+    "id": "create-goal-once",
+    "desc": "create_goal is called exactly once (converged, no cycling).",
+    "kind": "tool-call-count",
+    "tool": "create_goal",
+    "op": "eq",
+    "count": 1
+  },
+  {
+    "id": "full-objective",
+    "desc": "The final objective must include the last refinement (stats tracking).",
+    "kind": "tool-args-jq",
+    "tool": "create_goal",
+    "jq": ".objective | contains(\"stats\")"
+  },
+  {
+    "id": "no-draft-tools",
+    "desc": "Drafting tools are removed.",
+    "kind": "tool-not-called",
+    "tool": "propose_goal_draft"
+  },
+  {
+    "id": "no-question-tools",
+    "desc": "Question tools are removed.",
+    "kind": "tool-not-called",
+    "tool": "goal_questionnaire"
+  }
+]

@@ -1,35 +1,33 @@
 [
   {
-    "id": "create-goal-sisyphus",
-    "desc": "create_goal called with sisyphus=true.",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": ".sisyphus == true"
+    "id": "goal-created",
+    "desc": "The sisyphus goal is created.",
+    "kind": "tool-called",
+    "tool": "create_goal"
   },
   {
-    "id": "step1-done-a-txt",
-    "desc": "Step 1 should have run before first pause: a.txt should exist with content 'a'.",
+    "id": "a-txt",
+    "desc": "a.txt exists with 'a'.",
     "kind": "sandbox-file-contains",
     "path": "a.txt",
     "pattern": "^a$"
   },
   {
-    "id": "pause-goal-called",
-    "desc": "Agent must call pause_goal when step 2 precondition (missing.txt) is missing.",
-    "kind": "tool-called",
-    "tool": "pause_goal"
-  },
-  {
-    "id": "goal-still-paused",
-    "desc": "After /goal-resume, agent should re-attempt step 2, still find missing.txt absent, and end paused.",
-    "kind": "sandbox-glob-contains",
-    "glob": "**.md",
-    "pattern": "\"status\": \"paused\""
+    "id": "no-missing-fabrication",
+    "desc": "missing.txt must not be fabricated by the agent.",
+    "kind": "sandbox-glob-not-exists",
+    "glob": "missing.txt"
   },
   {
     "id": "no-fake-complete",
-    "desc": "Agent must NOT mark goal complete with step 2 unfinished.",
+    "desc": "update_goal(complete) must not fire.",
     "kind": "tool-not-called",
-    "tool": "complete_goal"
+    "tool": "update_goal"
+  },
+  {
+    "id": "no-pause-goal",
+    "desc": "pause_goal is removed (pausing is user-owned via /goal-pause).",
+    "kind": "tool-not-called",
+    "tool": "pause_goal"
   }
 ]

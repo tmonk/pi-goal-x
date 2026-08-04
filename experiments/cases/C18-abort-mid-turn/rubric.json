@@ -1,9 +1,9 @@
 [
   {
-    "id": "propose-goal-draft-called",
-    "desc": "Agent should propose a sisyphus goal.",
+    "id": "goal-created",
+    "desc": "The sisyphus goal is created.",
     "kind": "tool-called",
-    "tool": "propose_goal_draft"
+    "tool": "create_goal"
   },
   {
     "id": "abort-was-fired",
@@ -13,22 +13,28 @@
   },
   {
     "id": "goal-file-paused",
-    "desc": "After abort, goal file's status must be 'paused' (proves pauseActiveGoal fired).",
+    "desc": "After abort, goal file's status must be 'paused'.",
     "kind": "sandbox-glob-contains",
     "glob": ".pi/goals/**.md",
     "pattern": "\"status\"?\\s*:\\s*\"?paused"
   },
   {
     "id": "stop-reason-user",
-    "desc": "Pause due to abort should set stopReason='user' (user-initiated, not agent-pause).",
+    "desc": "Pause due to abort sets stopReason='user'.",
     "kind": "sandbox-glob-contains",
     "glob": ".pi/goals/**.md",
     "pattern": "\"stopReason\"?\\s*:\\s*\"?user"
   },
   {
     "id": "no-fake-complete",
-    "desc": "Agent must not have called complete_goal=complete (aborted before finishing).",
+    "desc": "update_goal(complete) must not have been called (aborted before finishing).",
     "kind": "tool-not-called",
-    "tool": "complete_goal"
+    "tool": "update_goal"
+  },
+  {
+    "id": "no-abort-goal",
+    "desc": "abort_goal is removed (abort is user/Ctrl-C owned).",
+    "kind": "tool-not-called",
+    "tool": "abort_goal"
   }
 ]

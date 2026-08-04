@@ -1,54 +1,49 @@
 [
   {
     "id": "create-goal-called",
-    "desc": "Agent SHOULD call create_goal in turn 1 (spec is concrete enough).",
+    "desc": "create_goal is called.",
     "kind": "tool-called",
-    "tool": "propose_goal_draft"
+    "tool": "create_goal"
   },
   {
-    "id": "create-goal-is-sisyphus",
-    "desc": "create_goal.sisyphus should be true (came through /goal-sisyphus).",
+    "id": "sisyphus-mode",
+    "desc": "create_goal mode must be sisyphus.",
     "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": ".sisyphus == true"
+    "tool": "create_goal",
+    "jq": ".mode == \"sisyphus\""
   },
   {
-    "id": "objective-has-numbered-steps",
-    "desc": "Objective must preserve all requested target files so strict execution is possible.",
+    "id": "numbered-steps",
+    "desc": "The objective must contain numbered steps 1. 2. 3.",
     "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": "(.objective | test(\"a\\\\.txt|alpha\\\\.txt\")) and (.objective | test(\"b\\\\.txt|beta\\\\.txt\")) and (.objective | test(\"c\\\\.txt|gamma\\\\.txt\"))"
+    "tool": "create_goal",
+    "jq": "(.objective | contains(\"1.\")) and (.objective | contains(\"2.\")) and (.objective | contains(\"3.\"))"
   },
   {
-    "id": "objective-mentions-each-file",
-    "desc": "Objective should mention all three target files a.txt / b.txt / c.txt.",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": "(.objective | test(\"a\\\\.txt\")) and (.objective | test(\"b\\\\.txt\")) and (.objective | test(\"c\\\\.txt\"))"
+    "id": "a-txt",
+    "desc": "a.txt exists with 'a'.",
+    "kind": "sandbox-file-contains",
+    "path": "a.txt",
+    "pattern": "^a$"
   },
   {
-    "id": "no-pause-goal",
-    "desc": "Drafting should not pause.",
+    "id": "b-txt",
+    "desc": "b.txt exists with 'b'.",
+    "kind": "sandbox-file-contains",
+    "path": "b.txt",
+    "pattern": "^b$"
+  },
+  {
+    "id": "c-txt",
+    "desc": "c.txt exists with 'a\\nb' (two lines).",
+    "kind": "sandbox-file-contains",
+    "path": "c.txt",
+    "pattern": "^a\\nb$"
+  },
+  {
+    "id": "no-step-tool",
+    "desc": "step_complete is removed.",
     "kind": "tool-not-called",
-    "tool": "pause_goal"
-  },
-  {
-    "id": "goal-file-on-disk",
-    "desc": "A goal file must land on disk somewhere under .pi/goals (active OR archived).",
-    "kind": "sandbox-glob-exists",
-    "glob": ".pi/goals/**.md"
-  },
-  {
-    "id": "goal-file-marks-sisyphus",
-    "desc": "Goal file should mark this as a sisyphus goal somewhere.",
-    "kind": "sandbox-glob-contains",
-    "glob": ".pi/goals/**.md",
-    "pattern": "[Ss]isyphus"
-  },
-  {
-    "id": "all-three-files-created",
-    "desc": "All three files (a.txt, b.txt, c.txt) should exist when autoContinue completes.",
-    "kind": "sandbox-file-exists",
-    "path": "c.txt"
+    "tool": "step_complete"
   }
 ]

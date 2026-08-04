@@ -1,49 +1,29 @@
 [
   {
-    "id": "create-goal-called-once",
-    "desc": "Agent should call create_goal exactly once (only in turn 1).",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": "true"
+    "id": "one-create-max",
+    "desc": "At most one create_goal call.",
+    "kind": "tool-call-count",
+    "tool": "create_goal",
+    "op": "le",
+    "count": 1
   },
   {
-    "id": "no-pause-goal",
-    "desc": "No pause_goal calls — tweak is a normal flow.",
+    "id": "objective-tweaked",
+    "desc": "The goal file on disk must contain the tweaked objective (extra.txt).",
+    "kind": "sandbox-glob-contains",
+    "glob": ".pi/goals/active_goal_*.md",
+    "pattern": "extra.txt"
+  },
+  {
+    "id": "no-execute",
+    "desc": "extra.txt must NOT be created (objective update only).",
+    "kind": "sandbox-glob-not-exists",
+    "glob": "extra.txt"
+  },
+  {
+    "id": "no-tweak-tool",
+    "desc": "propose_goal_tweak is removed; /goal-tweak is a user command.",
     "kind": "tool-not-called",
-    "tool": "pause_goal"
-  },
-  {
-    "id": "apply-goal-tweak-called",
-    "desc": "Tweak should be applied via the sanctioned propose_goal_tweak tool (the only schema-allowed channel).",
-    "kind": "tool-called",
     "tool": "propose_goal_tweak"
-  },
-  {
-    "id": "apply-goal-tweak-mentions-extra-txt",
-    "desc": "propose_goal_tweak.newObjective should mention extra.txt (the added requirement).",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_tweak",
-    "jq": ".newObjective | test(\"extra\\\\.txt\")"
-  },
-  {
-    "id": "apply-goal-tweak-keeps-base-txt",
-    "desc": "propose_goal_tweak.newObjective should still mention base.txt (we expanded, not replaced).",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_tweak",
-    "jq": ".newObjective | test(\"base\\\\.txt\")"
-  },
-  {
-    "id": "goal-mentions-extra-txt",
-    "desc": "After tweak+execution, the goal file (active OR archived) should mention extra.txt.",
-    "kind": "sandbox-glob-contains",
-    "glob": ".pi/goals/**.md",
-    "pattern": "extra\\.txt"
-  },
-  {
-    "id": "goal-still-has-base-txt",
-    "desc": "After tweak+execution, the goal file should still mention base.txt.",
-    "kind": "sandbox-glob-contains",
-    "glob": ".pi/goals/**.md",
-    "pattern": "base\\.txt"
   }
 ]

@@ -1,39 +1,19 @@
 [
   {
-    "id": "create-goal-sisyphus",
-    "desc": "create_goal called with sisyphus=true.",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": ".sisyphus == true"
-  },
-  {
-    "id": "step1-done-a-txt",
-    "desc": "Step 1 should have run before pause/clear: a.txt should exist with content 'a'.",
-    "kind": "sandbox-file-contains",
-    "path": "a.txt",
-    "pattern": "^a$"
-  },
-  {
-    "id": "pause-goal-called",
-    "desc": "Agent must call pause_goal when step 2 precondition (missing.txt) is missing.",
-    "kind": "tool-called",
-    "tool": "pause_goal"
-  },
-  {
-    "id": "no-active-goal-after-clear",
-    "desc": "After /goal-clear, no active_goal_*.md should remain in sandbox.",
+    "id": "no-active-goal-left",
+    "desc": "After clear, no active goal file remains.",
     "kind": "sandbox-glob-not-exists",
-    "glob": "**/active_goal_*.md"
+    "glob": ".pi/goals/active_goal_*.md"
   },
   {
-    "id": "no-fake-complete",
-    "desc": "Agent must NOT mark goal complete after clear.",
+    "id": "no-abort-goal",
+    "desc": "abort_goal is removed.",
     "kind": "tool-not-called",
-    "tool": "complete_goal"
+    "tool": "abort_goal"
   },
   {
-    "id": "no-missing-txt-created",
-    "desc": "After pause/clear, agent must NOT fabricate missing.txt to 'recover'. The user said the file would come later; agent creating it is post-pause obedience violation.",
+    "id": "no-missing-fabrication",
+    "desc": "missing.txt must not be fabricated.",
     "kind": "sandbox-glob-not-exists",
     "glob": "missing.txt"
   }

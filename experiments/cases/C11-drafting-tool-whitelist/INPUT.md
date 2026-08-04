@@ -1,11 +1,12 @@
-# C11 — drafting tool whitelist (C3 schema gate)
+# C11 — creation is a direct explicit tool call (no drafting surface)
 
 ## Behavior under test
 
-During drafting, the agent is not allowed to call work tools such as bash/read/write/edit/grep/find/ls. A schema-level tool_call interceptor blocks these calls. The agent may only call propose_goal_draft or get_goal.
-
-Expected: even if the agent wants to "recon the current directory", the framework rejects it. The final successful create must go only through propose_goal_draft, with no bash/read etc. calls at any point.
+The drafting phase and its tool whitelist are removed: goal creation is a
+direct `create_goal` call on the explicit /goal request, and goal work happens
+after creation. The agent must not confuse the removed drafting flow with the
+stable surface.
 
 ## Prompts
 
-TURN: /goal-set In the current directory, create a README.md with content "Test C11". If the current directory already has a README file, skip it. First take a look at what the current directory looks like. autoContinue: true.
+TURN: /goal In the current directory, create a README.md with content "Test C11". If the current directory already has a README file, skip it. autoContinue: true.

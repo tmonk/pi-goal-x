@@ -1,35 +1,29 @@
 [
   {
-    "id": "propose-goal-draft-called",
-    "desc": "Agent should propose via propose_goal_draft.",
+    "id": "create-goal-called",
+    "desc": "create_goal is called.",
     "kind": "tool-called",
-    "tool": "propose_goal_draft"
+    "tool": "create_goal"
   },
   {
-    "id": "final-proposal-not-sisyphus",
-    "desc": "At least one propose_goal_draft call must have sisyphus=false (the one that succeeded after B1 gate).",
-    "kind": "tool-args-jq",
-    "tool": "propose_goal_draft",
-    "jq": ".sisyphus == false or .sisyphus == null"
+    "id": "not-sisyphus",
+    "desc": "create_goal mode must not be sisyphus (regular focus).",
+    "kind": "tool-args-jq-none",
+    "tool": "create_goal",
+    "jq": "(.mode // \"regular\") == \"sisyphus\""
   },
   {
-    "id": "file1-created",
+    "id": "file1-txt",
     "desc": "file1.txt exists with 'one'.",
     "kind": "sandbox-file-contains",
     "path": "file1.txt",
     "pattern": "^one$"
   },
   {
-    "id": "file2-created",
+    "id": "file2-txt",
     "desc": "file2.txt exists with 'two'.",
     "kind": "sandbox-file-contains",
     "path": "file2.txt",
     "pattern": "^two$"
-  },
-  {
-    "id": "update-goal-complete",
-    "desc": "Goal reaches completion.",
-    "kind": "tool-called",
-    "tool": "complete_goal"
   }
 ]

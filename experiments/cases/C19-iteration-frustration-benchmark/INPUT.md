@@ -1,16 +1,14 @@
-# C19 — Benchmark for drafting iteration frustration
-#
-# Tests whether repeated refinement cycles trigger "going in circles" /
-# cycling / apologist language in the agent's responses.
-#
-# Environment: PI_GOAL_AUTO_CONFIRM=0 (disables headless auto-confirm so the
-# propose_goal_draft tool returns "continue" instead of "confirm")
-#
-# The initial request is fully specified so the agent proposes immediately,
-# then the user refines 9 times to trigger many propose → continue cycles.
+# C19 — Benchmark for refinement iteration frustration
 
-TURN: /goals Create a bash script that monitors disk usage on /var/log and /home partitions, alerts at 80% via email, runs every 30 minutes via cron on Linux
-TURN: Everything sounds good, propose the draft
+# Tests whether repeated refinement cycles trigger "going in circles" /
+# cycling / apologist language before the agent finally creates the goal.
+
+# The user refines the request 9 times; the agent should converge and finally
+# call create_goal with the FULL accumulated objective (no premature creation,
+# no tool-cycling).
+
+TURN: Create a bash script that monitors disk usage on /var/log and /home partitions, alerts at 80% via email, runs every 30 minutes via cron on Linux
+TURN: Everything sounds good, create the goal
 TURN: Also monitor /tmp, use Slack instead of email, put config in /etc/disk-monitor.conf
 TURN: Make it a systemd service with a timer instead of cron, and log to syslog in addition to Slack
 TURN: Add auto-cleanup — delete archived logs older than 30 days, make retention configurable in the config file
