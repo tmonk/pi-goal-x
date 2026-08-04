@@ -94,6 +94,26 @@ async function start(h: Harness): Promise<void> {
 	await h.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, h.ctx);
 }
 
+const HOST_TOOLS = ["read", "bash", "edit", "write"];
+const FIVE = ["create_goal", "get_goal", "update_goal", "set_goal_tasks", "update_goal_task"];
+const THREE = ["create_goal", "get_goal", "update_goal"];
+
+/** The installed profile (from captured setActiveTools calls) contains these names. */
+function installedProfileContains(history: string[][], names: string[]): boolean {
+	for (const snapshot of history) {
+		if (names.every((name) => snapshot.includes(name))) return true;
+	}
+	return false;
+}
+
+/** The installed profile (from captured setActiveTools calls) excludes these names. */
+function installedProfileExcludes(history: string[][], names: string[]): boolean {
+	for (const snapshot of history) {
+		if (names.some((name) => snapshot.includes(name))) return false;
+	}
+	return true;
+}
+
 function fixture(opts: { objective?: string; skipAuditor?: boolean; tasksEnabled?: boolean } = {}) {
 	const cwd = mkdtempSync(path.join(tmpdir(), "goal-int-"));
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
@@ -177,6 +197,8 @@ describe("five-tool handler integration", () => {
 				return { approved: true, disapproved: false, output: "All good\n<approved/>", model: "fixture" };
 			} });
 			await start(h);
+			assert.ok(installedProfileContains(h.activeToolsHistory, [...HOST_TOOLS, ...FIVE]),
+				"session_start installs the fixed five-tool profile (captured setActiveTools calls)");
 			const update = h.tools.get("update_goal")!;
 			const result = await (update.execute as any)("u-1", { status: "complete" }, new AbortController().signal, undefined, h.ctx);
 			const text = result.content?.[0]?.text ?? "";
@@ -277,6 +299,12 @@ describe("five-tool handler integration", () => {
 			for (const present of ["create_goal", "get_goal", "update_goal"]) {
 				assert.ok(h.tools.has(present), `${present} registered`);
 			}
+			// Captured setActiveTools calls (not just registered names): the
+			// three-core profile is installed and task tools are never active.
+			assert.ok(installedProfileContains(h.activeToolsHistory, [...HOST_TOOLS, ...THREE]),
+				"captured profile includes host + three core tools");
+			assert.ok(installedProfileExcludes(h.activeToolsHistory, ["set_goal_tasks", "update_goal_task"]),
+				"task tools are never installed when tasks are disabled");
 			// The executors reject task calls when disabled.
 			const setTasks = h.tools.get("set_goal_tasks")!;
 			const result = await (setTasks.execute as any)("s-2", { tasks: [{ id: "t1", title: "X" }] },

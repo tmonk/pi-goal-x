@@ -38,6 +38,44 @@
   authoritative serial baseline.
   Timings are evidence, not portable performance guarantees.
 
+## 2026-08-04 — Stage 7: runner self-check, integration expansion, Pi SDK upgrade
+
+- Runner self-check: `scripts/run-unit-tests.mjs` gained `--selfcheck`
+  (compares discovered entries against the pinned `tests/.test-manifest.json`
+  manifest, 39 unit + 1 integration) and `--write-manifest` (regenerate).
+  `npm run test:selfcheck` is a dedicated script; the runner also prints
+  discovered counts and timing with an explicit "timings are evidence, not
+  portable promises" note.
+- Integration expansion: the harness's `getActiveTools` now mirrors
+  `setActiveTools` (contract-faithful), and Stage 1–3 integration tests
+  assert CAPTURED setActiveTools profiles (five-tool at session_start,
+  three-core when tasks are disabled, task tools never installed) instead of
+  registered names alone.
+- Pi SDK family upgraded together 0.74 → 0.83 (`pi-ai`, `pi-coding-agent`,
+  `pi-tui` as one mutually compatible set, no forced audit-fix split):
+  - `goal-auditor.ts` adapted: `ThinkingLevel` imported from goal-settings
+    (`pi-agent-core` is no longer hoisted/top-level-importable); the
+    `ResourceLoader` gained the 0.83 members (`getSystemPromptSource`,
+    `getAppendSystemPromptSources`); the modelRegistry runtime access goes
+    through `unknown` because 0.83's `ModelRegistry` wraps `ModelRuntime`
+    privately (createAgentSession still accepts `modelRuntime`).
+  - Compat validation: typecheck 0 errors; fast suite 510/0; real-SDK serial
+    482/0; a real `createAgentSession` smoke confirmed the 0.83
+    `{session, extensionsResult, modelFallbackMessage}` wrapper with
+    `session.prompt` + `session.subscribe` (the auditor already unwraps
+    `.session`); `npm pack` dry-run 42 files; the packed tarball installs in
+    a temp project against the `*` peer ranges with the 0.83 family and
+    typechecks clean.
+  - Dual audits: the FULL development graph AND the published/runtime graph
+    both report 0 vulnerabilities. The residual transitive advisories
+    (undici 8.5.0 exact pin, brace-expansion via minimatch) were fixed with
+    same-major `overrides` (`undici ^8.10.0`, `brace-expansion ^5.0.9`,
+    `minimatch 10.2.6`). npm 11.x ignores overrides (npm/cli#8713); the lock
+    was generated with npm 12 and `npm ci` under npm 11 replays the resolved
+    versions correctly, so the committed lock protects the fix.
+- Validation: `npm run check` 0 errors; `test:all` 510/0; `test:serial`
+  real-SDK 482/0; `npm audit` 0/0 on both graphs; `npm pack --dry-run` 42
+  files; `git diff --check` clean; `npm run test:selfcheck` OK.
 ## 2026-08-04 — Stage 6: experiment harness enforcement and portability
 
 - `SUPPORTED_CASES.json` is now ENFORCED in `resolve_case_dir`: exact

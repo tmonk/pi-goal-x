@@ -2,7 +2,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Static } from "@earendil-works/pi-ai";
 import { Type } from "@earendil-works/pi-ai";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 import {
 	createAgentSession,
@@ -14,7 +13,7 @@ import {
 	type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
 import type { GoalRecord, GoalTask, GoalTaskList } from "./goal-record.ts";
-import { loadGoalSettings, type GoalSettings } from "./goal-settings.ts";
+import { loadGoalSettings, type GoalSettings, type ThinkingLevel } from "./goal-settings.ts";
 
 export interface AuditorProgress {
 	/** Current tool being executed by the auditor, if any */
@@ -204,7 +203,9 @@ function makeAuditorResourceLoader(): ResourceLoader {
 			"producing report). This helps the user understand what the auditor is doing and how far",
 			"along it is.",
 		].join("\n"),
+		getSystemPromptSource: () => undefined,
 		getAppendSystemPrompt: () => [],
+		getAppendSystemPromptSources: () => [],
 	extendResources: () => {},
 		reload: async () => {},
 	};
@@ -249,7 +250,7 @@ export function resolveAuditorSessionModelOptions(ctx: ExtensionContext): {
 	modelRegistry: ExtensionContext["modelRegistry"];
 	modelRuntime?: unknown;
 } {
-	const registry = ctx.modelRegistry as ExtensionContext["modelRegistry"] & { runtime?: unknown };
+	const registry = ctx.modelRegistry as unknown as { runtime?: unknown } | undefined;
 	const runtime = registry?.runtime;
 	if (runtime) {
 		return { modelRegistry: ctx.modelRegistry, modelRuntime: runtime };

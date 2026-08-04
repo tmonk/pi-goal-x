@@ -41,7 +41,8 @@
     "test:serial": "node --experimental-strip-types --test --test-concurrency=1 tests/*.test.ts",
     "test:unit": "node scripts/run-unit-tests.mjs",
     "test:integration": "node scripts/run-unit-tests.mjs integration",
-    "test:all": "node scripts/run-unit-tests.mjs all"
+    "test:all": "node scripts/run-unit-tests.mjs all",
+    "test:selfcheck": "node scripts/run-unit-tests.mjs --selfcheck"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -50,13 +51,22 @@
     "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.74.0",
-    "@earendil-works/pi-coding-agent": "^0.74.0",
-    "@earendil-works/pi-tui": "^0.74.0",
+    "@earendil-works/pi-ai": "^0.83.0",
+    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@earendil-works/pi-tui": "^0.83.0",
     "typebox": "^1.0.58",
     "typescript": "^5.9.3"
   },
   "publishConfig": {
     "access": "public"
+  },
+  "overrides": {
+    "@earendil-works/pi-coding-agent": {
+      "undici": "8.10.0",
+      "minimatch": "10.2.6"
+    },
+    "minimatch": {
+      "brace-expansion": "5.0.9"
+    }
   }
 }
