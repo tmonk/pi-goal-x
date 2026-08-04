@@ -26,3 +26,14 @@ decision (and the author-only verification policy), real-model runs are the
 manual, opt-in pre-release gate: run each case at least three times on the
 supported model matrix and record pass rates in MILESTONES.md before a release.
 They are NOT part of `npm test` and incur model usage.
+
+## Harness enforcement
+
+`SUPPORTED_CASES.json` is enforced at run start: case ids must match the
+`supported` array exactly; raw case directories require the explicit
+`--allow-unsupported` diagnostic flag. The provider smoke request uses the
+selected model and validates HTTP status and JSON shape. The outer timeout is
+portable (`timeout`, `gtimeout`, or the bundled Node watchdog). Shell tests in
+`tests/shell/harness.test.sh` (run by the fast suite) cover resolution,
+payload, missing configuration, and timeout selection. Observation files under
+`observations/` are historical evidence per `observations/INDEX.md`.

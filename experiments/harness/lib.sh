@@ -37,7 +37,9 @@ if [[ "${PROVIDER}" == "fireworks" ]]; then
 fi
 
 # ---- Provider smoke validation ----
-# Fast-fail before burning runs on an invalid key / missing model.
+# Fast-fail before burning runs on an invalid key / missing model. Uses the
+# selected MODEL (not a hardcoded one), validates HTTP status and JSON shape,
+# and caps the reported response text.
 validate_provider() {
   if [[ "${PROVIDER}" != "fireworks" ]]; then
     return 0
@@ -47,13 +49,29 @@ validate_provider() {
     echo "ERROR: No FIREWORKS_API_KEY resolved. Check ~/.pi/agent/auth.json or env." >&2
     return 1
   fi
-  local resp
+  local body
+  body="$(cat <<JSON
+{"model":"${MODEL}","messages":[{"role":"user","content":"hi"}],"max_tokens":5}
+JSON
+)"
+  local resp status
   resp="$(curl -sS -X POST "https://api.fireworks.ai/inference/v1/chat/completions" \
     -H "Authorization: Bearer ${key}" \
     -H "Content-Type: application/json" \
-    -d "{\"model\":\"accounts/fireworks/routers/kimi-k2p6-turbo\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":5}" 2>&1)"
-  if echo "${resp}" | grep -q '"error"'; then
-    echo "ERROR: Provider smoke test failed. Response: ${resp}" >&2
+    -d "${body}" -w "\n%{http_code}" 2>&1)"
+  status="$(printf '%s' "${resp}" | tail -n1 | tr -d '[:space:]')"
+  local payload
+  payload="$(printf '%s' "${resp}" | sed '$d')"
+  if [[ "${status}" != "200" ]]; then
+    local capped
+    capped="$(printf '%s' "${payload}" | head -c 200)"
+    echo "ERROR: Provider smoke test failed (HTTP ${status}). Response: ${capped}" >&2
+    return 1
+  fi
+  if ! printf '%s' "${payload}" | grep -q '"choices"'; then
+    local capped2
+    capped2="$(printf '%s' "${payload}" | head -c 200)"
+    echo "ERROR: Provider smoke test returned unexpected JSON shape. Response: ${capped2}" >&2
     return 1
   fi
   echo "Provider smoke OK (${PROVIDER}/${MODEL})." >&2
@@ -61,9 +79,26 @@ validate_provider() {
 
 # ---- Paths ----
 HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPERIMENTS_DIR="$(cd "${HARNESS_DIR}/.." && pwd)"
-REPO_DIR="$(cd "${EXPERIMENTS_DIR}/.." && pwd)"
+EXPERIMENTS_DIR="${PI_GOAL_EXPERIMENTS_DIR:-$(cd "${HARNESS_DIR}/.." && pwd)}"
+REPO_DIR="${PI_GOAL_REPO_DIR:-$(cd "${EXPERIMENTS_DIR}/.." && pwd)}"
 EXTENSION_PATH="${REPO_DIR}/extensions/goal.ts"
+
+# ---- Portable timeout ----
+# GNU timeout is not standard on macOS. Discover, in order: timeout,
+# gtimeout, then a small Node watchdog; otherwise fail with a clear
+# prerequisite message.
+TIMEOUT_PREFIX=""
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_PREFIX="timeout --foreground"
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_PREFIX="gtimeout"
+elif command -v node >/dev/null 2>&1; then
+  TIMEOUT_PREFIX="node ${HARNESS_DIR}/watchdog.mjs"
+else
+  echo "ERROR: no timeout command available (tried timeout, gtimeout, node watchdog). Install coreutils (brew install coreutils) or a node runtime." >&2
+  exit 1
+fi
+export TIMEOUT_PREFIX
 
 # ---- Common pi flags ----
 # Subshell substitutes "$@" expansion safely.
@@ -115,17 +150,45 @@ resolve_run_dir() {
   echo "${run}"
 }
 
+# Load the supported case-id allowlist from SUPPORTED_CASES.json.
+supported_case_ids() {
+  local file="${EXPERIMENTS_DIR}/SUPPORTED_CASES.json"
+  jq -r '.supported[]' "${file}" 2>/dev/null || true
+}
+
+is_supported_case() {
+  local id="$1"
+  local sid
+  while read -r sid; do
+    [[ -z "${sid}" ]] && continue
+    [[ "${sid}" == "${id}" ]] && return 0
+  done < <(supported_case_ids)
+  return 1
+}
+
 # Resolve a case id (or dir) to a case dir.
+# Exact SUPPORTED_CASES.json membership is enforced BEFORE directory
+# resolution. Raw case directories (INPUT.md present) require the explicit
+# ALLOW_UNSUPPORTED=1 diagnostic flag.
 resolve_case_dir() {
   local arg="$1"
   if [[ -d "${arg}" && -f "${arg}/INPUT.md" ]]; then
+    if [[ "${ALLOW_UNSUPPORTED:-0}" != "1" ]]; then
+      echo "Raw case directory requires the explicit diagnostic flag: ALLOW_UNSUPPORTED=1 (run.sh --allow-unsupported)." >&2
+      echo "Supported case ids are listed in ${EXPERIMENTS_DIR}/SUPPORTED_CASES.json" >&2
+      exit 2
+    fi
     echo "${arg}"; return
+  fi
+  if ! is_supported_case "${arg}"; then
+    echo "Unsupported case id: ${arg}" >&2
+    echo "SUPPORTED_CASES.json is enforced: exact case-id membership is required." >&2
+    echo "Use: run.sh <case-id> (e.g. C20-core-tool-selection), or run.sh <raw-case-dir> --allow-unsupported for diagnostics." >&2
+    exit 2
   fi
   local d="${EXPERIMENTS_DIR}/cases/${arg}"
   if [[ ! -d "${d}" ]]; then
-    echo "No such case: ${arg}" >&2
-    echo "Supported cases are listed in ${EXPERIMENTS_DIR}/SUPPORTED_CASES.json" >&2
-    echo "Use: run.sh <case-id> (e.g. C20-core-tool-selection)" >&2
+    echo "No such case directory even though it is listed as supported: ${arg}" >&2
     exit 2
   fi
   echo "${d}"

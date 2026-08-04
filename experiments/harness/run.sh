@@ -27,8 +27,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
-# Parse arguments: run.sh <case-id-or-dir> [--count N] [--grade] [--no-smoke]
-CASE_ARG="${1:?usage: run.sh <case-id-or-dir> [--count N] [--grade] [--no-smoke]}"
+# Parse arguments: run.sh <case-id-or-dir> [--count N] [--grade] [--no-smoke] [--allow-unsupported]
+CASE_ARG="${1:?usage: run.sh <case-id-or-dir> [--count N] [--grade] [--no-smoke] [--allow-unsupported]}"
 shift || true
 RUN_COUNT=1
 GRADE_AFTER=0
@@ -38,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --count) RUN_COUNT="${2:?--count requires a number}"; shift 2 ;;
     --grade) GRADE_AFTER=1; shift ;;
     --no-smoke) SKIP_SMOKE=1; shift ;;
+    --allow-unsupported) ALLOW_UNSUPPORTED=1; export ALLOW_UNSUPPORTED; shift ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -84,7 +85,7 @@ run_one() {
   PI_GOAL_TEST_MODEL="${MODEL}" \
   PI_GOAL_TEST_THINKING="${THINKING}" \
   PI_GOAL_TEST_TURN_TIMEOUT="${TURN_TIMEOUT}" \
-    timeout --foreground "${OUTER_TIMEOUT}" \
+    ${TIMEOUT_PREFIX} "${OUTER_TIMEOUT}" \
       node "${SCRIPT_DIR}/drive.mjs" "${CASE_DIR}" "${run_dir}" \
       > "${raw_ndjson}" \
       2> "${stderr_log}"

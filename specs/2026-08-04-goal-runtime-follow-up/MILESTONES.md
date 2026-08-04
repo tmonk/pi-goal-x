@@ -38,6 +38,30 @@
   authoritative serial baseline.
   Timings are evidence, not portable performance guarantees.
 
+## 2026-08-04 — Stage 6: experiment harness enforcement and portability
+
+- `SUPPORTED_CASES.json` is now ENFORCED in `resolve_case_dir`: exact
+  case-id membership is required before directory resolution; raw case
+  directories require the explicit `--allow-unsupported` diagnostic flag
+  (`run.sh <raw-dir> --allow-unsupported`).
+- The provider smoke request uses the selected `PI_GOAL_TEST_MODEL` instead
+  of a hardcoded model, validates the HTTP status code and JSON shape
+  (`choices` array on 200), and caps reported response text at 200 chars.
+- Portable outer timeout: discovers `timeout`, then `gtimeout`, then a
+  bundled Node watchdog (`harness/watchdog.mjs`, exit 124 on timeout,
+  forwards child exit codes); otherwise fails with a clear prerequisite
+  message. `run.sh` uses the resolved `TIMEOUT_PREFIX`.
+- Shell tests (`tests/shell/harness.test.sh`, 17 assertions, run in the fast
+  suite via `tests/goal-harness-shell.test.ts`): supported/unsupported
+  resolution, raw-dir diagnostics, MODEL-aware smoke payload (stubbed curl),
+  missing configuration, HTTP 429 + JSON shape failure, and timeout
+  selection — all with stubbed curl/pi/tooling.
+- Observations index (`experiments/observations/INDEX.md`): observation
+  files are explicitly historical evidence, not current instructions; the
+  experiment README and PLAN now document enforcement, the smoke behavior,
+  portability, and the index.
+- Validation: `npm run check` 0 errors; `test:all` 510/0; `test:serial`
+  real-SDK 482/0; `git diff --check` clean.
 ## 2026-08-04 — Stage 5.1-C: capability parity without tool sprawl
 
 - `update_goal` gained `paused` (required `reason`, optional

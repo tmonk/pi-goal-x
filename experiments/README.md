@@ -33,11 +33,23 @@ bash harness/run.sh B2-task-completion --count 3 --grade --no-smoke
 The harness installs the fixed three/five-tool profile at session start, so
 real-model runs exercise the same tool surface as the local suites.
 
-## Supported case matrix
+## Supported case matrix (enforced)
 
 `SUPPORTED_CASES.json` is the machine-readable list of supported cases
-(B1-B2 + C1-C26 after migration). In 0.23 it is documentation rather than an
-enforced allowlist: `run.sh <case-id>` accepts any existing case directory with
-an `INPUT.md`. Matrix enforcement is part of the runtime follow-up plan.
+(B1-B2 + C1-C26 after migration) and is ENFORCED: `run.sh <case-id>` requires
+exact membership in the `supported` array before any directory is resolved.
+Running a raw case directory (one that is not in the matrix) requires the
+explicit diagnostic flag `--allow-unsupported`:
 
-Experiment outputs under `runs/` are generated artifacts and are not part of the package release.
+```bash
+bash harness/run.sh C20-core-tool-selection --count 3 --grade --no-smoke   # supported
+bash harness/run.sh ./cases/C21-my-experiment --allow-unsupported          # diagnostics only
+```
+
+The provider smoke check uses the selected `PI_GOAL_TEST_MODEL` (not a
+hardcoded one), validates the HTTP status and JSON shape, and caps reported
+response text. The outer run timeout is portable: it discovers `timeout`,
+then `gtimeout`, then a bundled Node watchdog (`harness/watchdog.mjs`), and
+fails with a clear prerequisite message when none is available.
+
+Experiment outputs under `runs/` are generated artifacts and are not part of the package release. Observation files under `observations/` are historical evidence, not instructions; see `observations/INDEX.md`.
