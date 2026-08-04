@@ -156,7 +156,7 @@ export function registerDraftingTools(core: GoalCore): void {
 			if (draft.mode === "tweak" && (!target || target.id !== draft.targetGoalId)) return { content: [{ type: "text", text: "The goal changed while drafting; review it and start /goal-tweak again." }], details: goalDetails(core.state.goal) };
 			const confirmation = shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM })
 				? { decision: "confirm" as const, auditorEnabled: true }
-				: await showProposalDialog(ctx, proposalText(draft, objective, params.auto_continue !== false, taskResult.value, target), draft.mode === "sisyphus" ? "sisyphus" : "goal");
+				: await showProposalDialog(ctx, proposalText(draft, objective, params.auto_continue !== false, taskResult.value, target ?? undefined), draft.mode === "sisyphus" ? "sisyphus" : "goal");
 			if (confirmation.decision !== "confirm") return { content: [{ type: "text", text: "Goal draft refinement requested. The goal was not changed; ask what the user wants revised before proposing again." }], details: goalDetails(core.state.goal) };
 			const extracted = extractVerificationContract(objective);
 			if (draft.mode !== "tweak") {
@@ -164,6 +164,7 @@ export function registerDraftingTools(core: GoalCore): void {
 				clearGoalDrafting(core);
 				return { content: [{ type: "text", text: buildGoalCreatedReport({ objective: extracted.objective }) }], details: goalDetails(core.state.goal), terminate: true };
 			}
+			if (!target) return { content: [{ type: "text", text: "The goal changed while drafting; review it and start /goal-tweak again." }], details: goalDetails(core.state.goal) };
 			const token = core.focusedOperationToken(target.id);
 			const now = nowIso();
 			const result = core.goalService.apply(ctx, {

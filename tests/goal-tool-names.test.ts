@@ -6,11 +6,15 @@ import {
 	CORE_GOAL_TOOL_NAMES,
 	CORE_GOAL_TOOLS,
 	CREATE_GOAL_TOOL_NAME,
+	DRAFTING_GOAL_TOOLS,
 	FIVE_GOAL_TOOLS,
 	GET_GOAL_TOOL_NAME,
 	GOAL_PROGRESS_TOOL_NAMES,
 	GOAL_WORK_TOOL_NAMES,
 	POST_STOP_ALLOWED_TOOLS,
+	PROPOSE_DRAFT_TOOL_NAME,
+	QUESTIONNAIRE_TOOL_NAME,
+	QUESTION_TOOL_NAME,
 	SET_GOAL_TASKS_TOOL_NAME,
 	TASK_TOOL_NAMES,
 	UPDATE_GOAL_TASK_TOOL_NAME,
@@ -19,11 +23,14 @@ import {
 
 const CORE = ["create_goal", "get_goal", "update_goal"];
 
-// Every removed drafting/lifecycle tool name — none may exist in the module.
-const REMOVED = [
-	"propose_goal_draft", "propose_goal_tweak", "step_complete", "goal_question",
-	"goal_questionnaire", "abort_goal", "propose_task_list", "complete_task",
-	"skip_task", "complete_goal", "pause_goal",
+// Drafting tools belong to the separate transient user-started draft profile,
+// never to the steady three/five execution surface.
+const DRAFTING = ["goal_question", "goal_questionnaire", "propose_goal_draft"];
+
+// Removed steady-state lifecycle tools — none may exist in the module.
+const REMOVED_STEADY = [
+	"propose_goal_tweak", "step_complete", "abort_goal", "propose_task_list",
+	"complete_task", "skip_task", "complete_goal", "pause_goal",
 ];
 
 test("the five public tool names are preserved", () => {
@@ -39,13 +46,30 @@ test("fixed profiles: core three, task two, all five registered", () => {
 	assert.deepEqual(TASK_TOOL_NAMES, ["set_goal_tasks", "update_goal_task"]);
 	assert.deepEqual(FIVE_GOAL_TOOLS, [...CORE, ...TASK_TOOL_NAMES]);
 	assert.deepEqual(CORE_GOAL_TOOLS, CORE);
-	assert.deepEqual(ALL_REGISTERED_GOAL_TOOLS, FIVE_GOAL_TOOLS);
+	assert.deepEqual(DRAFTING_GOAL_TOOLS, DRAFTING);
+	// The registry is the fixed five plus the transient drafting profile; the
+	// INSTALLED profile (installGoalToolProfile) still only ever installs the
+	// three/five execution set.
+	assert.deepEqual(ALL_REGISTERED_GOAL_TOOLS, [...FIVE_GOAL_TOOLS, ...DRAFTING_GOAL_TOOLS]);
 });
 
-test("the reduced module exposes no removed constants or heuristics", async () => {
+test("the module declares drafting names only in the transient profile", () => {
+	assert.equal(QUESTION_TOOL_NAME, "goal_question");
+	assert.equal(QUESTIONNAIRE_TOOL_NAME, "goal_questionnaire");
+	assert.equal(PROPOSE_DRAFT_TOOL_NAME, "propose_goal_draft");
+	// Drafting tools must never leak into the fixed execution profiles.
+	for (const name of DRAFTING) {
+		assert.equal(CORE_GOAL_TOOL_NAMES.includes(name as never), false, `${name} must not be a core tool`);
+		assert.equal(TASK_TOOL_NAMES.includes(name as never), false, `${name} must not be a task tool`);
+		assert.equal(GOAL_WORK_TOOL_NAMES.includes(name as never), false, `${name} must not be a work tool`);
+		assert.equal(GOAL_PROGRESS_TOOL_NAMES.includes(name as never), false, `${name} must not be a progress tool`);
+	}
+});
+
+test("no steady-state lifecycle tools or phase heuristics remain", async () => {
 	const fs = await import("node:fs/promises");
 	const source = await fs.readFile("extensions/goal-tool-names.ts", "utf8");
-	for (const removed of REMOVED) {
+	for (const removed of REMOVED_STEADY) {
 		assert.ok(!source.includes(`const ${removed.toUpperCase().replace(/-/g, "_")}_TOOL_NAME`),
 			`removed constant ${removed} must not exist in goal-tool-names.ts`);
 	}
@@ -70,9 +94,13 @@ test("work tool set covers the five goal tools plus common host work tools", () 
 	for (const name of ["bash", "write", "read", "edit", "grep", "find", "ls"]) {
 		assert.ok(GOAL_WORK_TOOL_NAMES.includes(name as typeof GOAL_WORK_TOOL_NAMES[number]), `work set must include ${name}`);
 	}
-	for (const removed of REMOVED) {
+	for (const removed of REMOVED_STEADY) {
 		assert.equal(GOAL_WORK_TOOL_NAMES.includes(removed as typeof GOAL_WORK_TOOL_NAMES[number]), false,
 			`work set must not include ${removed}`);
+	}
+	for (const name of DRAFTING) {
+		assert.equal(GOAL_WORK_TOOL_NAMES.includes(name as typeof GOAL_WORK_TOOL_NAMES[number]), false,
+			`steady work set must not include drafting tool ${name}`);
 	}
 });
 

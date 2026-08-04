@@ -38,6 +38,31 @@
   authoritative serial baseline.
   Timings are evidence, not portable performance guarantees.
 
+## 2026-08-04 — Baseline reconciliation after the product correction
+
+- The working tree was re-baselined at `5bf4f2c` (restore guided drafting
+  workflow) and `0a55f24` (rebaseline follow-up implementation plan). The
+  superseded stage-5 deletion direction is void; MILESTONES product
+  correction governs.
+- Reconciliation fixes on top of the restored baseline:
+  - `goal-drafting.ts` typecheck fixes: `target ?? undefined` for the
+    proposal dialog argument, and an explicit narrow guard before
+    `focusedOperationToken(target.id)` (the tweak path's target is
+    `GoalRecord | null | undefined`; control-flow narrowing alone could not
+    prove non-null after the mode guard).
+  - `tests/goal-contract.test.ts` was a duplicate of the restored
+    `tests/goal-draft.test.ts` (identical 31-line content, left over from the
+    superseded rename); deleted.
+  - `tests/goal-tool-names.test.ts` rewritten for the restored surface: the
+    three drafting tool names live only in the transient `DRAFTING_GOAL_TOOLS`
+    profile and never leak into the fixed three/five execution, work, or
+    progress sets; steady-state lifecycle tools (`propose_goal_tweak`,
+    `abort_goal`, `complete_task`, ...) and phase heuristics remain absent.
+  - Deleted `tests/goal-source-boundary.test.ts` (asserted drafting
+    vocabulary absence — opposite of the corrected product direction).
+- Validation: `npm run check` 0 errors; `test:all` 482/0 fast tests
+  (452 unit + 30 integration); `test:serial` real-SDK 458/0; `git diff
+  --check` clean.
 ## Planned milestones
 
 1. Complete Stage 5.1: persistent/cancellable drafts, focused status, and
