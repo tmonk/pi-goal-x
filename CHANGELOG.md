@@ -30,6 +30,35 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 ### Fixed
 
+- **Provider-error turns no longer auto-continue.** A turn/run whose
+  assistant message has `stopReason: "error"` (provider failure or empty
+  terminal response) no longer queues a goal auto-continuation — previously
+  a single failed hidden checkpoint could become an unbounded
+  checkpoint/error retry storm. Accounting and display reconciliation still
+  run; only the continuation queue is suppressed (`goal-events.ts`, danim47c
+  pattern).
+- **Escape is owned by the active goal dialog.** While any goal-owned modal
+  is open (questionnaire, task-list confirmation, goal settings, goal
+  picker/focus, task-list overlay, audit escape dialog), Escape closes the
+  dialog and never pauses the goal — the global Escape-to-pause handler
+  yields via a modal depth counter (`enterGoalModal`/`exitGoalModal` in
+  `try/finally`, bn-l pattern). Previously only the audit escape dialog was
+  guarded, so Escape in a proposal or settings dialog could pause the running
+  goal before the dialog processed it.
+- **Usage/accounting no longer lost on revision conflicts.** `persist()` on
+  a revision conflict (another process wrote the goal) now merges the local
+  session's additive token/time delta onto the disk record and advances its
+  revision, instead of silently dropping the update. The disk's authoritative
+  fields (objective, tasks, status) are preserved; usage stays monotonic and
+  is never double-counted.
+- **`/goal-settings` redesign.** The settings menu is sectioned (Goal
+  behavior / Task tracking / Completion auditor); the auditor provider/model
+  rows open a searchable model picker (current-session/default entry,
+  authenticated models with a ✓ marker on the exact current selection, and
+  an advanced manual `provider/model` entry); thinking level is a selector;
+  the auditor enable/disable row reads "auditor disabled". Provider-only
+  auditor configuration is now refused with a clear error instead of
+  silently picking the first available model (ll01 pattern).
 - **Goal questionnaire viewport churn (taller-than-screen proposals).**
   Closing a questionnaire whose opened frame exceeded the terminal height
   triggered pi-tui's generic shrink full-render
