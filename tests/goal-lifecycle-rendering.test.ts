@@ -38,6 +38,13 @@ describe("lifecycle tool call rendering", () => {
 		assert.equal(renderCall("abort_goal", { reason }), `abort_goal ${reason}`);
 	});
 
+	it("trims pause and abort reasons to match validated execution input", () => {
+		const reason = "  Waiting for the user to provide credentials.  ";
+
+		assert.equal(renderCall("pause_goal", { reason }), "pause_goal Waiting for the user to provide credentials.");
+		assert.equal(renderCall("abort_goal", { reason }), "abort_goal Waiting for the user to provide credentials.");
+	});
+
 	it("keeps potentially large proposal previews truncated", () => {
 		const longText = "A deliberately long preview value ".repeat(10).trim();
 		assert.ok(longText.length > 80);
