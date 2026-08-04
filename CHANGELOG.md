@@ -8,6 +8,72 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 ---
 
+## [0.23.0] — 2026-08-05
+
+### Fixed
+
+- **Persisted lifecycle status is authoritative.** The paused `&&` autoContinue
+  `=>` active migration is deleted: a persisted paused record (including the
+  legacy `{status:"paused", autoContinue:true}` case) stays paused through
+  every read, markdown parse, and session restore. `autoContinue` is an
+  execution preference and never rewrites status.
+- **Disabled-auditor completion is reachable.** `settings.disabled: true` is an
+  explicit user-owned setting that skips the auditor, records `audit_skipped`,
+  and completes through the normal deferred-completion path — no model-only
+  bypass field. All successful completion commits (audit-approved, globally
+  disabled, legacy per-goal skip, Escape bypass) share one transaction helper.
+- **Disk-fresh task transactions.** `update_goal_task` reconciles the focused
+  record, validates the focus token, loads the task from the disk-refreshed
+  clone, validates the transition against it, and updates only that task's
+  path, returning typed failures for removed-task/task-list races. Concurrent
+  external task edits survive unless the operation changes the same task.
+- **Structural task replacement clears omitted fields.** Matching task ids
+  preserve only runtime progress (status, evidence, completion/skip
+  timestamps, skip reason); omitted structural fields (verification contract,
+  lightweight flag, children, parentage) are cleared, not inherited.
+- **Token budget hardening.** `token_budget` is a positive safe integer in the
+  schema and at runtime; fractional, zero, negative, infinite, and unsafe
+  values are rejected live and normalized to absent when persisted.
+- **Ledger vocabulary and diagnostics.** Reopening a task writes
+  `task_reopened` (the old synthetic `task_skipped` unskip reason still reads
+  back); `appendGoalEvent` returns a discriminated result and every
+  GoalService ledger loop routes failures through an observable `onDiagnostic`
+  hook without rolling back the authoritative state write.
+- **Fixed three/five tool profile.** The state-dependent synchronizer is
+  replaced by `installGoalToolProfile`: exactly five goal tools with tasks
+  enabled, exactly three when disabled, installed only at session start and on
+  `disableTasks` settings toggles; lifecycle transitions never add/remove/restore
+  goal tools and ordinary pi work tools are never touched.
+
+### Changed
+
+- The task-list confirmation dialog is task-only: it returns the user's
+  `{decision}` and can no longer mutate auditor bypass state.
+- `goal-tools.ts` is split into focused behavior modules (registration
+  composition, core tools, completion transaction, task tools, task
+  confirmation); `goal-draft.ts` is removed (contract extraction and prompt
+  safety moved to `goal-contract.ts`); `goal-tool-names.ts` is reduced to the
+  five published names, fixed profiles, work/progress classification, and the
+  post-stop allowlist; obsolete abort/pause/completion-summary policy builders
+  are deleted.
+- B1-B2 and C1-C19 experiment cases are migrated to the current interface;
+  `experiments/SUPPORTED_CASES.json` is the machine-readable supported matrix.
+- Test scripts: `test:unit`, `test:integration`, and `test:all`; the
+  handler-level integration suite drives the actual registered tools with an
+  auditor fixture.
+
+### Removed
+
+- Drafting-era runtime coupling: legacy tool constants, `GoalToolPhase`,
+  `lifecycleToolNamesForGoalStatus`, question-like name heuristics, the
+  question-tool registrations, and obsolete abort/pause/completion-summary
+  policy builders.
+- `tests/e2e/extension.test.ts` (the removed `complete_goal` +
+  `confirmBypassAuditor` surface) is replaced by
+  `tests/integration/extension.test.ts`.
+
+---
+
 ## [0.22.0] — 2026-08-04
 
 ### Added

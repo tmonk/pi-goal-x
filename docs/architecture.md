@@ -13,7 +13,11 @@ handlers from their dedicated modules:
 |---|---|
 | `goal.ts` | Thin installer: renderers + module registration only |
 | `goal-state.ts` | `GoalCore`: all mutable state (pool, focus, audit/UI flags), `GoalService`/`GoalRuntime`/`GoalAccounting` wiring, persistence and reconciliation closures, widget status |
-| `goal-tools.ts` | The five model tools (`create_goal`, `get_goal`, `update_goal`, `set_goal_tasks`, `update_goal_task`) plus the shared completion and blocked flows |
+| `goal-tools.ts` | Registration composition only: a 14-line installer that wires `registerCoreTools` + `registerTaskTools` |
+| `goal-core-tools.ts` | `create_goal` / `get_goal` / `update_goal` executors plus the blocked flow |
+| `goal-completion.ts` | The completion transaction: `runGoalCompletionFlow` (audit orchestration) + shared `commitGoalCompletion` |
+| `goal-task-tools.ts` | `set_goal_tasks` / `update_goal_task` executors plus flat parent-linked conversion, id-stable merge, `countTasks` |
+| `goal-task-confirmation.ts` | Task-only confirmation boundary (`{decision}` result, no auditor toggle) |
 | `goal-commands.ts` | The curated ten-command palette and its handlers |
 | `goal-events.ts` | The 13 lifecycle event handlers (`context`, `turn_start`, `tool_call`, `tool_execution_end`, `turn_end`, `message_end`, `session_start`, `session_before_compact`, `session_compact`, `session_tree`, `before_agent_start`, `agent_end`, `session_shutdown`) |
 | `goal-widget.ts` | Terminal input keybindings (Esc pause / abort-audit, Ctrl+Shift+T overlay) and the hidden debug helpers |
@@ -24,12 +28,12 @@ handlers from their dedicated modules:
 | `goal-record.ts` | Goal record types, creation, cloning, usage normalization, persisted-record migration |
 | `goal-pool.ts` | Open-goal pool helpers, focus resolution, list output, selector labels, unfocused summaries |
 | `goal-core.ts` | Compact display formatting, status labels, objective title cleanup |
-| `goal-draft.ts` | Objective edit/verification-contract extraction |
-| `goal-policy.ts` | Lifecycle policy and validation (completion/blocked/resume/task gates), compaction policy, result reports |
+| `goal-contract.ts` | Record/input parser: verification-contract extraction and objective prompt-safety |
+| `goal-policy.ts` | Lifecycle policy and validation (completion/blocked/resume/task gates), task-tree helpers, compaction policy, result reports |
 | `goal-auditor.ts` | Independent pi auditor agent prompt/config/decision parsing and completion audit execution |
-| `goal-ledger.ts` | Single-file goal ledger append/read/reconstruction (17 event types) |
-| `goal-questionnaire.ts` | Proposal confirmation dialog helpers (question-tool registrations removed) |
-| `goal-tool-names.ts` | Published tool-name constants and active-tool lists |
+| `goal-ledger.ts` | Single-file goal ledger append/read/reconstruction (18 event types incl. `task_reopened`) |
+| `goal-questionnaire.ts` | Proposal confirmation dialog helpers (drafting-era question tools removed) |
+| `goal-tool-names.ts` | The five published tool-name constants, fixed three/five profiles, work/progress classification, post-stop allowlist |
 | `prompts/goal-prompts.ts` | Bounded five-tool steering prompts (active-goal, continuation, stale-checkpoint, unfocused, budget-limited) |
 | `storage/goal-files.ts` | Goal path safety, serialization/parsing, active-file scanning, active-file writes, archive writes, prompt-body merge from disk |
 | `widgets/goal-widget.ts` | Above-editor Goal Beacon component |
@@ -180,7 +184,7 @@ confirmation intent state, and no model-side objective mutation.
 - `/goal-resume` resumes the focused paused goal; when unfocused with multiple open goals, it asks the user to choose. Choosing an already active goal only focuses it.
 - `/goal-clear` archives only the focused/selected goal and never clears the whole pool at once.
 - `/goal-pause` pauses the focused active goal; it asks the user to choose when unfocused with open goals.
-- `/goal-settings` opens extension settings (disabled, provider, model, thinking_level, subtaskDepth, disableTasks, disableContracts, autoSelectSingleGoal).
+- `/goal-settings` opens extension settings (disabled, provider, model, thinking_level, subtaskDepth, autoSelectSingleGoal).
 
 ## Tool surface
 

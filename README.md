@@ -18,7 +18,7 @@ The extension is designed around one rule: **the user owns intent; the agent exe
 - **Immutable objective** — The agent cannot silently change your goal. Objective updates happen through user-owned `/goal-tweak`.
 - **User-owned lifecycle** — Pause, resume, clear, focus, and settings are immediate user commands; the model reports only complete/blocked outcomes.
 - **Disk-backed state** — Active and archived goals persist in `.pi/goals/`. Goal state survives session compaction, workspace switches, and context churn.
-- **Configurable settings** — Tune the auditor model, disable the task system or contracts, and set subtask depth through `/goal-settings` or `.pi/pi-goal-x-settings.json`.
+- **Configurable settings** — Tune the auditor model and subtask depth through `/goal-settings`; task/contract toggles and the auditor-disable switch live in `.pi/pi-goal-x-settings.json`.
 
 > **Fork of [@capyup/pi-goal](https://github.com/capyup/pi-goal)** — pi-goal-x is now maintained independently. It adds verification contracts, recursive task lists, multiple durable goals with session-local focus, an immutable objective, deferred archival, a configurable completion auditor, token budgets, compaction recovery, and a live progress widget.
 
@@ -335,23 +335,28 @@ The npm package ships only the runtime extension, docs, and package metadata. Th
 ```text
 extensions/goal.ts                 thin installer for renderers, commands, tools, and events
 extensions/goal-state.ts           shared GoalCore state and service/runtime wiring
-extensions/goal-tools.ts           five tool registrations and completion/task flows
+extensions/goal.ts                 thin installer for renderers, commands, tools, and events
+extensions/goal-state.ts           shared GoalCore state and service/runtime wiring
+extensions/goal-tools.ts           tool registration composition (core + task installers)
+extensions/goal-core-tools.ts      create_goal / get_goal / update_goal executors and the blocked flow
+extensions/goal-completion.ts      completion transaction (audit orchestration + commit)
+extensions/goal-task-tools.ts      set_goal_tasks / update_goal_task executors, flat conversion, merge, counts
+extensions/goal-task-confirmation.ts task-only confirmation boundary ({decision})
 extensions/goal-commands.ts        ten slash-command handlers
 extensions/goal-events.ts          lifecycle event handlers
-extensions/goal-service.ts         ordered goal mutation boundary
+extensions/goal-service.ts         ordered goal mutation boundary (incl. typed updateTask transaction)
 extensions/goal-runtime.ts         continuation, stale-checkpoint, and turn-stop state
 extensions/goal-accounting.ts      idempotent usage accounting and budget helpers
 extensions/goal-format.ts          result formatting and message introspection
 extensions/goal-record.ts          goal record types, normalization, creation helpers
+extensions/goal-contract.ts        verification-contract extraction and objective prompt-safety
 extensions/goal-pool.ts            open-goal pool, focus resolution, list/selector text helpers
 extensions/goal-core.ts            display helpers
-extensions/goal-draft.ts           legacy module; only contract extraction remains in active use
 extensions/goal-policy.ts          lifecycle, completion, task, and compaction policy
 extensions/goal-auditor.ts         independent pi auditor agent for completion approval, config, and progress tracking
-extensions/goal-ledger.ts          event append, read, validation, sanitization, and reconstruction
-extensions/goal-questionnaire.ts   legacy module; proposal dialog helpers remain in active use
-extensions/goal-task-tools.ts      flat task conversion and id-stable merge helpers
-extensions/goal-tool-names.ts      public names plus remaining legacy classifications
+extensions/goal-ledger.ts          event append, read, validation, sanitization, and reconstruction (task_reopened)
+extensions/goal-questionnaire.ts   proposal dialog helpers (question tools removed)
+extensions/goal-tool-names.ts      the five published names, fixed profiles, work/progress sets, post-stop allowlist
 extensions/prompts/goal-prompts.ts active, continuation, stale, unfocused, and budget prompts
 extensions/storage/goal-files.ts   goal file paths, serialization, parsing, archive IO
 extensions/widgets/goal-widget.ts  above-editor goal beacon component

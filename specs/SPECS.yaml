@@ -33,7 +33,7 @@ specs:
   - id: 2026-08-04-goal-simplification-hardening
     path: specs/2026-08-04-goal-simplification-hardening
     title: Goal simplification hardening
-    status: ready_for_review
+    status: completed
     focused: true
-    last_audit: null
-    updated: 2026-08-04
+    last_audit: 2026-08-05
+    updated: 2026-08-05

@@ -82,7 +82,7 @@ these files.
 ### 4.2 Ledger files
 
 The ledger is one project-level append-only JSONL file
-(`.pi/goals/goal_events.jsonl`). Its 17 event types cover creation,
+(`.pi/goals/goal_events.jsonl`). Its 18 event types cover creation,
 tweaks, focus changes, pause/resume/block/clear, completion requests, audit
 start/result/skip, budget limits, and task-list changes. The runtime reads it
 for auditor-rejection memory and compaction summaries; it is never rewritten
@@ -118,16 +118,19 @@ of 1–4000 characters, an optional `mode` (regular/sisyphus), and an optional
 
 ## 7. Tool surface and runtime gates
 
-Tool visibility is recomputed dynamically on state changes in 0.22:
+The model surface is a FIXED three/five profile (hardening stage 2):
 
-- `get_goal` and `create_goal` are always present.
-- `update_goal` appears whenever a non-complete goal is focused.
-- `set_goal_tasks` and `update_goal_task` appear for active goals when tasks
-  are enabled (and `set_goal_tasks` for paused goals).
-
-The synchronizer also force-adds `read`, `write`, `edit`, and `bash`. Both
-behaviors are known deviations from the target fixed three/five profile and
-are scheduled for removal in the 2026-08-04 hardening plan.
+- exactly five goal tools are installed when tasks are enabled — `create_goal`,
+  `get_goal`, `update_goal`, `set_goal_tasks`, `update_goal_task`;
+- exactly the three core tools when tasks are disabled;
+- the profile is installed once at session start and after a settings change
+  that toggles `disableTasks`; focus, status, budget, completion, audit, and
+  compaction transitions never add/remove/restore goal tools;
+- ordinary pi work tools (`read`, `write`, `edit`, `bash`, ...) are never
+  touched by the extension;
+- invalid lifecycle calls are rejected by the executor with a concise
+  state-aware result (e.g. `update_goal(blocked)` from a paused goal), not by
+  hiding tools.
 
 The `tool_call` interceptor:
 
