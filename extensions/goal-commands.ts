@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { extractVerificationContract } from "./goal-draft.ts";
+import { extractVerificationContract } from "./goal-contract.ts";
 import { detailedSummary, oneLineSummary } from "./goal-format.ts";
 import {
 	goalSettingsPath,

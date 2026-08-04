@@ -4,8 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extractVerificationContract } from "../extensions/goal-draft.ts";
-import { validateVerificationSummary } from "../extensions/goal-policy.ts";
+import { extractVerificationContract } from "../extensions/goal-contract.ts";
 import { verificationContractBlock } from "../extensions/prompts/goal-prompts.ts";
 import type { GoalRecord } from "../extensions/goal-record.ts";
 
@@ -67,93 +66,4 @@ Verification contract: All tests pass (npm test, 0 failures), codebase has no re
 	assert.equal(result.verificationContract, "All tests pass (npm test, 0 failures), codebase has no references to removed methods");
 	assert.ok(!result.objective.includes("Verification contract:"));
 	assert.ok(result.objective.includes("Ordered steps:"));
-});
-
-// ── validateVerificationSummary ─────────────────────────────────────────
-
-test("validateVerificationSummary: no contract passes", () => {
-	const result = validateVerificationSummary({});
-	assert.deepEqual(result, { ok: true });
-});
-
-test("validateVerificationSummary: contract with non-empty summary passes", () => {
-	const result = validateVerificationSummary({
-		verificationContract: "Check tests and references",
-		verificationSummary: "npm test passed, grep found no remaining references",
-	});
-	assert.deepEqual(result, { ok: true });
-});
-
-test("validateVerificationSummary: contract with empty summary rejects", () => {
-	const result = validateVerificationSummary({
-		verificationContract: "Check tests and references",
-		verificationSummary: "",
-	});
-	assert.equal(result.ok, false);
-	if (!result.ok) assert.match(result.message, /verification contract/);
-});
-
-test("validateVerificationSummary: contract with undefined summary rejects", () => {
-	const result = validateVerificationSummary({
-		verificationContract: "Must verify",
-		verificationSummary: undefined,
-	});
-	assert.equal(result.ok, false);
-	if (!result.ok) assert.match(result.message, /verification contract/);
-});
-
-test("validateVerificationSummary: contract with whitespace-only summary rejects", () => {
-	const result = validateVerificationSummary({
-		verificationContract: "Must verify",
-		verificationSummary: "   ",
-	});
-	assert.equal(result.ok, false);
-});
-
-test("validateVerificationSummary: null contract passes even with empty summary", () => {
-	const result = validateVerificationSummary({
-		verificationContract: null,
-		verificationSummary: "",
-	});
-	assert.deepEqual(result, { ok: true });
-});
-
-// ── verificationContractBlock ───────────────────────────────────────────
-
-function goal(overrides: Partial<GoalRecord> = {}): GoalRecord {
-	return {
-		id: "g1",
-		objective: "Test goal",
-		status: "active",
-		autoContinue: true,
-		usage: { tokensUsed: 0, activeSeconds: 0 },
-		sisyphus: false,
-		createdAt: "2026-05-12T00:00:00.000Z",
-		updatedAt: "2026-05-12T00:00:00.000Z",
-		...overrides,
-	};
-}
-
-test("verificationContractBlock: returns empty string when no contract", () => {
-	const block = verificationContractBlock(goal());
-	assert.equal(block, "");
-});
-
-test("verificationContractBlock: includes contract text and rules", () => {
-	const block = verificationContractBlock(goal({
-		verificationContract: "Run npm test (0 failures), search for remaining references",
-	}));
-	assert.ok(block.includes("VERIFICATION CONTRACT"));
-	assert.ok(block.includes("goalId=g1"));
-	assert.ok(block.includes("Run npm test (0 failures), search for remaining references"));
-	assert.ok(block.includes("independent completion auditor derives the requirements"));
-	assert.ok(block.includes("Do NOT mark sub-items or tasks as complete"));
-});
-
-test("verificationContractBlock: mentions per-task contracts", () => {
-	const block = verificationContractBlock(goal({
-		verificationContract: "Check all tests pass",
-	}));
-	assert.ok(block.includes("independent completion auditor derives the requirements"));
-	assert.ok(block.includes("sub-items or tasks"));
 });

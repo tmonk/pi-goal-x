@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildCompletionReport, validateGoalUpdate } from "../extensions/goal-policy.ts";
+import { buildCompletionReport } from "../extensions/goal-policy.ts";
 import { createGoal } from "../extensions/goal-record.ts";
 import {
 	archiveGoalFile,
@@ -245,8 +245,6 @@ test("sync while paused: status stays paused, objective changed on disk", () => 
 		assert.equal(paused.objective, originalObj);
 
 		// Valid gate check
-		const gate = validateGoalUpdate({ goal: paused });
-		assert.equal(gate.ok, true, "paused goal should pass validateGoalUpdate");
 
 		// Update objective while paused
 		const updated = writeActiveGoalFile(ctx, { ...paused, objective: newObj });
@@ -372,27 +370,3 @@ test("all three bypass paths produce correct distinct reports", () => {
 });
 
 // ── 10. Edge: Cannot update complete goal (handler gate test) ─────────────────
-
-test("validateGoalUpdate rejects complete goal", () => {
-	const goal = makeGoal({ status: "complete" } as GoalRecord);
-	const result = validateGoalUpdate({ goal });
-	assert.equal(result.ok, false);
-	if (!result.ok) {
-		assert.match(result.message, /cannot update objective/);
-		assert.match(result.message, /already complete/);
-	}
-});
-
-test("validateGoalUpdate rejects null goal (no goal exists)", () => {
-	const result = validateGoalUpdate({ goal: null });
-	assert.equal(result.ok, false);
-	if (!result.ok) {
-		assert.match(result.message, /cannot update objective/);
-		assert.match(result.message, /No goal is set/);
-	}
-});
-
-test("validateGoalUpdate accepts active and paused goals", () => {
-	assert.equal(validateGoalUpdate({ goal: makeGoal() }).ok, true);
-	assert.equal(validateGoalUpdate({ goal: makeGoal({ status: "paused" }) }).ok, true);
-});

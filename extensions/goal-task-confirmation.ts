@@ -1,4 +1,20 @@
+
+/** Render a task tree for confirmation dialogs (structural view). */
+export function renderConfirmationTasks(tasks: readonly GoalTask[], indent: number): string[] {
+	const prefix = "  ".repeat(indent);
+	const lines: string[] = [];
+	for (const t of tasks) {
+		const lw = t.lightweightSubtasks ? " (lightweight)" : "";
+		const contract = t.verificationContract ? ` contract: ${t.verificationContract}` : "";
+		lines.push(`${prefix}[ ] ${t.id}: ${t.title}${lw}${contract}`);
+		if (t.subtasks && t.subtasks.length > 0) {
+			lines.push(...renderConfirmationTasks(t.subtasks, indent + 1));
+		}
+	}
+	return lines;
+}
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { GoalTask } from "./goal-record.ts";
 import { shouldAutoConfirmProposal, showProposalDialog } from "./goal-questionnaire.ts";
 
 /**

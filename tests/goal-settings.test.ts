@@ -317,22 +317,6 @@ test("continuationPrompt: task list suppressed when disableTasks is true", () =>
 	assert.ok(!prompt.includes("TASK LIST"), "task list suppressed from continuationPrompt");
 });
 
-// ── Integration: tool gate simulation ────────────────────────────────────
-
-import { validateVerificationSummary } from "../extensions/goal-policy.ts";
-
-test("validateVerificationSummary: passes when contracts disabled even with empty summary", () => {
-	// The gate logic in goal.ts skips validateVerificationSummary when contracts are disabled.
-	// This test verifies the integration point: when the gate is skipped, no enforcement occurs.
-	// Simulating the disabled-contracts path: we don't call validateVerificationSummary at all.
-	// The contract gate is only reached when contracts are enabled.
-	const gate = validateVerificationSummary({
-		verificationContract: "Must verify",
-		verificationSummary: "I verified",
-	});
-	assert.equal(gate.ok, true, "valid summary passes when gate is reached");
-});
-
 // ── subtaskDepth ────────────────────────────────────────────────────────
 
 test("parseGoalSettings: parses subtaskDepth as number", () => {
@@ -374,7 +358,7 @@ test("loadGoalSettings: reads subtaskDepth from file", () => {
 
 // ── Unified acceptance: buildDraftConfirmationText with tasks ────────────
 
-import { buildDraftConfirmationText } from "../extensions/goal-draft.ts";
+import { buildDraftConfirmationText } from "../extensions/goal-widget.ts";
 
 test("buildDraftConfirmationText includes task section when appended to objective", () => {
 	const text = buildDraftConfirmationText({

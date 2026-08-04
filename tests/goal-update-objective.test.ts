@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildCompletionReport, findSubtaskDepthViolation, validateGoalUpdate, validateTaskListProposal } from "../extensions/goal-policy.ts";
+import { buildCompletionReport, findSubtaskDepthViolation, validateTaskListProposal } from "../extensions/goal-policy.ts";
 import { createGoal } from "../extensions/goal-record.ts";
 import {
 	archiveGoalFile,
@@ -39,37 +39,6 @@ function makeGoal(overrides: Partial<GoalRecord> = {}): GoalRecord {
 		...overrides,
 	};
 }
-
-// ─── validateGoalUpdate (handler gate) ───────────────────────────────────────
-
-test("validateGoalUpdate rejects null goal (no goal exists)", () => {
-	const result = validateGoalUpdate({ goal: null });
-	assert.equal(result.ok, false);
-	if (!result.ok) {
-		assert.match(result.message, /cannot update objective/);
-		assert.match(result.message, /No goal is set/);
-	}
-});
-
-test("validateGoalUpdate rejects complete goal", () => {
-	const goal = makeGoal({ status: "complete" } as GoalRecord);
-	const result = validateGoalUpdate({ goal });
-	assert.equal(result.ok, false);
-	if (!result.ok) {
-		assert.match(result.message, /cannot update objective/);
-		assert.match(result.message, /already complete/);
-	}
-});
-
-test("validateGoalUpdate accepts active goal", () => {
-	const result = validateGoalUpdate({ goal: makeGoal() });
-	assert.equal(result.ok, true);
-});
-
-test("validateGoalUpdate accepts paused goal", () => {
-	const result = validateGoalUpdate({ goal: makeGoal({ status: "paused" }) });
-	assert.equal(result.ok, true);
-});
 
 // ─── updatedObjective schema rejection (removed from the model surface) ──────
 

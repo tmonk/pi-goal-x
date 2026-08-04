@@ -6,7 +6,6 @@ import {
 	footerStatus,
 	formatDuration,
 	formatTokenValue,
-	isQuestionLikeToolName,
 	statusLabel,
 	truncateText,
 	type GoalDisplayRecordLike,
@@ -49,13 +48,4 @@ test("goal display helpers derive labels and footer", () => {
 
 	assert.equal(statusLabel({ ...goal, sisyphus: true }), "sisyphus running");
 	assert.equal(statusLabel({ ...goal, status: "paused", stopReason: "agent" }), "paused (agent)");
-});
-
-test("isQuestionLikeToolName allows dialogue tools but not workhorse tools", () => {
-	for (const name of ["goal_question", "goal_questionnaire", "question", "questionnaire", "ask_user", "clarify_scope", "confirm_choice"]) {
-		assert.equal(isQuestionLikeToolName(name), true, name);
-	}
-	for (const name of ["bash", "read", "grep", "write", "edit", "step_complete", "pause_goal"]) {
-		assert.equal(isQuestionLikeToolName(name), false, name);
-	}
 });

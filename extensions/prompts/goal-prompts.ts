@@ -2,7 +2,7 @@ import {
 	statusLabel,
 	truncateText,
 } from "../goal-core.ts";
-import { promptSafeObjective } from "../goal-draft.ts";
+import { promptSafeObjective } from "../goal-contract.ts";
 import type { GoalRecord, GoalTask, TaskStatus } from "../goal-record.ts";
 import type { GoalSettings } from "../goal-settings.ts";
 import { budgetLine } from "../goal-accounting.ts";

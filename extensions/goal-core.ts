@@ -12,7 +12,6 @@ export interface GoalDisplayRecordLike {
 	stopReason?: "user" | "agent";
 }
 
-export { isQuestionLikeToolName } from "./goal-tool-names.ts";
 
 
 export function truncateText(value: string, max = 120): string {

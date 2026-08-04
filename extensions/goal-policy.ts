@@ -17,10 +17,6 @@ export type PolicyValidation =
 	| { ok: true }
 	| { ok: false; message: string };
 
-export function isGoalUnfinished(goal: Pick<GoalPolicyRecordLike, "status"> | null | undefined): boolean {
-	return !!goal && goal.status !== "complete";
-}
-
 export function isRunnableStatus(status: GoalStatusLike): boolean {
 	return status === "active";
 }
@@ -32,11 +28,6 @@ export function isCompletableStatus(status: GoalStatusLike): boolean {
 	return status === "active" || status === "paused" || status === "budget_limited";
 }
 
-export function validateGoalCreationSlot(goal: Pick<GoalPolicyRecordLike, "status"> | null): PolicyValidation {
-	void goal;
-	return { ok: true };
-}
-
 export function validateGoalCompletion(args: {
 	goal: GoalPolicyRecordLike | null;
 	runningGoalId?: string | null;
@@ -45,27 +36,6 @@ export function validateGoalCompletion(args: {
 	if (!goal) return { ok: false, message: "No goal is set." };
 	if (runningGoalId && goal.id !== runningGoalId) return { ok: false, message: "The active goal changed during this run; not marking it complete." };
 	if (!isCompletableStatus(goal.status)) return { ok: false, message: `Goal is ${statusLabel(goal)}; update_goal(complete) does not apply.` };
-	return { ok: true };
-}
-
-export function validateGoalUpdate(args: {
-	goal: GoalPolicyRecordLike | null;
-}): PolicyValidation {
-	if (!args.goal) return { ok: false, message: "No goal is set; cannot update objective." };
-	if (args.goal.status === "complete") return { ok: false, message: "Goal is already complete; cannot update objective." };
-	return { ok: true };
-}
-
-export function validateGoalAbort(args: {
-	goal: GoalPolicyRecordLike | null;
-	runningGoalId?: string | null;
-	reason: string;
-}): PolicyValidation {
-	const { goal, runningGoalId } = args;
-	if (!goal) return { ok: false, message: "No goal is set; goal abandonment is a no-op." };
-	if (runningGoalId && goal.id !== runningGoalId) return { ok: false, message: "The active goal changed during this run; not aborting." };
-	if (goal.status === "complete") return { ok: false, message: "Goal is complete; abandonment does not apply." };
-	if (!args.reason.trim()) return { ok: false, message: "Abandonment requires a non-empty reason." };
 	return { ok: true };
 }
 
@@ -80,51 +50,6 @@ export function validateGoalBlock(args: {
 		return { ok: false, message: `Goal is ${statusLabel(goal)}; update_goal(blocked) applies only to an active goal.` };
 	}
 	return { ok: true };
-}
-
-export function validatePauseGoal(args: {
-	goal: GoalPolicyRecordLike | null;
-	runningGoalId?: string | null;
-	reason: string;
-}): PolicyValidation {
-	const { goal, runningGoalId } = args;
-	if (!goal) return { ok: false, message: "No goal is set; pausing is a no-op." };
-	if (runningGoalId && goal.id !== runningGoalId) return { ok: false, message: "The active goal changed during this run; not pausing." };
-	if (!isRunnableStatus(goal.status)) return { ok: false, message: `Goal is ${statusLabel(goal)}; pausing does not apply.` };
-	if (!args.reason.trim()) return { ok: false, message: "Pausing requires a non-empty reason." };
-	return { ok: true };
-}
-
-export function buildPausedByAgentGoal<T extends GoalPolicyRecordLike>(goal: T, args: {
-	reason: string;
-	suggestedAction?: string;
-	updatedAt: string;
-}): T {
-	const suggested = args.suggestedAction?.trim() || undefined;
-	return {
-		...goal,
-		status: "paused",
-		autoContinue: false,
-		stopReason: "agent",
-		pauseReason: args.reason.trim(),
-		pauseSuggestedAction: suggested,
-		updatedAt: args.updatedAt,
-	};
-}
-
-export function buildAbortedByAgentGoal<T extends GoalPolicyRecordLike>(goal: T, args: {
-	reason: string;
-	updatedAt: string;
-}): T {
-	return {
-		...goal,
-		status: "paused",
-		autoContinue: false,
-		stopReason: "agent",
-		pauseReason: `Aborted: ${args.reason.trim()}`,
-		pauseSuggestedAction: undefined,
-		updatedAt: args.updatedAt,
-	};
 }
 
 export function validateResumeGoal(goal: GoalPolicyRecordLike | null): PolicyValidation {
@@ -180,21 +105,6 @@ export function taskCompletionBlockWarning(taskList: GoalTaskList): string | nul
  * Validate that a verificationSummary satisfies a verificationContract.
  * If a contract exists, the summary must be non-empty.
  */
-export function validateVerificationSummary(args: {
-	verificationContract?: string | null;
-	verificationSummary?: string | null;
-}): PolicyValidation {
-	const contract = args.verificationContract?.trim();
-	const summary = args.verificationSummary?.trim();
-	if (contract && !summary) {
-		return {
-			ok: false,
-			message: `This goal has a verification contract but no verificationSummary was provided. Provide a verificationSummary that addresses the contract requirements.`,
-		};
-	}
-	return { ok: true };
-}
-
 export function validateTaskCompletion(args: {
 	goal: GoalPolicyRecordLike | null;
 	taskId: string;

@@ -1,6 +1,5 @@
 import { matchesKey } from "@earendil-works/pi-tui";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { buildDraftConfirmationText } from "./goal-draft.ts";
 import { showProposalDialog } from "./goal-questionnaire.ts";
 import { cloneGoal, createGoal, nowIso, type GoalTask } from "./goal-record.ts";
 import { serializeGoalFile } from "./storage/goal-files.ts";
@@ -18,6 +17,48 @@ const DEBUG_GOALS_DIR = ".pi/goals/debug";
  */
 let debugGoalCounter = 0;
 let debugMockAuditTimer: ReturnType<typeof setInterval> | null = null;
+
+/** Render task lines for the debug proposal dialog. */
+function formatModeLabelDebug(sisyphus: boolean): string {
+	return sisyphus ? "Sisyphus (prompt/criteria style)" : "Normal goal";
+}
+
+function formatPrefixedLinesDebug(content: string): string[] {
+	const lines: string[] = [];
+	for (const rawLine of content.split("\n")) {
+const trimmed = rawLine.trim();
+if (!trimmed) continue;
+if (trimmed.startsWith("│")) {
+	lines.push(rawLine);
+} else {
+	lines.push(`│   ${rawLine}`);
+}
+	}
+	return lines;
+}
+
+function formatSectionDebug(title: string, content: string): string[] {
+	const body = formatPrefixedLinesDebug(content);
+	return ["", `─── ${title} ───`, "", ...body];
+}
+
+export function buildDraftConfirmationText(args: {
+	focus: "goal" | "sisyphus";
+	originalTopic: string;
+	objective: string;
+	autoContinue: boolean;
+}): string {
+	const lines: string[] = [];
+	lines.push("● Goal draft ready for confirmation.");
+	lines.push("");
+	lines.push("─── Draft Details ───");
+	lines.push(`│   Mode: ${formatModeLabelDebug(args.focus === "sisyphus")}`);
+	lines.push(`│   Auto-continue: ${args.autoContinue ? "yes" : "no"}`);
+	lines.push(...formatSectionDebug("Original Topic", args.originalTopic.trim()));
+	lines.push(...formatSectionDebug("Proposed Goal", args.objective));
+	return lines.join("\n");
+}
+
 
 export function syncTerminalInputPause(core: GoalCore, ctx: ExtensionContext): void {
 		if (!ctx.hasUI) return;
@@ -218,8 +259,7 @@ export function syncTerminalInputPause(core: GoalCore, ctx: ExtensionContext): v
 			debugMockAuditTimer.unref?.();
 		}
 
-		/** Render task lines for the debug proposal dialog. */
-		function renderDebugTaskLines(tasks: GoalTask[], indent = 0): string[] {
+function renderDebugTaskLines(tasks: GoalTask[], indent = 0): string[] {
 			const prefix = "  ".repeat(indent);
 			const lines: string[] = [];
 			for (const t of tasks) {

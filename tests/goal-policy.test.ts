@@ -2,20 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-	abortGoalCommandMessage,
-	buildAbortedByAgentGoal,
 	buildCompletionReport,
 	buildGoalCreatedReport,
-	buildPausedByAgentGoal,
 	clearGoalCommandMessage,
-	isGoalUnfinished,
 	shouldArmPostCompactReminder,
 	shouldInjectPostCompactReminder,
 	shouldQueueContinuation,
-	validateGoalAbort,
+	validateGoalBlock,
 	validateGoalCompletion,
-	validateGoalCreationSlot,
-	validatePauseGoal,
 	validateResumeGoal,
 	type GoalPolicyRecordLike,
 } from "../extensions/goal-policy.ts";
@@ -46,14 +40,7 @@ function rejectedMessage(result: { ok: true } | { ok: false; message: string }):
 	return result.message;
 }
 
-test("goal lifecycle creation and completion gates reject unsafe transitions", () => {
-	assert.equal(isGoalUnfinished(null), false);
-	assert.equal(isGoalUnfinished(goal({ status: "active" })), true);
-	assert.equal(isGoalUnfinished(goal({ status: "complete" })), false);
-
-	assert.deepEqual(validateGoalCreationSlot(null), { ok: true });
-	assert.deepEqual(validateGoalCreationSlot(goal({ status: "paused" })), { ok: true });
-
+test("goal lifecycle completion gates reject unsafe transitions", () => {
 	assert.deepEqual(validateGoalCompletion({ goal: goal({ sisyphus: false }) }), { ok: true });
 	const noGoal = validateGoalCompletion({ goal: null });
 	assert.equal(noGoal.ok, false);
@@ -69,23 +56,14 @@ test("goal lifecycle creation and completion gates reject unsafe transitions", (
 	assert.deepEqual(validateGoalCompletion({ goal: sisyphus() }), { ok: true });
 });
 
-test("pause, resume, and clear policy preserve human-owned lifecycle affordances", () => {
-	assert.match(rejectedMessage(validatePauseGoal({ goal: null, reason: "blocked" })), /no-op/);
-	assert.match(rejectedMessage(validatePauseGoal({ goal: goal({ id: "new" }), runningGoalId: "old", reason: "blocked" })), /changed during this run/);
-	assert.match(rejectedMessage(validatePauseGoal({ goal: goal({ status: "complete" }), reason: "blocked" })), /does not apply/);
-	assert.deepEqual(validatePauseGoal({ goal: goal(), reason: "blocked" }), { ok: true });
+test("update_goal(blocked) policy applies only to an active goal", () => {
+	assert.deepEqual(validateGoalBlock({ goal: goal({ status: "active" }) }), { ok: true });
+	assert.match(rejectedMessage(validateGoalBlock({ goal: goal({ status: "paused" }) })), /applies only to an active goal/);
+	assert.match(rejectedMessage(validateGoalBlock({ goal: goal({ status: "complete" }) })), /applies only to an active goal/);
+	assert.match(rejectedMessage(validateGoalBlock({ goal: null })), /No goal is set/);
+});
 
-	const paused = buildPausedByAgentGoal(goal(), {
-		reason: "Need credentials",
-		suggestedAction: "Set TOKEN and /goal-resume",
-		updatedAt: "2026-05-12T01:00:00.000Z",
-	});
-	assert.equal(paused.status, "paused");
-	assert.equal(paused.autoContinue, false);
-	assert.equal(paused.stopReason, "agent");
-	assert.equal(paused.pauseReason, "Need credentials");
-	assert.equal(paused.pauseSuggestedAction, "Set TOKEN and /goal-resume");
-
+test("resume and clear policy preserve human-owned lifecycle affordances", () => {
 	assert.match(rejectedMessage(validateResumeGoal(null)), /No goal is set/);
 	assert.match(rejectedMessage(validateResumeGoal(goal({ status: "complete" }))), /Goal is complete/);
 	assert.match(rejectedMessage(validateResumeGoal(goal({ status: "active", autoContinue: true }))), /already running/);
@@ -154,25 +132,6 @@ test("pause, resume, and clear policy preserve human-owned lifecycle affordances
 	});
 	assert.ok(skipPrecedence.includes("Goal audit skipped."), "auditSkippedReason must take precedence over auditorReport");
 	assert.ok(!skipPrecedence.includes("<approved/>"), "auditorReport must be ignored when auditSkippedReason is present");
-
-	assert.match(rejectedMessage(validateGoalAbort({ goal: goal({ id: "new" }), runningGoalId: "old", reason: "obsolete" })), /changed during this run/);
-	assert.match(rejectedMessage(validateGoalAbort({ goal: goal({ status: "complete" }), reason: "obsolete" })), /does not apply/);
-	assert.match(rejectedMessage(validateGoalAbort({ goal: goal(), reason: "   " })), /requires a non-empty reason/);
-	assert.deepEqual(validateGoalAbort({ goal: goal({ status: "paused", autoContinue: false }), reason: "Obsolete objective" }), { ok: true });
-
-	const aborted = buildAbortedByAgentGoal(goal(), {
-		reason: "User replaced the work with a different request",
-		updatedAt: "2026-05-12T03:00:00.000Z",
-	});
-	assert.equal(aborted.status, "paused");
-	assert.equal(aborted.autoContinue, false);
-	assert.equal(aborted.stopReason, "agent");
-	assert.equal(aborted.pauseReason, "Aborted: User replaced the work with a different request");
-	assert.equal(aborted.pauseSuggestedAction, undefined);
-
-	assert.equal(abortGoalCommandMessage({ archived: true, wasDrafting: false }), "Goal aborted and archived.");
-	assert.equal(abortGoalCommandMessage({ archived: false, wasDrafting: true }), "Drafting cancelled.");
-	assert.equal(abortGoalCommandMessage({ archived: false, wasDrafting: false }), "No goal is set.");
 });
 
 test("continuation and compaction policies are deterministic", () => {

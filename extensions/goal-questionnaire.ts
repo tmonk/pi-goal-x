@@ -1,7 +1,8 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import type { GoalDraftingFocus } from "./goal-draft.ts";
+
+export type GoalDraftingFocus = "goal" | "sisyphus";
 
 export interface GoalQuestionnaireQuestion {
 	id: string;
