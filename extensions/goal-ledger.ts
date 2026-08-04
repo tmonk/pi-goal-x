@@ -8,7 +8,7 @@ export type GoalLedgerEvent =
   | { type: "goal_created"; goalId: string; objective: string; sisyphus: boolean; autoContinue: boolean; at: string }
   | { type: "goal_focused"; goalId: string; reason: string; at: string }
   | { type: "goal_unfocused"; reason: string; at: string }
-  | { type: "goal_paused"; goalId: string; reason: string; suggestedAction?: string; status?: "paused"; at: string }
+  | { type: "goal_paused"; goalId: string; reason: string; suggestedAction?: string; status?: "paused"; source?: "user" | "agent"; at: string }
   | { type: "goal_resumed"; goalId: string; reason: string; at: string }
   | { type: "goal_tweaked"; goalId: string; changeSummary: string; at: string }
   | { type: "completion_requested"; goalId: string; summary?: string; at: string }
@@ -154,7 +154,7 @@ function isValidLedgerEvent(value: unknown): value is GoalLedgerEvent {
     case "goal_unfocused":
       return typeof obj.reason === "string";
     case "goal_paused":
-      return typeof obj.goalId === "string" && typeof obj.reason === "string" && (obj.suggestedAction === undefined || typeof obj.suggestedAction === "string") && (obj.status === undefined || obj.status === "paused");
+      return typeof obj.goalId === "string" && typeof obj.reason === "string" && (obj.suggestedAction === undefined || typeof obj.suggestedAction === "string") && (obj.status === undefined || obj.status === "paused") && (obj.source === undefined || obj.source === "user" || obj.source === "agent");
     case "goal_resumed":
       return typeof obj.goalId === "string" && typeof obj.reason === "string";
     case "goal_tweaked":

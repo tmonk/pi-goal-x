@@ -52,6 +52,23 @@ export function validateGoalBlock(args: {
 	return { ok: true };
 }
 
+/**
+ * update_goal(paused) is the agent-initiated immediate pause (Stage 5.1-C).
+ * It applies only to an ACTIVE goal and is distinct from the three-turn
+ * blocked gate and from the user-owned pause/resume commands.
+ */
+export function validateGoalAgentPause(args: {
+	goal: GoalPolicyRecordLike | null;
+	runningGoalId?: string | null;
+}): PolicyValidation {
+	const { goal } = args;
+	if (!goal) return { ok: false, message: "No goal is set." };
+	if (goal.status !== "active") {
+		return { ok: false, message: `Goal is ${statusLabel(goal)}; update_goal(paused) applies only to an active goal.` };
+	}
+	return { ok: true };
+}
+
 export function validateResumeGoal(goal: GoalPolicyRecordLike | null): PolicyValidation {
 	if (!goal) return { ok: false, message: "No goal is set. Use /goal to draft one, or /goal-direct <objective> to start immediately." };
 	if (goal.status === "complete") return { ok: false, message: "Goal is complete. Use /goal to draft a new one, or /goal-direct <objective> to start immediately." };

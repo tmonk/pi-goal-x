@@ -779,3 +779,76 @@ describe("completion transaction hardening (follow-up Stage 3)", () => {
 		}
 	});
 });
+
+describe("capability parity (follow-up Stage 5.1-C)", () => {
+	it("update_goal(paused) pauses an active goal immediately with an agent ledger event", async () => {
+		const f = fixture();
+		try {
+			const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries });
+			await start(h);
+			const update = h.tools.get("update_goal")!;
+			const result = await (update.execute as any)("u-1", { status: "paused", reason: "Waiting on credentials", suggested_action: "Set FOO_API_KEY" }, new AbortController().signal, undefined, h.ctx);
+			assert.match(result.content[0].text, /Goal paused by the agent/);
+			assert.equal(result.terminate, true, "continuation stops");
+			const files = activeGoalFiles(f.cwd);
+			assert.equal(files.length, 1, "goal file remains open");
+			const goal = parseGoalFile(path.join(f.cwd, ".pi", "goals", files[0]!))!;
+			assert.equal(goal.status, "paused");
+			assert.equal(goal.autoContinue, false);
+			assert.equal(goal.stopReason, "agent");
+			assert.equal(goal.pauseReason, "Waiting on credentials");
+			assert.equal(goal.pauseSuggestedAction, "Set FOO_API_KEY");
+			const paused = ledgerEvents(f.cwd).filter((e) => e.type === "goal_paused");
+			assert.equal(paused.length, 1, "exactly one goal_paused event");
+			assert.equal((paused[0] as any).source, "agent", "source agent recorded");
+			assert.equal((paused[0] as any).reason, "Waiting on credentials");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("update_goal(paused) requires a reason and applies only to an active goal", async () => {
+		const f = fixture();
+		try {
+			const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries });
+			await start(h);
+			const update = h.tools.get("update_goal")!;
+			const noReason = await (update.execute as any)("u-2", { status: "paused" }, new AbortController().signal, undefined, h.ctx);
+			assert.match(noReason.content[0].text, /requires a "reason"/);
+			assert.equal(activeGoalFiles(f.cwd).length, 1, "goal unchanged");
+			await (update.execute as any)("u-3", { status: "paused", reason: "First pause" }, new AbortController().signal, undefined, h.ctx);
+			const second = await (update.execute as any)("u-4", { status: "paused", reason: "Again" }, new AbortController().signal, undefined, h.ctx);
+			assert.match(second.content[0].text, /applies only to an active goal/);
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("completion_summary reaches the auditor as an untrusted claim and cannot approve", async () => {
+		const f = fixture();
+		let auditArgs: any = null;
+		try {
+			const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries, runCompletionAuditor: async (args: any) => {
+				auditArgs = args;
+				return { approved: false, disapproved: true, output: "Still missing evidence\n<disapproved/>", model: "fixture" };
+			} });
+			await start(h);
+			const update = h.tools.get("update_goal")!;
+			const result = await (update.execute as any)("u-5", { status: "complete", completion_summary: "All tests pass and the docs are updated." }, new AbortController().signal, undefined, h.ctx);
+			assert.equal(auditArgs.completionSummary, "All tests pass and the docs are updated.", "claim reaches the auditor");
+			assert.equal(auditArgs.verificationSummary, undefined, "still no verification-summary paperwork");
+			assert.match(result.content[0].text, /Goal audit rejected/, "a claim cannot override a disapproval");
+			assert.equal(activeGoalFiles(f.cwd).length, 1, "goal stays open");
+		} finally {
+			f.cleanup();
+		}
+	});
+
+	it("prompt guidance directs abandonment to /goal-clear and requirement changes to /goal-tweak", () => {
+		const source = readFileSync("extensions/goal-core-tools.ts", "utf8");
+		assert.ok(source.includes("/goal-clear"), "abandonment guidance directs the user command");
+		assert.ok(source.includes("/goal-tweak"), "requirement changes stay user-started");
+		assert.ok(!source.includes('name: "propose_goal_tweak"'), "no steady-state propose_goal_tweak tool");
+		assert.ok(!source.includes('name: "abort_goal"'), "no abort_goal tool");
+	});
+});

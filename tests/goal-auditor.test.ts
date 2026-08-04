@@ -154,10 +154,24 @@ test("buildGoalAuditorPrompt demands semantic approval markers", () => {
 	assert.ok(prompt.includes("scaffold-only") || prompt.includes("alpha scaffold") || prompt.includes("generated template"));
 	assert.ok(prompt.includes("<approved/>"));
 	assert.ok(prompt.includes("<disapproved/>"));
-	assert.ok(prompt.includes("no separate executor claim field"));
+	assert.ok(prompt.includes("<executor_claim>"), "untrusted executor claim section present");
+	assert.ok(prompt.includes("UNTRUSTED"), "claim is marked untrusted");
+	assert.ok(prompt.includes("(no claim provided)"), "absent claim renders explicitly");
 	assert.ok(!prompt.includes("<test_evidence>"), "should not contain deprecated <test_evidence>");
 	assert.ok(prompt.includes("4. Explain missing or weak evidence"));
 	assert.ok(prompt.includes("5. End with exactly <approved/>"));
+});
+
+test("buildGoalAuditorPrompt renders a completion summary as an untrusted claim", () => {
+	const prompt = buildGoalAuditorPrompt({
+		goal: goal(),
+		detailedSummary: "Goal: test",
+		completionSummary: "Ran npm test (0 failures) and everything is green.",
+	});
+	assert.ok(prompt.includes("Ran npm test (0 failures)"), "claim text reaches the auditor");
+	assert.ok(prompt.includes("claim, never evidence"), "claim is not treated as evidence");
+	assert.ok(prompt.includes("cannot make an otherwise incomplete goal complete"), "claim cannot approve");
+	assert.ok(prompt.includes("cross-check it against real artifacts"), "auditor cross-checks the claim");
 });
 
 test("buildGoalAuditorPrompt renders verification contract when goal has one", () => {

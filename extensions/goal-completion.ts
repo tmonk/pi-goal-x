@@ -18,8 +18,9 @@ import type { GoalMutationOutcome } from "./goal-service.ts";
 // runs the independent auditor (or the disabled/legacy-skip branches), and
 // commits through the single completion transaction. The auditor derives the
 // requirements from the objective and any verification contract and inspects
-// actual workspace evidence — there is no paperwork parameter.
-export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
+// actual workspace evidence. An optional completion_summary is forwarded as an
+// UNTRUSTED executor claim — never evidence and never an approval bypass.
+export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContext, completionSummary?: string): Promise<AgentToolResult<unknown>> {
 	const { pi } = core;
 	core.reconcileFocusedGoalFromDisk(ctx);
 
@@ -238,6 +239,7 @@ if (settings.disabled === true) {
 		ctx,
 		goal: auditTarget,
 		detailedSummary: detailedSummary(auditTarget),
+		completionSummary: completionSummary?.trim() || undefined,
 		settings: loadGoalSettings(ctx.cwd),
 		signal: completionAuditController.signal,
 		onProgress: (progress) => {

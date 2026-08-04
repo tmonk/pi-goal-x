@@ -5,7 +5,7 @@ import { formatDuration, formatTokenValue, statusLabel, truncateText } from "./g
 import { extractVerificationContract } from "./goal-contract.ts";
 import { detailedSummary, goalDetails, renderGoalResult } from "./goal-format.ts";
 import { budgetLine } from "./goal-accounting.ts";
-import { buildGoalCreatedReport, buildTaskSummary, validateGoalBlock } from "./goal-policy.ts";
+import { buildGoalCreatedReport, buildTaskSummary, validateGoalAgentPause, validateGoalBlock } from "./goal-policy.ts";
 import { buildUnfocusedOpenGoalsSummary, otherOpenGoalCount } from "./goal-pool.ts";
 import { nowIso, validateTokenBudgetInput } from "./goal-record.ts";
 import type { GoalCore } from "./goal-state.ts";
@@ -13,7 +13,7 @@ import type { GoalCore } from "./goal-state.ts";
 export function registerCoreTools(
 	core: GoalCore,
 	deps: {
-		runGoalCompletionFlow: (core: GoalCore, ctx: ExtensionContext) => Promise<AgentToolResult<unknown>>;
+		runGoalCompletionFlow: (core: GoalCore, ctx: ExtensionContext, completionSummary?: string) => Promise<AgentToolResult<unknown>>;
 	},
 ): void {
 	const { pi } = core;
@@ -27,6 +27,7 @@ pi.registerTool(defineTool({
 		"Use get_goal when you need the current goal before deciding whether to continue or mark it complete.",
 		"Before marking a goal complete, compare every explicit requirement with concrete evidence from the workspace/session.",
 		"If the returned goal has sisyphus mode on, you must execute strictly step-by-step in the order written in the objective; do not skip, combine, or rush steps, and stop to ask the user when blocked or unclear.",
+		"If requirements change, ask the user to run /goal-tweak; never edit the objective yourself. Never archive or abandon a goal on your own — ask the user to run /goal-clear instead.",
 	],
 	parameters: Type.Object({}, { additionalProperties: false }),
 	async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
@@ -192,26 +193,89 @@ async function runGoalBlockedFlow(ctx: ExtensionContext): Promise<AgentToolResul
 	};
 }
 
+/**
+ * Agent-initiated immediate pause (Stage 5.1-C): update_goal({status:
+ * "paused"}) with a required reason pauses an active goal right away and
+ * records goal_paused with source "agent". It is distinct from blocked
+ * (three-consecutive-turn gate) and from the user-owned pause/resume
+ * commands.
+ */
+async function runGoalAgentPauseFlow(ctx: ExtensionContext, reason: string | undefined, suggestedAction: string | undefined): Promise<AgentToolResult<unknown>> {
+	core.reconcileFocusedGoalFromDisk(ctx);
+	const gate = validateGoalAgentPause({ goal: core.state.goal, runningGoalId: core.runningGoalId });
+	if (!gate.ok) {
+		return { content: [{ type: "text", text: gate.message }], details: goalDetails(core.state.goal) };
+	}
+	const trimmedReason = reason?.trim() ?? "";
+	if (!trimmedReason) {
+		return { content: [{ type: "text", text: 'update_goal({ status: "paused" }) requires a "reason" describing why the work is pausing.' }], details: goalDetails(core.state.goal) };
+	}
+	if (!core.state.goal) throw new Error("Goal disappeared during pause validation.");
+	core.accountProgress(ctx);
+	const trimmedAction = suggestedAction?.trim();
+	const result = core.goalService.apply(ctx, {
+		reconcile: false,
+		refreshFromDisk: true,
+		mutate: (g) => ({
+			...g,
+			status: "paused" as const,
+			autoContinue: false,
+			stopReason: "agent" as const,
+			pauseReason: trimmedReason,
+			pauseSuggestedAction: trimmedAction || undefined,
+			updatedAt: nowIso(),
+		}),
+		ledger: (written) => [{
+			type: "goal_paused" as const,
+			goalId: written.id,
+			reason: written.pauseReason ?? trimmedReason,
+			suggestedAction: written.pauseSuggestedAction,
+			source: "agent",
+			at: written.updatedAt,
+		}],
+	});
+	if (result.ok) {
+		core.clearContinuationState();
+		core.clearActiveAccounting();
+		if (result.goal) core.runtime.markTurnStopped(result.goal.id);
+		core.updateUI(ctx);
+	}
+	const suggestion = trimmedAction ? ` Suggested next step: ${trimmedAction}` : "";
+	return {
+		content: [{ type: "text", text: `Goal paused by the agent: ${trimmedReason}.${suggestion} Stop now; the user can resume with /goal-resume or revise with /goal-tweak.` }],
+		details: goalDetails(core.state.goal),
+		terminate: true,
+	};
+}
+
 pi.registerTool(defineTool({
 	name: "update_goal",
 	label: "Update Goal",
-	description: "Report one of two terminal outcomes for the current run: status \"complete\" (runs the independent completion auditor, which verifies from actual evidence — no paperwork field) or status \"blocked\" (records a distinct agent-blocked state and stops continuation). Call blocked only after the same blocker recurs on three consecutive goal turns.",
-	promptSnippet: "Report the current run as complete (audited) or blocked (after three consecutive identical blockers).",
+	description: "Report a terminal or pausing outcome for the current run: status \"complete\" (runs the independent completion auditor, which verifies from actual evidence — an optional completion_summary is an untrusted claim only), status \"blocked\" (records a distinct agent-blocked state and stops continuation; use only after the same blocker recurs on three consecutive goal turns), or status \"paused\" (immediate agent-initiated pause with a required reason). Never archive or abandon a goal yourself: if it should be discarded, ask the user to run /goal-clear.",
+	promptSnippet: "Report the current run as complete (audited), blocked (after three consecutive identical blockers), or paused (immediate, with a reason).",
 	promptGuidelines: [
-		"Call update_goal({status: \"complete\"}) only when every requirement is satisfied. There is no verification-summary parameter: the independent auditor derives the requirements from the objective and any verification contract, and inspects the actual workspace evidence.",
-		"Call update_goal({status: \"blocked\"}) only after the SAME blocker has recurred on three consecutive goal turns. Do not block on the first or second occurrence — keep trying concrete next steps and ask for help when genuinely stuck. A user pause remains an immediate, distinct state controlled by the user.",
-		"Do not use update_goal as an escape hatch: if the objective is achieved, complete it; if it is not, do not complete it. The goal objective is immutable — the model must never edit it on its own initiative.",
+		"Call update_goal({status: \"complete\"}) only when every requirement is satisfied. The independent auditor derives the requirements from the objective and any verification contract and inspects the actual workspace evidence. An optional completion_summary is passed to the auditor as an UNTRUSTED claim — it is never evidence and can never substitute for real artifacts or make a disapproved goal complete.",
+		"Call update_goal({status: \"blocked\"}) only after the SAME blocker has recurred on three consecutive goal turns. Do not block on the first or second occurrence — keep trying concrete next steps and ask for help when genuinely stuck.",
+		"Call update_goal({status: \"paused\"}) for an immediate pause with a required reason and optional suggested action. It records goal_paused with source agent and stops continuation.",
+		"Do not use update_goal as an escape hatch: if the objective is achieved, complete it; if it is not, do not complete it. The goal objective is immutable — if requirements change, ask the user to run /goal-tweak instead of editing the objective yourself.",
+		"Never archive or abandon a goal on your own. When a goal should be discarded, stop and ask the user to run /goal-clear (user-owned abandonment).",
 		"For sisyphus goals, do not mark complete until every numbered step has been executed and individually verified against its done criterion.",
 	],
 	parameters: Type.Object({
-		status: StringEnum(["complete", "blocked"] as const, { description: "complete runs the independent auditor; blocked records a distinct agent-blocked state. Only these two outcomes are accepted." }),
+		status: StringEnum(["complete", "blocked", "paused"] as const, { description: "complete runs the independent auditor; blocked records a distinct agent-blocked state; paused is an immediate agent pause with a required reason." }),
+		reason: Type.Optional(Type.String({ description: "Required when status is paused: why the work is pausing." })),
+		suggested_action: Type.Optional(Type.String({ description: "Optional suggested next step when status is paused." })),
+		completion_summary: Type.Optional(Type.String({ description: "Optional untrusted executor claim shown to the auditor; never evidence." })),
 	}, { additionalProperties: false }),
 	executionMode: "sequential",
 	async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 		if (params.status === "blocked") {
 			return runGoalBlockedFlow(ctx);
 		}
-		return deps.runGoalCompletionFlow(core, ctx);
+		if (params.status === "paused") {
+			return runGoalAgentPauseFlow(ctx, params.reason, params.suggested_action);
+		}
+		return deps.runGoalCompletionFlow(core, ctx, params.completion_summary);
 	},
 	renderCall(args, theme) {
 		return new Text(theme.fg("toolTitle", "update_goal ") + theme.fg("muted", args?.status ?? ""), 0, 0);

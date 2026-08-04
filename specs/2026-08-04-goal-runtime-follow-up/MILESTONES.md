@@ -38,6 +38,29 @@
   authoritative serial baseline.
   Timings are evidence, not portable performance guarantees.
 
+## 2026-08-04 — Stage 5.1-C: capability parity without tool sprawl
+
+- `update_goal` gained `paused` (required `reason`, optional
+  `suggested_action`): an immediate agent-initiated pause on an active goal —
+  `goal_paused` ledger event with `source: "agent"`, continuation stopped,
+  pause reason/action persisted. `blocked` remains the three-consecutive-turn
+  outcome and stays active-only gated.
+- Abandonment stays user-owned: the model surface directs `update_goal` and
+  `get_goal` callers to `/goal-clear` when a goal should be discarded; no
+  `abort_goal` tool exists.
+- Objective mutation stays user-started: requirement changes are directed to
+  `/goal-tweak`; `propose_goal_tweak` is not restored as a steady-state tool.
+- Optional `completion_summary` on `update_goal({status:"complete"})` is
+  forwarded to the auditor as an UNTRUSTED `<executor_claim>` (never
+  evidence, never an approval bypass); the auditor prompt cross-checks it
+  against real artifacts and it cannot make a disapproved goal complete.
+- Tests (+4 integration): immediate agent pause with reason/action and
+  `goal_paused(source: agent)`; reason required + active-only gate; the
+  completion claim reaches the auditor while a disapproval still keeps the
+  goal open; source-level guidance assertions (no steady-state tweak/abort
+  tools).
+- Validation: `npm run check` 0 errors; `test:all` 509/0; `test:serial`
+  real-SDK 481/0; `git diff --check` clean.
 ## 2026-08-04 — Stage 5.1-B: /goal-status and per-draft auditor selection
 
 - Registered `/goal-status` (14-command palette): read-only focused-goal
