@@ -23,3 +23,33 @@ Findings (rows=40): scenario A open causes 4–120 viewport scrolls depending on
 chat/dialog length (the write burst at the bottom row); scenario B causes 0 in
 all configurations. See `specs/2026-08-04-goal-confirmation-scroll-fix/` for
 the full root-cause write-up.
+
+## Before/after churn measurement
+
+`before-after-churn.mjs` drives the **real** `runGoalQuestionnaire` through
+the real pi-tui renderer with a fake terminal (mirroring pi's
+`showExtensionCustom` editor swap) and measures the full open / navigate /
+close flow per scenario:
+
+- terminal scrolls per step (a `\n` feed on the bottom row scrolls)
+- `\x1b[2J` / `\x1b[3J` emissions (screen clear / scrollback erase)
+- post-close cursor row and a window-at-bottom verdict
+- scrollback content (full dialog in the main buffer, chat visible above)
+
+Usage:
+
+```
+node experiments/scroll-repro/before-after-churn.mjs              # report mode (measures current behavior)
+node experiments/scroll-repro/before-after-churn.mjs 24           # report mode, rows=24
+node experiments/scroll-repro/before-after-churn.mjs --expect-fixed  # assertion mode: fails if any open/nav/close emits 2J/3J or yanks the viewport
+```
+
+Scenarios: A) fits on screen, B) proposal taller than the terminal, C) chat
+taller than the terminal plus a tall proposal.
+
+Report mode exits 0 always and is the **before** measurement. `--expect-fixed`
+is the **after** assertion and fails (exit 1) while the 383ae52 unbounded
+render is in place: closing a dialog taller than the terminal triggers
+pi-tui's generic shrink full-render (`\x1b[2J\x1b[H\x1b[3J`), erasing terminal
+scrollback and disturbing the viewport so the window takes ~10s to scroll back
+to the bottom.

@@ -98,6 +98,18 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 		// sequences every cycle, which can cause terminal viewport snapping).
 		const wasHardwareCursorShown = tui.getShowHardwareCursor();
 		tui.setShowHardwareCursor(false);
+		// Terminal-height bound: the dialog renders in the editor slot, so the opened
+		// frame height is (pre-dialog frame - 1) + dialog lines. Bound the dialog so
+		// the frame never exceeds the terminal height — without this, closing a dialog
+		// taller than the terminal triggers pi-tui's generic shrink full-render
+		// (\x1b[2J\x1b[H\x1b[3J), erasing terminal scrollback and yanking the viewport
+		// so the window takes ~10s to scroll back to the bottom. The tail slice keeps
+		// the actionable options/footer in view; content that fits renders exactly as
+		// the pre-regression (383ae52) UI. Only applies with real TUI dimensions.
+		const tuiInfo = tui as unknown as { terminal?: { rows?: number }; previousLines?: string[] };
+		const terminalRows = tuiInfo.terminal?.rows;
+		const baseFrame = tuiInfo.previousLines?.length;
+		const maxDialogLines = terminalRows && baseFrame ? Math.max(10, terminalRows - baseFrame + 1) : undefined;
 		let currentTab = 0;
 		let optionIndex = 0;
 		let inputMode = false;
@@ -305,7 +317,7 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 			function render(width: number): string[] {
 			if (cachedLines) return cachedLines;
 			const safeWidth = Math.max(20, width);
-			const lines: string[] = [];
+			let lines: string[] = [];
 			const q = currentQuestion();
 			const opts = displayOptions();
 			const add = (s: string) => lines.push(truncateToWidth(s, safeWidth, "…", true));
@@ -496,6 +508,10 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 				if (lines[i] && visibleWidth(lines[i]) > safeWidth) {
 					lines[i] = truncateToWidth(lines[i], safeWidth);
 				}
+			}
+			// Churn guard: tail-slice to the terminal-height bound (see factory top).
+			if (maxDialogLines !== undefined && lines.length > maxDialogLines) {
+				lines = lines.slice(lines.length - maxDialogLines);
 			}
 			cachedLines = lines;
 			return lines;
