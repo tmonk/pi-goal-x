@@ -8,6 +8,16 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Agent lifecycle reasons remain readable in tool-call headings:** `pause_goal` and
+  `abort_goal` no longer pass their reason through `truncateText(..., 80)`, so Pi's
+  `Text` component wraps the complete reason instead of replacing text after 77
+  characters with `...`. Potentially large draft objectives and proposal summaries
+  retain their compact 80-character previews.
+
 ## [0.21.0] — 2026-08-03
 
 ### Added

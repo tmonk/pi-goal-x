@@ -2934,7 +2934,7 @@ ${objective}` : objective,
 			};
 		},
 		renderCall(args, theme) {
-			return new Text(theme.fg("toolTitle", "pause_goal ") + theme.fg("warning", truncateText(args?.reason ?? "", 80)), 0, 0);
+			return new Text(theme.fg("toolTitle", "pause_goal ") + theme.fg("warning", args?.reason ?? ""), 0, 0);
 		},
 		renderResult(result, _options, theme) {
 			return renderGoalResult(result, theme);
@@ -3006,7 +3006,7 @@ ${objective}` : objective,
 			};
 		},
 		renderCall(args, theme) {
-			return new Text(theme.fg("toolTitle", "abort_goal ") + theme.fg("warning", truncateText(args?.reason ?? "", 80)), 0, 0);
+			return new Text(theme.fg("toolTitle", "abort_goal ") + theme.fg("warning", args?.reason ?? ""), 0, 0);
 		},
 		renderResult(result, _options, theme) {
 			return renderGoalResult(result, theme);
