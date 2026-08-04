@@ -192,6 +192,11 @@ export function isAbortedAssistantMessage(message: unknown): boolean {
 	return raw?.role === "assistant" && raw.stopReason === "aborted";
 }
 
+export function isErrorAssistantMessage(message: unknown): boolean {
+	const raw = asRecord(message);
+	return raw?.role === "assistant" && raw.stopReason === "error";
+}
+
 export function isToolUseAssistantMessage(message: unknown): boolean {
 	const raw = asRecord(message);
 	return raw?.role === "assistant" && raw.stopReason === "toolUse";
@@ -199,6 +204,10 @@ export function isToolUseAssistantMessage(message: unknown): boolean {
 
 export function hasAbortedAssistantMessage(messages: unknown[]): boolean {
 	return messages.some(isAbortedAssistantMessage);
+}
+
+export function hasErrorAssistantMessage(messages: unknown[]): boolean {
+	return messages.some(isErrorAssistantMessage);
 }
 
 export function usageChannelTokens(value: unknown): number {

@@ -5,7 +5,9 @@ import {
 	extractGoalIdFromInjectedMessage,
 	goalEventMessageId,
 	hasAbortedAssistantMessage,
+	hasErrorAssistantMessage,
 	isAbortedAssistantMessage,
+	isErrorAssistantMessage,
 	isMeaningfulProgressToolCall,
 	isToolUseAssistantMessage,
 } from "./goal-format.ts";
@@ -123,6 +125,15 @@ export function registerGoalEvents(core: GoalCore): void {
 
 		if (isAbortedAssistantMessage(message)) {
 			core.pauseActiveGoal(ctx);
+			return;
+		}
+		// Provider failures are not completed work: do not turn one failed turn
+		// into an unbounded auto-continue retry storm. Keep the display
+		// reconciled (and accounting already ran above), but never queue a
+		// continuation for an error turn (danim47c pattern).
+		if (isErrorAssistantMessage(message)) {
+			core.refreshGoalDisplayFromDisk(ctx);
+			core.updateUI(ctx);
 			return;
 		}
 		core.refreshGoalDisplayFromDisk(ctx);
@@ -366,6 +377,14 @@ export function registerGoalEvents(core: GoalCore): void {
 		if (!core.reconcileFocusedGoalFromDisk(ctx)) return;
 		if (hasAbortedAssistantMessage(event.messages) || ctx.signal?.aborted) {
 			core.pauseActiveGoal(ctx);
+			return;
+		}
+		// Provider failures are not completed work: persist and refresh the
+		// display, but never queue a continuation for a run whose messages
+		// include an assistant error (danim47c pattern).
+		if (hasErrorAssistantMessage(event.messages)) {
+			core.persist(ctx);
+			core.updateUI(ctx);
 			return;
 		}
 		core.persist(ctx);

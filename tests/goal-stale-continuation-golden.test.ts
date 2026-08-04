@@ -215,3 +215,102 @@ test("golden: user-driven turn cancels a pending continuation", async () => {
 		// temp dir cleanup is best-effort.
 	}
 });
+
+// ── Provider-error guard (danim47c pattern) ─────────────────────────────────
+// A turn/run whose assistant message has stopReason "error" is failed work:
+// it must never queue an auto-continuation, or a provider outage turns into
+// an unbounded retry storm. Normal turns must still queue.
+
+/** Idle ctx: continuation fires immediately instead of rescheduling. */
+function idleCtx(ctx: ExtensionContext): ExtensionContext {
+	return {
+		...ctx,
+		isIdle: () => true,
+		hasPendingMessages: () => false,
+	} as unknown as ExtensionContext;
+}
+
+async function countCheckpoints(h: ReturnType<typeof createHarness>): Promise<number> {
+	await new Promise((resolve) => setTimeout(resolve, 20));
+	return h.sentMessages.filter(
+		(m) => m.customType === "pi-goal-event" && (m.details as { kind?: string } | undefined)?.kind === "checkpoint",
+	).length;
+}
+
+test("provider-error guard: turn_end with stopReason=error never queues a continuation", async () => {
+	const { cwd, goal } = fixtureCwd();
+	const h = createHarness(cwd);
+	try {
+		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+
+		// Cancel the continuation session_start armed (non-idle ctx keeps it
+		// scheduled) so the turn itself owns the queue decision.
+		await h.handlers["before_agent_start"]({
+			systemPrompt: "base",
+			prompt: "user typed: continue",
+			systemPromptOptions: {},
+		}, h.ctx);
+
+		// A work turn that ends in a provider error (work tool ran, then error).
+		await h.handlers["turn_start"]({}, h.ctx);
+		await h.handlers["tool_call"]({ toolName: "bash", args: { command: "ls" } }, h.ctx);
+		await h.handlers["tool_execution_end"]({}, h.ctx);
+		await h.handlers["turn_end"]({ message: { role: "assistant", stopReason: "error" } }, idleCtx(h.ctx));
+
+		assert.equal(await countCheckpoints(h), 0, "error turn must not queue a continuation");
+	} finally {
+		// temp dir cleanup is best-effort.
+	}
+});
+
+test("provider-error guard: normal work turn still queues a continuation", async () => {
+	const { cwd, goal } = fixtureCwd();
+	const h = createHarness(cwd);
+	try {
+		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+
+		// Cancel the continuation session_start armed (see above).
+		await h.handlers["before_agent_start"]({
+			systemPrompt: "base",
+			prompt: "user typed: continue",
+			systemPromptOptions: {},
+		}, h.ctx);
+
+		await h.handlers["turn_start"]({}, h.ctx);
+		await h.handlers["tool_call"]({ toolName: "bash", args: { command: "ls" } }, h.ctx);
+		await h.handlers["tool_execution_end"]({}, h.ctx);
+		await h.handlers["turn_end"]({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } }, idleCtx(h.ctx));
+
+		assert.equal(await countCheckpoints(h), 1, "normal work turn must queue a continuation");
+	} finally {
+		// temp dir cleanup is best-effort.
+	}
+});
+
+test("provider-error guard: agent_end with an error message never queues a continuation", async () => {
+	const { cwd, goal } = fixtureCwd();
+	const h = createHarness(cwd);
+	try {
+		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+
+		await h.handlers["agent_end"]({ messages: [{ role: "assistant", stopReason: "error" }] }, idleCtx(h.ctx));
+
+		assert.equal(await countCheckpoints(h), 0, "agent_end with an error message must not queue a continuation");
+	} finally {
+		// temp dir cleanup is best-effort.
+	}
+});
+
+test("provider-error guard: agent_end without errors still queues a continuation", async () => {
+	const { cwd, goal } = fixtureCwd();
+	const h = createHarness(cwd);
+	try {
+		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+
+		await h.handlers["agent_end"]({ messages: [{ role: "assistant", stopReason: "end_turn" }] }, idleCtx(h.ctx));
+
+		assert.equal(await countCheckpoints(h), 1, "agent_end without errors must queue a continuation");
+	} finally {
+		// temp dir cleanup is best-effort.
+	}
+});
