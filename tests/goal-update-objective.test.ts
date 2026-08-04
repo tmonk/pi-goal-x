@@ -43,7 +43,7 @@ function makeGoal(overrides: Partial<GoalRecord> = {}): GoalRecord {
 // ─── updatedObjective schema rejection (removed from the model surface) ──────
 
 test("update_goal schema has additionalProperties: false and no updatedObjective", () => {
-	const source = readFileSync("extensions/goal-tools.ts", "utf8");
+	const source = readFileSync("extensions/goal-core-tools.ts", "utf8");
 	const updateGoalIdx = source.indexOf('name: "update_goal"');
 	assert.ok(updateGoalIdx >= 0, "must find update_goal tool registration");
 	const registerBlock = source.substring(updateGoalIdx, updateGoalIdx + 4000);
@@ -52,13 +52,13 @@ test("update_goal schema has additionalProperties: false and no updatedObjective
 	assert.ok(!registerBlock.includes("updatedObjective"),
 		"update_goal schema must not contain updatedObjective");
 	assert.ok(!source.includes("updatedObjective"),
-		"updatedObjective must not appear anywhere in goal-tools.ts");
+		"updatedObjective must not appear anywhere in goal-core-tools.ts");
 	assert.equal(source.includes('name: "complete_goal"'), false,
 		"complete_goal tool registration must be removed");
 });
 
 test("update_goal routes complete directly to the shared completion flow with no options", () => {
-	const source = readFileSync("extensions/goal-tools.ts", "utf8");
+	const source = readFileSync("extensions/goal-core-tools.ts", "utf8");
 	// The completion flow is reached directly from the update_goal executor for
 	// status=complete; blocked routes to the blocked flow. The internal options
 	// type carries no paperwork fields: the public schema has only status.
@@ -70,8 +70,8 @@ test("update_goal routes complete directly to the shared completion flow with no
 		"internal options type must not carry verificationSummary");
 	assert.ok(!source.includes("confirmBypassAuditor"),
 		"internal options type must not carry confirmBypassAuditor");
-	assert.ok(source.includes("return runGoalCompletionFlow(ctx);"),
-		"executor must route status=complete to the flow without an options object");
+	assert.ok(source.includes("return deps.runGoalCompletionFlow(core, ctx);"),
+		"executor must route status=complete to the completion flow without an options object");
 	assert.ok(!source.includes("updatedObjective"),
 		"handler must not reference updatedObjective in error messages");
 });
