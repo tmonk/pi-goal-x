@@ -11,8 +11,8 @@ import assert from "node:assert/strict";
 
 import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import goalExtension from "../extensions/goal.ts";
-import { convertFlatTasks, mergeTasksWithExisting, type FlatTaskInput } from "../extensions/goal-task-tools.ts";
-import { createGoal, goalFocusDetails } from "../extensions/goal-record.ts";
+import { convertFlatTasks, countTasks, mergeTasksWithExisting, type FlatTaskInput } from "../extensions/goal-task-tools.ts";
+import { createGoal, goalFocusDetails, type GoalTask } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../extensions/goal-ledger.ts";
 
@@ -285,5 +285,197 @@ test("update_goal_task(pending) reopens a skipped task; completed tasks are immu
 		assert.equal(byId.get("done")?.status, "complete", "completed task immutable");
 	} finally {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
+});
+
+// ── Stage 3 hardening: structural merge semantics ───────────────────────────
+
+test("mergeTasksWithExisting: structural omission clears contract, flag, and children while progress survives", () => {
+	const existing: GoalTask[] = [{
+		id: "a", title: "Old A", status: "complete" as const, evidence: "verified",
+		completedAt: "2026-01-01T00:00:00.000Z",
+		verificationContract: "Must verify A",
+		lightweightSubtasks: true,
+		subtasks: [
+			{ id: "a1", title: "Child", status: "complete" as const, evidence: "child-evidence", completedAt: "2026-01-01T00:00:00.000Z" },
+			{ id: "a2", title: "Child2", status: "pending" },
+		],
+	}];
+	const incoming = convertFlatTasks([
+		// a omits verification_contract, lightweight_subtasks, and children.
+		{ id: "a", title: "A restructured" },
+	]);
+	assert.ok(incoming.ok);
+	if (!incoming.ok) return;
+	const merged = mergeTasksWithExisting(existing, incoming.tasks);
+	const a = merged[0]!;
+	assert.equal(a.status, "complete", "matching id keeps its runtime status");
+	assert.equal(a.evidence, "verified", "matching id keeps its evidence");
+	assert.equal(a.completedAt, "2026-01-01T00:00:00.000Z", "matching id keeps its completion timestamp");
+	assert.equal(a.title, "A restructured", "title is structural and authoritative");
+	assert.equal(a.verificationContract, undefined, "omitted contract is cleared");
+	assert.equal(a.lightweightSubtasks, undefined, "omitted lightweight flag is cleared");
+	assert.equal(a.subtasks, undefined, "omitted children delete the subtree");
+});
+
+test("mergeTasksWithExisting: moving a task between parents relocates it with progress", () => {
+	const existing: GoalTask[] = [{
+		id: "a", title: "A", status: "pending",
+		subtasks: [{ id: "a1", title: "A1", status: "complete" as const, evidence: "done-a1" }],
+	}, {
+		id: "b", title: "B", status: "pending",
+	}];
+	const incoming = convertFlatTasks([
+		{ id: "a", title: "A" },
+		{ id: "b", title: "B" },
+		{ id: "a1", title: "A1 moved", parent_id: "b" },
+	]);
+	assert.ok(incoming.ok);
+	if (!incoming.ok) return;
+	const merged = mergeTasksWithExisting(existing, incoming.tasks);
+	const b = merged.find((t) => t.id === "b")!;
+	assert.equal(b.subtasks?.[0]?.id, "a1", "task moved under b");
+	assert.equal(b.subtasks?.[0]?.status, "complete", "moved task keeps progress");
+	assert.equal(b.subtasks?.[0]?.evidence, "done-a1", "moved task keeps evidence");
+	assert.equal(merged.find((t) => t.id === "a")?.subtasks, undefined, "a no longer owns a1");
+});
+
+test("mergeTasksWithExisting: skipping state is preserved for matching ids", () => {
+	const existing: GoalTask[] = [{
+		id: "s", title: "Old S", status: "skipped" as const,
+		skipReason: "user direction", skippedAt: "2026-01-02T00:00:00.000Z",
+	}];
+	const incoming = convertFlatTasks([{ id: "s", title: "New S title" }]);
+	assert.ok(incoming.ok);
+	if (!incoming.ok) return;
+	const merged = mergeTasksWithExisting(existing, incoming.tasks);
+	assert.equal(merged[0]!.status, "skipped");
+	assert.equal(merged[0]!.skipReason, "user direction");
+	assert.equal(merged[0]!.skippedAt, "2026-01-02T00:00:00.000Z");
+	assert.equal(merged[0]!.title, "New S title");
+});
+
+test("countTasks counts every node including descendants", () => {
+	const tree = [
+		{ id: "a", title: "A", status: "pending" as const, subtasks: [
+			{ id: "a1", title: "A1", status: "pending" as const, subtasks: [
+				{ id: "a1x", title: "A1x", status: "pending" as const },
+			] },
+		] },
+		{ id: "b", title: "B", status: "pending" as const },
+	];
+	assert.equal(countTasks(tree), 4, "3 nested under a plus b");
+	assert.equal(countTasks([{ id: "c", title: "C", status: "pending" as const }]), 1);
+	assert.equal(countTasks(undefined), 0);
+});
+
+// ── Stage 3 hardening: disk-fresh transactions ──────────────────────────────
+
+test("set_goal_tasks preserves an external disk edit made between confirmation and apply", async () => {
+	// Session starts with t1/t2 pending. An external edit marks t2 complete on
+	// disk. set_goal_tasks then replaces the tree (headless auto-confirm). The
+	// disk-fresh merge must preserve the external t2 progress.
+	const f = fixtureWithTasks([{ id: "t1", title: "T1", status: "pending" }, { id: "t2", title: "T2", status: "pending" }]);
+	try {
+		const h = createHarness(f.cwd, f.sessionEntries);
+		await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
+		await h.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, h.ctx);
+
+		// External edit: mark t2 complete directly on disk.
+		const files = readdirSync(path.join(f.cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
+		const path0 = path.join(f.cwd, ".pi", "goals", files[0]!);
+		const diskGoal = parseGoalFile(path0)!;
+		diskGoal.taskList!.tasks = diskGoal.taskList!.tasks.map((t) =>
+			t.id === "t2" ? { ...t, status: "complete" as const, evidence: "external", completedAt: new Date().toISOString() } : t);
+		writeActiveGoalFile({ cwd: f.cwd }, diskGoal);
+
+		const tool = h.tools.get("set_goal_tasks")!;
+		await (tool.execute as any)("set-ext", {
+			tasks: [{ id: "t1", title: "T1" }, { id: "t2", title: "T2" }],
+		}, undefined, undefined, h.ctx);
+
+		const goal = activeGoal(f.cwd);
+		const byId = new Map(goal!.taskList!.tasks.map((t) => [t.id, t]));
+		assert.equal(byId.get("t2")?.status, "complete", "external progress preserved by the disk-fresh merge");
+		assert.equal(byId.get("t2")?.evidence, "external", "external evidence preserved");
+		assert.equal(byId.get("t1")?.status, "pending", "unchanged task stays pending");
+		const event = ledgerEvents(f.cwd).find((e) => e.type === "task_list_set") as Record<string, unknown> | undefined;
+		assert.ok(event, "task_list_set recorded");
+		assert.equal(event!.taskCount, 2, "taskCount counts all nodes");
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("update_goal_task updates only the requested path and preserves concurrent disk tasks", async () => {
+	const f = fixtureWithTasks([{ id: "t1", title: "T1", status: "pending" }]);
+	try {
+		const h = createHarness(f.cwd, f.sessionEntries);
+		await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
+		await h.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, h.ctx);
+
+		// Concurrent external edit: add a brand-new task to the disk tree.
+		const files = readdirSync(path.join(f.cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
+		const path0 = path.join(f.cwd, ".pi", "goals", files[0]!);
+		const diskGoal = parseGoalFile(path0)!;
+		diskGoal.taskList!.tasks = [
+			...diskGoal.taskList!.tasks,
+			{ id: "ext", title: "External task", status: "pending" },
+		];
+		writeActiveGoalFile({ cwd: f.cwd }, diskGoal);
+
+		const tool = h.tools.get("update_goal_task")!;
+		await (tool.execute as any)("upd-ext", { task_id: "t1", status: "complete", evidence: "verified" }, undefined, undefined, h.ctx);
+
+		const goal = activeGoal(f.cwd);
+		const byId = new Map(goal!.taskList!.tasks.map((t) => [t.id, t]));
+		assert.equal(byId.get("t1")?.status, "complete", "requested task updated");
+		assert.equal(byId.get("ext")?.status, "pending", "concurrent disk task preserved");
+		assert.equal(byId.get("ext")?.id, "ext", "concurrent disk task still present");
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("update_goal_task returns a typed failure for a task removed on disk", async () => {
+	const f = fixtureWithTasks([{ id: "t1", title: "T1", status: "pending" }]);
+	try {
+		const h = createHarness(f.cwd, f.sessionEntries);
+		await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
+		await h.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, h.ctx);
+
+		// External edit removes t1 from disk (leaving another task so the list exists).
+		const files = readdirSync(path.join(f.cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
+		const path0 = path.join(f.cwd, ".pi", "goals", files[0]!);
+		const diskGoal = parseGoalFile(path0)!;
+		diskGoal.taskList!.tasks = [{ id: "other", title: "Other", status: "pending" }];
+		writeActiveGoalFile({ cwd: f.cwd }, diskGoal);
+
+		const tool = h.tools.get("update_goal_task")!;
+		const result = await (tool.execute as any)("upd-gone", { task_id: "t1", status: "complete", evidence: "x" }, undefined, undefined, h.ctx);
+		const text = result.content?.[0]?.text ?? "";
+		assert.ok(text.includes("not found"), `removed task must return a typed failure, got: ${text}`);
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("set_goal_tasks never creates per-goal auditor bypass state", async () => {
+	const f = fixtureWithTasks([]);
+	try {
+		const h = createHarness(f.cwd, f.sessionEntries);
+		await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
+		await h.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, h.ctx);
+		const tool = h.tools.get("set_goal_tasks")!;
+		await (tool.execute as any)("set-nya", {
+			tasks: [{ id: "t1", title: "T1" }],
+		}, undefined, undefined, h.ctx);
+		const goal = activeGoal(f.cwd);
+		assert.equal(goal?.skipAuditor, undefined, "task confirmation must not create skipAuditor bypass state");
+		const diskContent = readFileSync(path.join(f.cwd, ".pi", "goals",
+			readdirSync(path.join(f.cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"))[0]!), "utf8");
+		assert.ok(!diskContent.includes("skipAuditor"), "skipAuditor must not be written by set_goal_tasks");
+	} finally {
+		f.cleanup();
 	}
 });

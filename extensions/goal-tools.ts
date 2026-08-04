@@ -17,23 +17,19 @@ import {
 	buildGoalCreatedReport,
 	buildTaskSummary,
 	checkSubtasksComplete,
-	findTaskInTree,
 	skipAllSubtasks,
 	taskCompletionBlockWarning,
-	updateTaskInTree,
 	validateGoalBlock,
 	validateGoalCompletion,
-	validateTaskCompletion,
-	validateTaskSkip,
 } from "./goal-policy.ts";
 import { buildUnfocusedOpenGoalsSummary, otherOpenGoalCount } from "./goal-pool.ts";
-import { shouldAutoConfirmProposal, showProposalDialog } from "./goal-questionnaire.ts";
+import { showTaskConfirmation } from "./goal-task-confirmation.ts";
 import { runGoalCompletionAuditor } from "./goal-auditor.ts";
 import {
 	SET_GOAL_TASKS_TOOL_NAME,
 	UPDATE_GOAL_TASK_TOOL_NAME,
 } from "./goal-tool-names.ts";
-import { convertFlatTasks, mergeTasksWithExisting, type FlatTaskInput } from "./goal-task-tools.ts";
+import { convertFlatTasks, countTasks, mergeTasksWithExisting, type FlatTaskInput } from "./goal-task-tools.ts";
 import { nowIso, type GoalRecord, type GoalTask, type GoalTaskList } from "./goal-record.ts";
 import { mergeGoalPromptFromDisk } from "./storage/goal-files.ts";
 import { showEscapeDialog, type EscapeDialogResult } from "./widgets/goal-escape-dialog.ts";
@@ -642,16 +638,12 @@ export function registerGoalTools(core: GoalCore): void {
 					details: goalDetails(core.state.goal),
 				};
 			}
-			const mergedTasks = mergeTasksWithExisting(core.state.goal.taskList?.tasks, converted.tasks);
 			const blockCompletion = params.block_completion === true;
 			const now = nowIso();
-			const taskList: GoalTaskList = {
-				tasks: mergedTasks,
-				blockCompletion,
-				proposedAt: now,
-			};
 
-			// Render the proposed tree for the confirmation dialog.
+			// Render the proposed STRUCTURAL tree for the confirmation dialog.
+			// Progress merge happens inside GoalService.apply against the
+			// disk-refreshed clone.
 			function renderTaskLines(tasks: GoalTask[], indent = 0): string[] {
 				const prefix = "  ".repeat(indent);
 				const lines: string[] = [];
@@ -665,17 +657,13 @@ export function registerGoalTools(core: GoalCore): void {
 				}
 				return lines;
 			}
-			const taskLines = renderTaskLines(taskList.tasks);
+			const taskLines = renderTaskLines(converted.tasks);
 			const gateLabel = blockCompletion ? " (blockCompletion enabled)" : "";
 			const proposalText = [`Proposed task list${gateLabel}:`, "", ...taskLines].join("\n");
 			const taskListFocus = core.focusedOperationToken(core.state.goal.id);
-			const headless = shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM });
-			let dialogResult: { decision: "confirm" | "continue"; auditorEnabled: boolean };
-			if (headless) {
-				dialogResult = { decision: "confirm", auditorEnabled: core.state.goal?.skipAuditor ? false : true };
-			} else {
-				dialogResult = await showProposalDialog(ctx, proposalText, "goal", !core.state.goal?.skipAuditor);
-			}
+			// Task-only confirmation: the complete result is the user's decision.
+			// No auditor toggle and no goal-state mutation happen here.
+			const dialogResult = await showTaskConfirmation(ctx, proposalText);
 			if (!core.isFocusedOperationCurrent(taskListFocus)) {
 				return core.focusedOperationCancelledResult("Task list proposal", taskListFocus);
 			}
@@ -685,18 +673,21 @@ export function registerGoalTools(core: GoalCore): void {
 					details: goalDetails(core.state.goal),
 				};
 			}
-			if (core.state.goal) {
-				core.state.goal = { ...core.state.goal, skipAuditor: !dialogResult.auditorEnabled };
-			}
 			const applyResult = core.goalService.apply(ctx, {
 				reconcile: false,
 				focusToken: taskListFocus,
 				refreshFromDisk: true,
-				mutate: (g) => ({ ...g, taskList, updatedAt: now }),
+				// Merge the confirmed structural input against the disk-refreshed
+				// clone so a concurrent external edit is preserved unless the
+				// requested operation changes the same task.
+				mutate: (g) => {
+					const merged = mergeTasksWithExisting(g.taskList?.tasks, converted.tasks);
+					return { ...g, taskList: { tasks: merged, blockCompletion, proposedAt: now }, updatedAt: now };
+				},
 				ledger: (written) => [{
 					type: "task_list_set",
 					goalId: written.id,
-					taskCount: taskList.tasks.length,
+					taskCount: countTasks(written.taskList?.tasks),
 					blockCompletion,
 					at: written.updatedAt,
 				}],
@@ -706,8 +697,9 @@ export function registerGoalTools(core: GoalCore): void {
 			}
 			core.runtime.markTurnStopped(core.state.goal.id);
 			core.updateUI(ctx);
+			const confirmedCount = countTasks(core.state.goal.taskList?.tasks);
 			return {
-				content: [{ type: "text", text: `Task list set and confirmed. ${taskList.tasks.length} task${taskList.tasks.length === 1 ? "" : "s"}.${gateLabel}` }],
+				content: [{ type: "text", text: `Task list set and confirmed. ${confirmedCount} task${confirmedCount === 1 ? "" : "s"}.${gateLabel}` }],
 				details: goalDetails(core.state.goal),
 				terminate: true,
 			};
@@ -748,50 +740,40 @@ export function registerGoalTools(core: GoalCore): void {
 					details: goalDetails(core.state.goal),
 				};
 			}
-			const gate = validateTaskCompletion({ goal: core.state.goal, taskId: params.task_id });
-			// The completion gate rejects skipped/complete tasks; for status=pending
-			// (reopen) we intentionally bypass it — the reopen rules are enforced in
-			// the pending branch below.
-			if (!gate.ok && params.status !== "pending") {
+			// update_goal_task applies only to an active goal with an existing task
+			// list; invalid lifecycle calls return a state-aware failure.
+			if (!core.state.goal) {
+				return { content: [{ type: "text", text: "No goal is focused." }], details: goalDetails(core.state.goal) };
+			}
+			if (core.state.goal.status !== "active") {
 				return {
-					content: [{ type: "text", text: gate.message }],
+					content: [{ type: "text", text: `update_goal_task applies only to an active goal (current status: ${core.state.goal.status}).` }],
 					details: goalDetails(core.state.goal),
 				};
 			}
-			if (!core.state.goal?.taskList) throw new Error("Task list disappeared during task update.");
-			const taskToUpdate = findTaskInTree(core.state.goal.taskList.tasks, params.task_id);
-			if (!taskToUpdate) throw new Error(`Task ${params.task_id} not found.`);
+			if (!core.state.goal.taskList) {
+				return { content: [{ type: "text", text: "The goal has no task list." }], details: goalDetails(core.state.goal) };
+			}
 			const settings = loadGoalSettings(ctx.cwd);
 			const now = nowIso();
+			const taskFocus = core.focusedOperationToken(core.state.goal.id);
 
 			if (params.status === "complete") {
-				if (!settings.disableContracts && taskToUpdate.verificationContract && !params.evidence?.trim()) {
-					return {
-						content: [{ type: "text", text: `Task "${params.task_id}" has a verification contract; provide evidence to complete it.` }],
-						details: goalDetails(core.state.goal),
-					};
-				}
-				const subtaskGate = checkSubtasksComplete(taskToUpdate);
-				if (subtaskGate) {
-					return {
-						content: [{ type: "text", text: subtaskGate }],
-						details: goalDetails(core.state.goal),
-					};
-				}
 				const evidence = params.evidence?.trim().slice(0, 200) || undefined;
-				const updatedTasks = updateTaskInTree(core.state.goal.taskList.tasks, params.task_id, (t) => ({
-					...t,
-					status: "complete" as const,
-					completedAt: now,
-					evidence,
-				}));
-				const result = core.goalService.apply(ctx, {
-					reconcile: false,
-					refreshFromDisk: true,
-					mutate: (g) => {
-						if (!g.taskList) throw new Error("Task list disappeared during task update.");
-						return { ...g, taskList: { ...g.taskList, tasks: updatedTasks }, updatedAt: now };
+				const result = core.goalService.updateTask(ctx, {
+					focusToken: taskFocus,
+					taskId: params.task_id,
+					validate: (task) => {
+						if (task.status === "complete") return { ok: false, message: `Task "${params.task_id}" is already complete.` };
+						if (task.status === "skipped") return { ok: false, message: `Task "${params.task_id}" was already skipped.` };
+						if (!settings.disableContracts && task.verificationContract && !evidence) {
+							return { ok: false, message: `Task "${params.task_id}" has a verification contract; provide evidence to complete it.` };
+						}
+						const subtaskGate = checkSubtasksComplete(task);
+						if (subtaskGate) return { ok: false, message: subtaskGate };
+						return { ok: true };
 					},
+					update: (task) => ({ ...task, status: "complete" as const, completedAt: now, evidence }),
 					ledger: (written) => [{
 						type: "task_complete",
 						goalId: written.id,
@@ -818,26 +800,19 @@ export function registerGoalTools(core: GoalCore): void {
 						details: goalDetails(core.state.goal),
 					};
 				}
-				const skipGate = validateTaskSkip({ goal: core.state.goal, taskId: params.task_id, reason });
-				if (!skipGate.ok) {
-					return {
-						content: [{ type: "text", text: skipGate.message }],
-						details: goalDetails(core.state.goal),
-					};
-				}
-				const updatedTasks = updateTaskInTree(core.state.goal.taskList.tasks, params.task_id, (t) => {
-					const base = { ...t, status: "skipped" as const, skippedAt: now, skipReason: reason };
-					if (t.subtasks && t.subtasks.length > 0 && !t.lightweightSubtasks) {
-						return skipAllSubtasks(base, now, reason);
-					}
-					return base;
-				});
-				const result = core.goalService.apply(ctx, {
-					reconcile: false,
-					refreshFromDisk: true,
-					mutate: (g) => {
-						if (!g.taskList) throw new Error("Task list disappeared during task update.");
-						return { ...g, taskList: { ...g.taskList, tasks: updatedTasks }, updatedAt: now };
+				const result = core.goalService.updateTask(ctx, {
+					focusToken: taskFocus,
+					taskId: params.task_id,
+					validate: (task) => {
+						if (task.status === "complete") return { ok: false, message: `Task "${params.task_id}" is already complete.` };
+						return { ok: true };
+					},
+					update: (task) => {
+						const base = { ...task, status: "skipped" as const, skippedAt: now, skipReason: reason };
+						if (task.subtasks && task.subtasks.length > 0 && !task.lightweightSubtasks) {
+							return skipAllSubtasks(base, now, reason);
+						}
+						return base;
 					},
 					ledger: (written) => [{
 						type: "task_skipped",
@@ -858,28 +833,21 @@ export function registerGoalTools(core: GoalCore): void {
 			}
 
 			// status === "pending": reopen a skipped task; completed tasks are immutable.
-			if (taskToUpdate.status === "complete") {
-				return {
-					content: [{ type: "text", text: `Task "${params.task_id}" is complete and cannot be reopened through update_goal_task.` }],
-					details: goalDetails(core.state.goal),
-				};
-			}
-			if (taskToUpdate.status !== "skipped") {
-				return {
-					content: [{ type: "text", text: `Task "${params.task_id}" is not skipped; only skipped tasks can be reopened with status=pending.` }],
-					details: goalDetails(core.state.goal),
-				};
-			}
-			const updatedTasks = updateTaskInTree(core.state.goal.taskList.tasks, params.task_id, (t) => {
-				const { skippedAt, skipReason, ...rest } = t;
-				return { ...rest, status: "pending" as const };
-			});
-			const result = core.goalService.apply(ctx, {
-				reconcile: false,
-				refreshFromDisk: true,
-				mutate: (g) => {
-					if (!g.taskList) throw new Error("Task list disappeared during task update.");
-					return { ...g, taskList: { ...g.taskList, tasks: updatedTasks }, updatedAt: now };
+			const result = core.goalService.updateTask(ctx, {
+				focusToken: taskFocus,
+				taskId: params.task_id,
+				validate: (task) => {
+					if (task.status === "complete") {
+						return { ok: false, message: `Task "${params.task_id}" is complete and cannot be reopened through update_goal_task.` };
+					}
+					if (task.status !== "skipped") {
+						return { ok: false, message: `Task "${params.task_id}" is not skipped; only skipped tasks can be reopened with status=pending.` };
+					}
+					return { ok: true };
+				},
+				update: (task) => {
+					const { skippedAt, skipReason, ...rest } = task;
+					return { ...rest, status: "pending" as const };
 				},
 				ledger: (written) => [{
 					type: "task_skipped",

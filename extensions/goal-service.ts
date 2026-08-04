@@ -1,5 +1,6 @@
-import { cloneGoal, nowIso, type GoalFocusReason, type GoalRecord } from "./goal-record.ts";
+import { cloneGoal, nowIso, type GoalFocusReason, type GoalRecord, type GoalTask } from "./goal-record.ts";
 import { appendGoalEvent, type GoalLedgerEvent } from "./goal-ledger.ts";
+import { findTaskInTree, updateTaskInTree } from "./goal-policy.ts";
 import {
 	archiveGoalFile,
 	atomicWriteGoalFile,
@@ -95,6 +96,21 @@ export type GoalMutationOutcome = GoalMutationResult | GoalMutationFailure;
  * the successful state transition and reports diagnostics via the hook, matching
  * the current best-effort ledger semantics.
  */
+export interface GoalTaskUpdateSpec {
+	/** If provided, the token must still be current (same goal id + focus revision). */
+	focusToken?: { goalId: string; revision: number };
+	/** The task to update, loaded fresh from the disk record. */
+	taskId: string;
+	/** Optional transition validation against the FRESH task; a failure aborts with a typed message. */
+	validate?(task: GoalTask): { ok: true } | { ok: false; message: string };
+	/** Transform the FRESH task. A failure aborts; only this task's path changes. */
+	update(task: GoalTask): GoalTask | { ok: false; message: string };
+	/** Ledger events appended best-effort AFTER the authoritative file write. */
+	ledger?(written: GoalRecord, updatedTask: GoalTask): GoalLedgerEvent[];
+}
+
+export type GoalTaskUpdateOutcome = { ok: true; goal: GoalRecord; task: GoalTask } | { ok: false; message: string };
+
 export class GoalService {
 	private readonly ref: GoalServiceRef;
 
@@ -196,6 +212,66 @@ export class GoalService {
 		if (focusChanged) this.ref.onFocusChanged(previousGoalId, written.id);
 
 		return { ok: true, goal: written, previousGoalId, goalId, focusChanged };
+	}
+
+
+
+/**
+ * Disk-fresh single-task transaction. Pipeline:
+ *  1. reconcile the focused record;
+ *  2. validate focus token/id;
+ *  3. load the fresh task from the cloned disk record;
+ *  4. validate the requested transition against that fresh task;
+ *  5. update only that task's path;
+ *  6. write the active file, append the ledger, and commit.
+ * Expected races (removed task, removed task list) return typed failures
+ * instead of throwing.
+ */
+	updateTask(ctx: GoalServiceContext, spec: GoalTaskUpdateSpec): GoalTaskUpdateOutcome {
+		if (!this.reconcileFocused(ctx)) {
+			return { ok: false, message: "The focused goal was lost during reconciliation; the task was not updated." };
+		}
+		const current = this.ref.getFocused();
+		if (!current) {
+			return { ok: false, message: "No focused goal to mutate." };
+		}
+		if (spec.focusToken && !this.ref.isTokenCurrent(spec.focusToken)) {
+			return { ok: false, message: `Mutation cancelled because goal ${spec.focusToken.goalId} is no longer focused in this session. The shared goal was not modified.` };
+		}
+		const base = mergeGoalPromptFromDisk(ctx, current);
+		if (!base.taskList) {
+			return { ok: false, message: "The goal has no task list." };
+		}
+		const task = findTaskInTree(base.taskList.tasks, spec.taskId);
+		if (!task) {
+			return { ok: false, message: `Task "${spec.taskId}" not found.` };
+		}
+		if (spec.validate) {
+			const gate = spec.validate(task);
+			if (!gate.ok) return gate;
+		}
+		const updated = spec.update(task);
+		if (typeof updated === "object" && "ok" in updated && !updated.ok) return updated;
+		const updatedTask = updated as GoalTask;
+		const updatedTasks = updateTaskInTree(base.taskList.tasks, spec.taskId, () => updatedTask);
+		const mutated = sanitizeGoalPaths(ctx, {
+			...base,
+			taskList: { ...base.taskList, tasks: updatedTasks },
+			updatedAt: nowIso(),
+		});
+		const written = writeActiveGoalFile(ctx, mutated);
+		if (spec.ledger) {
+			try {
+				for (const event of spec.ledger(written, updatedTask)) {
+					appendGoalEvent(ctx, event);
+				}
+			} catch {
+				// Ledger append failure after the authoritative write keeps the
+				// successful state transition.
+			}
+		}
+		this.ref.setFocused(written);
+		return { ok: true, goal: written, task: updatedTask };
 	}
 
 	/** Persist the focused goal: bump updatedAt, merge objective from disk, write active or archive. */

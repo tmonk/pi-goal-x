@@ -130,7 +130,12 @@ export function convertFlatTasks(flat: FlatTaskInput[], opts: { maxSubtaskDepth?
 	return { ok: true, tasks };
 }
 
-/** Merge converted tasks into an existing tree: matching ids preserve status/evidence/timestamps. */
+/**
+ * Merge converted tasks into an existing tree. Matching ids preserve runtime
+ * progress ONLY (status, evidence, completion/skip timestamps, skip reason);
+ * incoming structural fields are authoritative and omission clears them
+ * (verification contract, lightweight flag, parentage, child structure).
+ */
 export function mergeTasksWithExisting(existing: GoalTask[] | undefined, incoming: GoalTask[]): GoalTask[] {
 	const existingById = new Map<string, GoalTask>();
 	function index(tasks: GoalTask[]): void {
@@ -143,20 +148,23 @@ export function mergeTasksWithExisting(existing: GoalTask[] | undefined, incomin
 
 	function mergeTask(input: GoalTask): GoalTask {
 		const prior = existingById.get(input.id);
-		const base: GoalTask = prior
+		const progress: Pick<GoalTask, "status" | "evidence" | "completedAt" | "skippedAt" | "skipReason"> = prior
 			? {
-				...prior,
-				title: input.title,
-				verificationContract: input.verificationContract ?? prior.verificationContract,
-				lightweightSubtasks: input.lightweightSubtasks ?? prior.lightweightSubtasks,
+				status: prior.status,
+				evidence: prior.evidence,
+				completedAt: prior.completedAt,
+				skippedAt: prior.skippedAt,
+				skipReason: prior.skipReason,
 			}
-			: {
-				id: input.id,
-				title: input.title,
-				status: "pending",
-				verificationContract: input.verificationContract,
-				lightweightSubtasks: input.lightweightSubtasks,
-			};
+			: { status: "pending" };
+		const base: GoalTask = {
+			id: input.id,
+			title: input.title,
+			// Structural fields are authoritative; undefined (omitted) clears.
+			verificationContract: input.verificationContract,
+			lightweightSubtasks: input.lightweightSubtasks,
+			...progress,
+		};
 		if (input.subtasks && input.subtasks.length > 0) {
 			base.subtasks = input.subtasks.map((child) => mergeTask(child));
 		} else if (prior?.subtasks) {
@@ -166,4 +174,18 @@ export function mergeTasksWithExisting(existing: GoalTask[] | undefined, incomin
 		return base;
 	}
 	return incoming.map(mergeTask);
+}
+
+/** Count every node in a task tree (roots + all descendants). */
+export function countTasks(tasks: readonly GoalTask[] | undefined): number {
+	if (!tasks) return 0;
+	let total = 0;
+	function walk(list: readonly GoalTask[]): void {
+		for (const t of list) {
+			total += 1;
+			if (t.subtasks) walk(t.subtasks);
+		}
+	}
+	walk(tasks);
+	return total;
 }
