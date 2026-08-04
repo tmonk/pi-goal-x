@@ -147,3 +147,118 @@ main-screen write exits scrollback). Only an alternate-screen modal (DECSET
   `tests/goal-dialog-alt-screen.test.ts`).
 - CHANGELOG: new `[Unreleased]` section documenting both the scroll fix and
   the full-heading behavior.
+
+## 2026-08-04 — PIVOT: alt-screen dialogs reverted; task-1 of the panel rework complete
+
+### User-reported regression (accepted)
+
+The DECSET 1049 alternate-screen fix took over the whole screen and disabled
+terminal scrollback while any dialog was open: "the questionnaire now takes
+over the screen, the user should be able to see all the history when it comes
+up. it should be a panel at the bottom, as before" and "we are currently
+unable to scroll up at all when these panels show!". The alternate buffer has
+no terminal scrollback (and the main screen with the history is blanked), so
+scroll-up is dead while the dialog is open. Goal tweaked to require bottom
+panels in the main screen with usable scrollback.
+
+### Task-1: measurement (`experiments/scroll-repro/validate-panel-overlay.mjs`)
+
+Real pi-tui 0.83.0 + fake terminal, buffer-aware ANSI emulator, rows=40,
+chat=120 (plus a short-chat=10 check):
+
+- ALT SCREEN (current): open emits `\x1b[?1049h` (alternate buffer active →
+  no scrollback while open, main screen blanked); only the close's `\x1b[?1049l`
+  restores the main screen. Scroll-up dead during the dialog.
+- OVERLAY PANEL (proposed, `overlay: true` + `anchor: bottom-*` +
+  `maxHeight` bound): **0 main-screen scrolls on open, 0 on in-dialog
+  navigation, 0 on close** (long and short chat); no 1049, no `\x1b[2J`;
+  history above stays visible; scrollback usable.
+
+### Root cause of the overlay's stability
+
+`compositeOverlays` composites the panel INTO the existing main-screen frame
+at a bottom-anchored row; `maxHeight` caps the panel. The frame length never
+grows, so the differential renderer only does positioned rewrites
+(`\x1b[<n>A/B`, `\x1b[2K`) — never `\r\n`-at-bottom-row appends — hence zero
+scroll churn. `showOverlay` auto-focuses the component (keyboard input works)
+and restores editor focus on hide. No pi SDK/TUI patch needed.
+
+### Decision (recorded)
+
+Delete `extensions/tui-alt-screen.ts` and `tests/tui-alt-screen.test.ts`;
+remove `installTuiAltScreenSupport()` from `extensions/goal.ts`; rewrite the
+alt-screen test files as overlay-panel tests; keep the questionnaire's
+windowing but re-bind `maxDialogHeight` to the panel bound
+(`max(10, floor(terminalRows * 0.45))`); restore the task-confirmation /
+escape-dialog overlay configuration (pre-alt-screen), re-anchored to the
+bottom and bounded.
+
+### Next
+
+- Task-2: implement the overlay-panel rendering in all three dialogs; delete
+  tui-alt-screen.ts; npm run check 0 errors.
+- Task-3: adapt/replace tests; task-4: CHANGELOG + docs + full validation.
+
+## 2026-08-04 — Tasks 2–3 complete: bounded bottom overlay panels implemented
+
+### Implemented
+
+- All three dialogs now open via pi's built-in overlay path:
+  `ctx.ui.custom(factory, { overlay: true, overlayOptions: { anchor:
+  "bottom-center", width: "95%", maxHeight: "45%" } })` — main-screen panels,
+  no alternate buffer, no full clears. `showOverlay` auto-focuses the
+  component (keyboard works) and restores editor focus on close.
+- `extensions/goal-questionnaire.ts`: removed the alt-screen enter/exit;
+  re-bound the height window to the panel: `maxDialogHeight =
+  Math.max(8, Math.floor(terminalRows * 0.45))` (was `terminalRows - 2` for
+  the full-screen buffer); removed the trivial `finish` passthrough; kept the
+  ▴/▾ + PgUp/PgDn/Home/End windowing and the hardware-cursor suppression.
+- `extensions/goal-task-confirmation.ts` and
+  `extensions/widgets/goal-escape-dialog.ts`: removed the alt-screen
+  enter/exit/finish; restored the overlay configuration (pre-alt-screen look),
+  re-anchored bottom-center and bounded.
+- Deleted `extensions/tui-alt-screen.ts`, removed
+  `installTuiAltScreenSupport()` from `extensions/goal.ts`, deleted
+  `tests/tui-alt-screen.test.ts`, reverted the `Container`/`TUI` re-exports
+  added to `tests/stubs/pi-tui.ts` (no longer needed).
+
+### Tests (task-3)
+
+- `tests/goal-questionnaire-panel.test.ts` (5 tests): custom() options assert
+  `overlay: true`, `anchor: "bottom-center"`, `maxHeight: "45%"`; rendered
+  output is windowed to the panel bound (rows=40 → ≤18 lines) with ▴
+  indicator and footer visible; PgUp/PgDn/Home/End page the window; Enter
+  submits the recommended option through done.
+- `tests/goal-dialog-panel.test.ts` (4 tests): task confirmation and escape
+  dialog open as bounded bottom-anchored overlays, render bounded, resolve
+  through done, and restore the hardware cursor on dispose; default-path
+  rendering still works.
+- Old alt-screen test files deleted; manifest regenerated (42 unit entries);
+  `test:selfcheck` OK.
+
+### Validation
+
+- `npm run check` — 0 errors.
+- `npm run test:unit` / `npm run test:serial` — 497 pass / 0 fail;
+  `npm run test:integration` — 28 pass / 0 fail;
+  `tests/no-status-refresh-timer.test.ts` — green.
+- `experiments/scroll-repro/validate-panel-overlay.mjs` — 0/0/0 main-screen
+  scrolls on open/nav/close, no 1049/2J, long and short chats (task-1).
+
+### Remaining (task-4)
+
+- Full validation: `npm run test:all`, `npm pack --dry-run`, `git diff --check`.
+- CHANGELOG updated (panel entry replaces the alt-screen entry); PRODUCT.md
+  status updated. Manual terminal reproduction documented below.
+
+### Manual reproduction (for interactive confirmation)
+
+1. Run pi with the extension in a real terminal (iTerm2/kitty/etc.).
+2. Have a long conversation / long goal objective so the chat buffer exceeds
+   the screen.
+3. Invoke /goal and let the agent propose a goal (propose_goal_draft).
+4. Expected: the Confirm dialog opens as a bottom panel (≤ ~45% of the
+   terminal height); the chat history above stays visible; the user can scroll
+   up in the terminal scrollback at any time, including while the dialog is
+   open; PgUp/PgDn scroll inside the panel when the proposal exceeds the panel
+   height; closing the dialog leaves the viewport where it was (no jump).

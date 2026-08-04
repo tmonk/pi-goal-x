@@ -10,7 +10,7 @@
     ".tests/goal-core-tools.test.ts",
     ".tests/goal-core.test.ts",
     ".tests/goal-deferred-archival.test.ts",
-    ".tests/goal-dialog-alt-screen.test.ts",
+    ".tests/goal-dialog-panel.test.ts",
     ".tests/goal-draft.test.ts",
     ".tests/goal-drafting.test.ts",
     ".tests/goal-e2e.test.ts",
@@ -25,7 +25,7 @@
     ".tests/goal-policy.test.ts",
     ".tests/goal-pool.test.ts",
     ".tests/goal-prompts.test.ts",
-    ".tests/goal-questionnaire-alt-screen.test.ts",
+    ".tests/goal-questionnaire-panel.test.ts",
     ".tests/goal-questionnaire.test.ts",
     ".tests/goal-record.test.ts",
     ".tests/goal-service.test.ts",
@@ -43,7 +43,6 @@
     ".tests/overflow-regression.test.ts",
     ".tests/session-state-growth.test.ts",
     ".tests/task-list-overlay.test.ts",
-    ".tests/tui-alt-screen.test.ts",
     ".tests/verification-contract.test.ts"
   ],
   "integrationFiles": [

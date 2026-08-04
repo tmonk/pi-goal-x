@@ -24,7 +24,10 @@ chat/dialog length (the write burst at the bottom row); scenario B causes 0 in
 all configurations. See `specs/2026-08-04-goal-confirmation-scroll-fix/` for
 the full root-cause write-up.
 
-`validate-alt-screen.mjs` validates the fix: with
-`installTuiAltScreenSupport()` applied and the dialog in the alternate screen
-buffer, dialog open/close cause 0 main-screen scrolls and the post-close
-identity render writes 0 bytes (vs 78/121 with the editor swap).
+`validate-panel-overlay.mjs` validates the shipped fix (bounded
+bottom-anchored overlay panels): the dialog flow emits no DECSET 1049
+alternate-buffer sequences and no `\x1b[2J` clears, and causes 0 main-screen
+scrolls on open, in-dialog navigation, and close (long and short chats). The
+previous DECSET 1049 alternate-screen approach (deleted; see the spec's
+"Attempt 1 — reverted") blanked the main screen and disabled terminal
+scrollback while a dialog was open.

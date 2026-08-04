@@ -1,7 +1,6 @@
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { supportsAltScreen } from "../tui-alt-screen.ts";
 
 /**
  * Result of the Escape dialog during audit.
@@ -30,15 +29,6 @@ export async function showEscapeDialog(
 		(tui: TUI, theme: Theme, _keybindings: unknown, done: (result: EscapeDialogResult) => void): Component => {
 			const wasHardwareCursorShown = tui.getShowHardwareCursor();
 			tui.setShowHardwareCursor(false);
-
-			// Alternate-screen modal: isolate all dialog rendering from the main
-			// screen so open/close cannot scroll the viewport or yank the user
-			// out of scrollback. Falls back to pi's default dialog otherwise.
-			const altScreen = supportsAltScreen(tui);
-			const finish = (result: EscapeDialogResult) => {
-				if (altScreen) tui.exitAlternateScreen();
-				done(result);
-			};
 
 			let selectedIndex = 1; // Default: "Continue working" (index 1)
 			let cancelled = false;
@@ -130,19 +120,29 @@ export async function showEscapeDialog(
 					}
 					if (matchesKey(data, "enter")) {
 						cancelled = false;
-						finish(OPTIONS[selectedIndex].value);
+						done(OPTIONS[selectedIndex].value);
 						return;
 					}
 					if (matchesKey(data, "escape")) {
 						cancelled = true;
-						finish("continue_working");
+						done("continue_working");
 						return;
 					}
 				},
 			};
 
-			if (altScreen) tui.enterAlternateScreen(component);
 			return component;
+		},
+		{
+			// Bottom-anchored main-screen panel: composites into the frame in
+			// place (no viewport scroll churn), keeps history visible above, and
+			// leaves terminal scrollback fully usable while the dialog is open.
+			overlay: true,
+			overlayOptions: {
+				anchor: "bottom-center",
+				width: "95%",
+				maxHeight: "45%",
+			},
 		},
 	);
 }

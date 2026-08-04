@@ -1,6 +1,6 @@
 # Tech: Goal confirmation scroll fix and full lifecycle-heading rendering
 
-## Task-1 evidence — reproduction and root cause
+## Task-1 evidence — reproduction and root cause (original bug)
 
 ### Reproduction (measured, headless)
 
@@ -48,127 +48,102 @@ viewport scrolls (`\n` while the cursor is on the bottom row).
   ~60fps ANSI cursor-positioning noise during the dialog, but does not change
   the open/close buffer churn that causes the yank.
 
-### Why the overlay is not sufficient
+## Attempt 1: alternate-screen modal (DECSET 1049) — REVERTED
 
-pi's overlay path (`showOverlay` + `compositeOverlays`) composites the dialog
-into the existing buffer in place — measured 0 viewport scrolls on open/close.
-But any write to the main screen while the user is scrolled up still makes the
-terminal exit scrollback mode (pi cannot detect or prevent this: the same
-constraint f7a8e0d recorded, "Pi does not expose whether the terminal is
-currently viewing scrollback"). The overlay therefore fixes the jump for the
-following-mode user but cannot preserve the scrolled-up user's reading
-position, which the product contract requires.
+### What was built
 
-## Fix design
+`extensions/tui-alt-screen.ts` augmented the pi TUI prototype with
+`enterAlternateScreen`/`exitAlternateScreen`/`isAlternateScreenActive`
+(DECSET 1049), and all three dialogs (`runGoalQuestionnaire`,
+`showTaskListConfirmationDialog`, `showEscapeDialog`) opted in: enter the
+alternate buffer on open, exit before `done`, with a one-shot suppression so
+the post-close identity re-render wrote zero bytes. The questionnaire gained
+height-aware windowing (▴/▾ indicators + PgUp/PgDn/Home/End). This made the
+dialog render into a buffer where NOTHING reaches the main screen: measured 0
+viewport scrolls on open/close and 0 bytes after close
+(`experiments/scroll-repro/validate-alt-screen.mjs`).
 
-### Mechanism: alternate-screen modal (DECSET 1049)
+### Why it was reverted (measured, headless)
 
-The only main-screen-safe way to preserve scrollback position across a modal
-is to render the modal in the terminal's alternate screen buffer:
+The alternate buffer has **no terminal scrollback**: while the dialog is open
+the user cannot scroll up at all, and the main screen (with the chat history)
+is blanked. `experiments/scroll-repro/validate-panel-overlay.mjs` measures
+the flow: open emits `\x1b[?1049h` (alternate buffer active — scroll-up dead,
+history invisible), and only the close's `\x1b[?1049l` restores the main
+screen. The user explicitly rejected this: "the questionnaire now takes over
+the screen, the user should be able to see all the history when it comes up"
+and "we are currently unable to scroll up at all when these panels show".
+Strict scrollback-position preservation (the alt screen's one advantage) is
+traded for visible history + usable scrollback, per the user's decision.
 
-- Enter: `\x1b[?1049h` — the terminal saves the main screen (content and
-  scrollback view) untouched and switches to a fresh buffer with no scrollback.
-- While active: all dialog rendering happens in the alternate buffer; nothing
-  reaches the main screen, so the user's scroll position cannot be disturbed.
-- Exit: `\x1b[?1049l` — the terminal repaints the main screen exactly as it
-  was, cursor and scrollback position included ("as if the dialog never ran").
+## Attempt 2 (final design): bounded bottom-anchored overlay panels
 
-Widely supported (xterm, iTerm2, kitty, Ghostty, VSCode, alacritty, wezterm,
-tmux). The alternate buffer has no scrollback in most terminals, so the dialog
-component must fit the screen or scroll internally (see below).
+### Mechanism
 
-### pi-tui change (required, in both the global pi install and the repo devDep copy)
+All three dialogs open via pi's built-in overlay path —
+`ctx.ui.custom(factory, { overlay: true, overlayOptions })` — which
+`interactive-mode.showExtensionCustom` forwards to `TUI.showOverlay`:
 
-Add alternate-screen modal support to `TUI` (dist/tui.js, 0.83.0, identical in
-both locations):
+- `showOverlay` auto-focuses the component (`setFocus`) and saves the editor
+  as `preFocus`; `hide()` restores editor focus and requests a render. The
+  component receives keyboard input exactly like the non-overlay path.
+- `compositeOverlays` renders the component at the resolved width, caps it to
+  `maxHeight` (`overlayLines.slice(0, maxHeight)`), and composites the lines
+  INTO the existing main-screen frame at a screen-relative row
+  (`resolveOverlayLayout`, `anchor: "bottom-*"` → bottom of the terminal).
+  **The frame length never grows** — the overlay replaces the bottom rows
+  in place — so the differential renderer performs only positioned rewrites
+  (`\x1b[<n>A/B`, `\x1b[2K`), never `\r\n`-at-bottom-row appends.
+- Measured (`experiments/scroll-repro/validate-panel-overlay.mjs`, real TUI,
+  fake terminal, buffer-aware emulator): **0 main-screen scrolls on open, on
+  in-dialog navigation, and on close** — for both a long chat (120 lines) and
+  a short chat (10 lines); no `\x1b[?1049` anywhere; no `\x1b[2J` full
+  clears. History above the panel stays visible and terminal scrollback is
+  fully usable while the dialog is open.
 
-- `enterAlternateScreen(component)`:
-  - write `\x1b[?1049h`;
-  - save the differential state (`previousLines`, `previousWidth`,
-    `previousHeight`, `maxLinesRendered`, `previousViewportTop`, `cursorRow`,
-    `hardwareCursorRow`);
-  - reset the buffer state so the next render fully paints the alternate
-    screen;
-  - store the component and mark `altScreenActive = true`;
-  - `render()` returns only the modal component's lines while active (the
-    chat/footer/editor must not render into the alternate buffer).
-- `exitAlternateScreen()`:
-  - write `\x1b[?1049l` (terminal restores the main screen);
-  - restore the saved differential state, so the next render diffs against the
-    restored main-screen content and writes nothing until a real change occurs
-    (no full clear, no scrollback erase);
-  - `altScreenActive = false`.
-- The questionnaire dialog is rendered full-width/full-screen inside the
-  alternate buffer, so it must bound its own height and scroll internally when
-  its content exceeds the terminal height (the current component renders
-  unbounded lines; the task-list overlay already implements the scrolling
-  pattern to reuse).
+### Panel geometry and windowing
 
-### pi-goal-x change
+- `overlayOptions`: `{ anchor: "bottom-left" | "bottom-center", width: "95%",
+  maxHeight: <percent of terminal height> }` — the panel occupies the bottom
+  ~40–50% of the screen at most; the chat history fills everything above.
+- The questionnaire keeps its height-aware rendering but re-binds the window
+  to the panel bound: `maxDialogHeight = max(10, floor(terminalRows * 0.45))`
+  (previously `terminalRows - 2`, which assumed a full-screen alternate
+  buffer). Content taller than the panel windows internally with ▴/▾
+  indicators and PgUp/PgDn/Home/End, defaulting to the actionable
+  options/footer visible (bottom-anchored). The TUI's own `maxHeight` slice
+  is a defensive second cap.
+- The task-list confirmation and escape dialog restore their pre-alt-screen
+  overlay configuration (which the user remembers as "as before"), re-anchored
+  to the bottom and bounded.
 
-A self-contained module, `extensions/tui-alt-screen.ts`, augments the pi TUI
-class at extension load time (`installTuiAltScreenSupport()`, called from
-goal.ts): it adds `enterAlternateScreen(component)` / `exitAlternateScreen()` /
-`isAlternateScreenActive()` to `TUI.prototype` (idempotent, feature-detected,
-and deliberately inert unless called). This means the published extension
-works against unpatched pi installs — no manual surgery on the global pi
-package is required — and the same code doubles as the reference
-implementation for an upstream pi-tui addition.
+### What is removed
 
-`runGoalQuestionnaire`, `showTaskListConfirmationDialog`, and
-`showEscapeDialog` opt in from their `ctx.ui.custom` factories:
+- `extensions/tui-alt-screen.ts` (the prototype patch) — deleted; no dialog
+  uses the alternate screen anymore. `installTuiAltScreenSupport()` is removed
+  from `extensions/goal.ts`.
+- `tests/tui-alt-screen.test.ts` — deleted (its contract no longer exists).
+- `tests/goal-questionnaire-alt-screen.test.ts` and
+  `tests/goal-dialog-alt-screen.test.ts` — rewritten to assert the overlay
+  panel behavior (bounded, bottom-anchored, no 1049/2J, windowing).
+- The `Container`/`TUI` re-exports added to `tests/stubs/pi-tui.ts` are kept
+  only if still needed by the rewritten tests.
 
-- `const altScreen = supportsAltScreen(tui)` (feature-detect);
-- `tui.enterAlternateScreen(component)` before returning the component;
-- a wrapped `finish` calls `tui.exitAlternateScreen()` BEFORE `done`, so pi's
-  close path (restore editor + identity re-render) runs after the main screen
-  has been restored;
-- without support, the dialogs fall back to pi's default rendering (the
-  previous behavior).
+### Design notes
 
-`exitAlternateScreen` also sets a one-shot suppression flag that makes the
-identity re-render pi triggers after close write ZERO bytes: the terminal
-restored the main screen byte-for-byte, and even the cosmetic
-cursor-positioning write would yank a scrolled-up user back to the bottom.
+- The overlay path is pi's own mechanism, used by pi's built-in dialogs — no
+  pi SDK/TUI patch is required and none is made. The extension only passes
+  `overlay: true` + `overlayOptions` (SDK-supported types).
+- `tui.setShowHardwareCursor(false)` during dialogs is retained (reduces the
+  ~60fps cursor-positioning noise); it is belt-and-braces, not the fix.
+- The panel's in-place rewrites do not scroll the terminal even when the user
+  is scrolled up; the panel itself emits no output between key events, so a
+  scrolled-up user can read history above the panel at any time. (Opening the
+  panel does write at the bottom, which by terminal semantics brings a
+  scrolled-up user back to the bottom — the inherent trade-off the user
+  accepted in favor of visible history + usable scrollback.)
 
-The questionnaire gained height-aware rendering: the alternate buffer has no
-terminal scrollback, so when its content exceeds the terminal height it shows
-a ▴/▾-indicated window (bottom-anchored by default so the actionable options
-and footer are immediately visible) and scrolls internally with
-PgUp/PgDn/Home/End. The task-list confirmation and escape dialog kept their
-boxed, bounded layouts (task confirmation previously used the overlay path;
-both now render in the alternate screen for consistent reading-position
-preservation).
-
-Note: the running pi loads its own bundled pi-tui from
-`/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/`.
-The patch reaches pi's TUI instances because the extension imports
-`TUI` from `@earendil-works/pi-tui` (a peerDependency, resolved to pi's copy)
-and augments the shared prototype; if resolution ever yields a different
-module instance, `supportsAltScreen` returns false and the dialogs degrade
-gracefully to pi's default rendering instead of breaking.
-
-## PR #11 port plan (task-3)
-
-- `update_goal` renderCall: render `update_goal <status>` plus the full
-  `reason` when present (wrapped by `Text`), never truncated.
-- `set_goal_tasks` renderCall: drop `truncateText(change_summary, 80)` — render
-  the full summary.
-- `propose_goal_draft` renderCall already renders the full objective; add a
-  regression assertion.
-- Schemas/persistence/pause-block execution untouched; the fixed three/five
-  tool profile untouched.
-- Regression tests adapted from PR #11's `tests/goal-lifecycle-rendering.test.ts`
-  to the current tool names, asserting full wrapped rendering for lifecycle
-  reasons and proposal content (PR #11's "compact previews stay" assertion is
-  intentionally inverted per the user's decision).
-
-## Tool-call headings (PR #11 port)
-
-The old monolithic `extensions/goal.ts` (pre-simplification) rendered
-`pause_goal`/`abort_goal` headings with `truncateText(args?.reason ?? "", 80)`;
-PR #11 removed that truncation. On the simplification branch those tools no
-longer exist, so the behavior is ported to the current renderCalls:
+## PR #11 port (task-3, complete)
 
 - `update_goal` (`extensions/goal-core-tools.ts`): the heading is
   `update_goal <status>` plus the COMPLETE agent content — `reason` for
@@ -183,27 +158,25 @@ longer exist, so the behavior is ported to the current renderCalls:
 - Grep-verified: no goal tool `renderCall` uses `truncateText`; remaining
   truncations are in non-heading surfaces (goal widget rows, pool/compaction
   summaries, prompts) and are intentionally unchanged.
-
-Execution paths, lifecycle schemas, and persistence are untouched — the
-changes are renderCall-only.
+- Execution paths, lifecycle schemas, and persistence are untouched — the
+  changes are renderCall-only.
 
 ## Validation plan
 
 - `npm run check` — 0 errors; `npm run test:all` — 0 failures.
-- New tests: `tests/tui-alt-screen.test.ts` (real TUI + fake terminal: smcup/
-  rmcup emitted, render isolated, state restored, post-close identity render
-  writes zero bytes, re-entrancy guard, idempotent install);
-  `tests/goal-questionnaire-alt-screen.test.ts` (enter on open, exit before
-  done, fallback, height windowing + PgUp/PgDn/Home/End scrolling);
-  `tests/goal-dialog-alt-screen.test.ts` (task confirmation and escape dialog
-  enter/exit ordering + fallback).
-- Headless end-to-end validation: `experiments/scroll-repro/validate-alt-screen.mjs`
-  runs the real TUI + patch with a buffer-aware ANSI emulator — main-screen
-  scrolls on dialog open/close: 0/0 and 0 bytes after close (vs. 78/121 with
-  the editor swap at chat=120/dialog=80).
+- New/adapted tests: `tests/goal-questionnaire-panel.test.ts` (5 tests) and
+  `tests/goal-dialog-panel.test.ts` (4 tests) assert — dialogs are opened with
+  `overlay: true` + bounded `overlayOptions` (`anchor: "bottom-center"`,
+  `maxHeight: "45%"`), rendered height is bounded, the questionnaire's
+  windowing pages with PgUp/PgDn/Home/End (▴/▾ indicators), results resolve
+  through done, and the hardware cursor is restored on dispose.
+- Headless end-to-end validation: `experiments/scroll-repro/validate-panel-overlay.mjs`
+  — 0/0/0 main-screen scrolls on open/nav/close, no 1049/2J, for long
+  (120-line) and short (10-line) chats.
 - Manual terminal reproduction (documented in MILESTONES for interactive
   confirmation): run pi with a long conversation, scroll up to read earlier
-  content, trigger propose_goal_draft — the viewport must not move when the
-  Confirm dialog opens or closes.
+  content, trigger propose_goal_draft — the dialog appears as a bottom panel,
+  the history above stays visible, scroll-up keeps working while the dialog is
+  open, and closing leaves the viewport where it was.
 - `tests/no-status-refresh-timer.test.ts` still green (no periodic redraws).
 - `npm pack --dry-run` clean; `git diff --check` clean; CHANGELOG updated.

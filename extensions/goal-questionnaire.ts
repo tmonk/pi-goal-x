@@ -1,6 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { supportsAltScreen } from "./tui-alt-screen.ts";
 
 
 export type GoalDraftingFocus = "goal" | "sisyphus";
@@ -100,19 +99,16 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 		const wasHardwareCursorShown = tui.getShowHardwareCursor();
 		tui.setShowHardwareCursor(false);
 
-		// Alternate-screen modal: render the whole dialog in the terminal's
-		// alternate buffer so nothing writes to the main screen (viewport and
-		// scrollback position stay untouched across open/close). Falls back to
-		// pi's default editor-swap dialog when the running pi-tui lacks support.
-		const altScreen = supportsAltScreen(tui);
-		const finish = (result: GoalQuestionnaireResult) => {
-			if (altScreen) tui.exitAlternateScreen();
-			done(result);
-		};
-		// Height budget for in-dialog scrolling: the alternate buffer has no
-		// terminal scrollback, so overflowing content must scroll internally.
+		// Bottom-anchored main-screen panel (overlay): composites into the
+		// existing frame in place, so opening/closing/navigating cause no
+		// viewport scroll churn; chat history stays visible above the panel and
+		// terminal scrollback remains fully usable (no alternate screen, which
+		// would blank the main screen and disable scrollback).
+		// Panel height budget: the panel occupies at most ~45% of the terminal
+		// height; content taller than the panel scrolls internally (the overlay
+		// caps the rendered height with the same bound).
 		const terminalRows = (tui as { terminal?: { rows: number } }).terminal?.rows ?? 24;
-		const maxDialogHeight = Math.max(10, terminalRows - 2);
+		const maxDialogHeight = Math.max(8, Math.floor(terminalRows * 0.45));
 		// Scroll offset over the rendered content; MAX_SAFE_INTEGER means
 		// "bottom-anchor" (render clamps it to the content max).
 		let scrollOffset = 0;
@@ -146,7 +142,7 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 			// Restore hardware cursor now that the dialog is closing
 			tui.setShowHardwareCursor(wasHardwareCursorShown);
 			const ordered = questions.map((q) => answers.get(q.id)).filter((a): a is GoalQuestionnaireAnswer => !!a);
-			finish({ questions, answers: ordered, cancelled, auditorEnabled: auditorToggleInit ? auditorEnabled : undefined });
+			done({ questions, answers: ordered, cancelled, auditorEnabled: auditorToggleInit ? auditorEnabled : undefined });
 		}
 
 		function currentQuestion(): GoalQuestionnaireQuestion | undefined {
@@ -287,8 +283,8 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 				return;
 			}
 
-			// In-dialog scrolling (PgUp/PgDn/Home/End) — only meaningful in the
-			// alternate screen, where the terminal provides no scrollback.
+			// In-dialog scrolling (PgUp/PgDn/Home/End) — scrolls the bounded panel
+			// window; the terminal scrollback above stays fully usable.
 			if (matchesKey(data, "pageUp")) {
 				scrollOffset = Math.max(0, scrollOffset - (maxDialogHeight - 2));
 				refresh();
@@ -549,10 +545,11 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 		}
 
 		/**
-		 * Bound the rendered lines to the terminal height with in-place
-		 * scrolling (the alternate buffer has no terminal scrollback). Shows a
-		 * ▴/▾ indicator when content overflows; the footer/options stay in view
-		 * because the default view is bottom-anchored.
+		 * Bound the rendered lines to the panel height with in-place
+		 * scrolling (the panel is capped to a fraction of the terminal, so
+		 * overflowing content scrolls internally). Shows a ▴/▾ indicator when
+		 * content overflows; the footer/options stay in view because the
+		 * default view is bottom-anchored.
 		 */
 		function windowLines(all: string[]): string[] {
 			if (all.length <= maxDialogHeight) {
@@ -572,8 +569,17 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 		}
 
 		const component = { render, invalidate: () => { cachedLines = undefined; }, handleInput };
-		if (altScreen) tui.enterAlternateScreen(component);
 		return component;
+	}, {
+		// Bottom-anchored main-screen panel (overlay): composites into the frame
+		// in place (no viewport scroll churn), keeps history visible above, and
+		// leaves terminal scrollback fully usable while the dialog is open.
+		overlay: true,
+		overlayOptions: {
+			anchor: "bottom-center",
+			width: "95%",
+			maxHeight: "45%",
+		},
 	});
 }
 

@@ -2,9 +2,12 @@
 
 ## Status
 
-Implemented and validated. Task-2 (scroll fix, alternate-screen dialogs) and
-Task-3 (PR #11 port, full wrapped headings) are complete; Task-4 (regression
-tests, changelog, docs, full validation) is in progress.
+Implemented (pivoted). Tasks 1–3 of the panel rework are complete: the
+alternate-screen fix (which blanked the main screen and disabled terminal
+scrollback while a dialog was open) has been reverted in favor of bounded,
+bottom-anchored overlay panels; the alt-screen module and its tests are
+deleted; panel regression tests are green. Task-4 (CHANGELOG, docs, full
+validation) is in progress.
 
 ## Outcome
 
@@ -31,23 +34,29 @@ Two user-facing defects on the simplification branch:
 
 ## Desired behavior
 
-### Scroll / viewport
+### Dialogs: bounded bottom panels, history visible, scrollback usable
 
-- Opening or closing any goal confirmation/questionnaire dialog never moves
-  the terminal viewport: a user reading scrollback keeps their position across
-  the dialog (verified interactively in a real terminal), and a user at the
-  bottom sees the dialog appear/close without content jumping.
-- The fix applies to every goal dialog that shares the mechanism:
-  `propose_goal_draft` confirmation (`showProposalDialog`), the
-  `goal_question` / `goal_questionnaire` tools (`runGoalQuestionnaire`), the
-  `set_goal_tasks` task-list confirmation (`showTaskConfirmation`), and the
-  audit escape dialog (`showEscapeDialog`).
-- The dialogs render in a DECSET 1049 alternate screen: the main screen is
-  never written to while the dialog is open, so scrollback (and the user's
-  reading position) is preserved exactly; the post-close identity re-render
-  writes zero bytes.
+- Every goal dialog — `propose_goal_draft` confirmation
+  (`showProposalDialog`), the `goal_question` / `goal_questionnaire` tools
+  (`runGoalQuestionnaire`), the `set_goal_tasks` task-list confirmation
+  (`showTaskConfirmation`), and the audit escape dialog (`showEscapeDialog`) —
+  opens as a bottom-anchored panel in the MAIN terminal screen, bounded to a
+  fraction of the terminal height (the chat history above stays visible).
+- The terminal scrollback remains fully usable while a dialog is open: the
+  user can scroll up at any time to read earlier content. No DECSET 1049 /
+  alternate buffer is used anywhere in the dialog flow (the alternate buffer
+  has no scrollback, which the user rejected), and no `\x1b[2J` full clears.
+- Opening, navigating, and closing the dialogs cause no viewport scroll
+  churn: headless measurement of the TUI write stream shows no
+  CRLF-at-bottom-row scroll bursts (the panel composites into the frame in
+  place and is capped by `maxHeight`, so the total frame never overflows).
+- Content taller than the panel scrolls internally (▴/▾ indicators,
+  PgUp/PgDn/Home/End), defaulting to the actionable options/footer visible.
 - No periodic redraws are introduced (the earlier scrollback fix must not
   regress; `tests/no-status-refresh-timer.test.ts` stays green).
+- Manual reproduction in a real terminal confirms: panel at the bottom,
+  history visible above, scroll-up works while open, no viewport jump on
+  open/close.
 
 ### Tool-call headings (PR #11 port)
 

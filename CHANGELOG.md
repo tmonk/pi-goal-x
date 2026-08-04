@@ -12,15 +12,17 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 ### Fixed
 
-- **Goal dialogs no longer scroll the terminal viewport:** the accept-goal
-  confirmation dialog (`propose_goal_draft`), the goal questionnaire, the
-  task-list confirmation, and the audit escape dialog now render in a
-  DECSET 1049 alternate screen instead of replacing the editor inline in the
-  main TUI buffer. Rendering is fully isolated from the main screen, so a
-  user reading scrollback keeps their reading position across dialog
-  open/close, and the post-close identity re-render writes zero bytes. When
-  alt-screen support is unavailable the dialogs fall back to pi's default
-  rendering.
+- **Goal dialogs no longer take over the screen or disable scrollback:** the
+  accept-goal confirmation dialog (`propose_goal_draft`), the goal
+  questionnaire, the task-list confirmation, and the audit escape dialog open
+  as bounded, bottom-anchored panels in the main terminal screen (pi's overlay
+  path) instead of blanking the screen or replacing the editor inline. The
+  panel composites into the existing frame in place, so opening, navigating,
+  and closing cause no viewport scroll churn; the chat history above the panel
+  stays visible and terminal scrollback remains fully usable while a dialog is
+  open (no DECSET 1049 alternate buffer, which blanks the main screen and
+  disables scroll-up; no `\x1b[2J` full clears). Content taller than the panel
+  scrolls internally (▴/▾ indicators, PgUp/PgDn/Home/End).
 - **Goal tool-call headings always render their complete content:** `update_goal`
   shows the full agent reason (`paused`/`blocked`) and the full completion
   summary (`complete`); `set_goal_tasks` and `propose_goal_draft` previews are
