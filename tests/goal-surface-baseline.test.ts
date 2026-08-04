@@ -56,11 +56,10 @@ function createRecordingPi() {
 // ── The pinned baseline ──────────────────────────────────────────────────────
 
 /**
- * The 14 goal tools registered today (registration order, which is also the
- * order pi exposes them in the model tool list):
- * goal_question, goal_questionnaire (from goal-questionnaire.ts), then the
- * twelve tools registered in goal.ts (Stage 3 added update_goal and made
- * create_goal real).
+ * The five goal tools registered today (registration order, which is also the
+ * order pi exposes them in the model tool list). All five are registered from
+ * the split tool modules (goal-core-tools.ts + goal-task-tools.ts) via the
+ * goal-tools.ts composition installer.
  */
 const EXPECTED_REGISTERED_TOOLS = [
 	"get_goal",
