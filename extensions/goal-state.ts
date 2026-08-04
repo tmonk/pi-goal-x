@@ -5,6 +5,7 @@ import { loadGoalSettings, loadGoalSettingsFileConfig } from "./goal-settings.ts
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
 	CORE_GOAL_TOOLS,
+	DRAFTING_GOAL_TOOLS,
 	FIVE_GOAL_TOOLS,
 } from "./goal-tool-names.ts";
 import { budgetReached } from "./goal-accounting.ts";
@@ -79,6 +80,7 @@ export interface GoalCore {
 	isFocusedOperationCurrent(token: { goalId: string; revision: number }): boolean;
 	focusedOperationCancelledResult(action: string, token: { goalId: string; revision: number }): AgentToolResult<unknown>;
 	installGoalToolProfile(tasksEnabled: boolean): void;
+	installDraftingToolProfile(): void;
 	stopAuditAnimation(): void;
 	abortAudit(ctx: ExtensionContext): void;
 	clearContinuationTimer(): void;
@@ -261,6 +263,22 @@ export function createGoalCore(
 			tasksEnabled = tasksEnabledArg;
 		} catch (err) {
 			console.error("[pi-goal] installGoalToolProfile error:", err instanceof Error ? err.message : String(err));
+		}
+	}
+
+	/**
+	 * Install the transient drafting profile. This is the sole permitted
+	 * exception to the fixed execution three/five profile: it is entered only
+	 * by an explicit user drafting command and is removed on confirm/cancel.
+	 */
+	function installDraftingToolProfile(): void {
+		try {
+			const current = new Set(pi.getActiveTools());
+			for (const knownGoalTool of ALL_REGISTERED_GOAL_TOOLS) current.delete(knownGoalTool);
+			for (const goalTool of DRAFTING_GOAL_TOOLS) current.add(goalTool);
+			pi.setActiveTools([...current]);
+		} catch (err) {
+			console.error("[pi-goal] installDraftingToolProfile error:", err instanceof Error ? err.message : String(err));
 		}
 	}
 
@@ -677,17 +695,27 @@ export function createGoalCore(
 	function replaceGoal(config: GoalCreationConfig, ctx: ExtensionContext, startNow = true, verificationContract?: string, tokenBudget?: number): void {
 		const goal = createGoal(config);
 		if (verificationContract) goal.verificationContract = verificationContract;
+		if (config.taskList) goal.taskList = config.taskList;
 		if (typeof tokenBudget === "number" && tokenBudget > 0) goal.tokenBudget = Math.floor(tokenBudget);
 		const result = goalService.create(ctx, {
 			goal,
-			ledger: [{
+		ledger: [
+			{
 				type: "goal_created",
 				goalId: goal.id,
 				objective: goal.objective,
 				sisyphus: goal.sisyphus,
 				autoContinue: goal.autoContinue,
 				at: goal.createdAt,
-			}],
+			},
+			...(goal.taskList ? [{
+				type: "task_list_set" as const,
+				goalId: goal.id,
+				taskCount: goal.taskList.tasks.length,
+				blockCompletion: goal.taskList.blockCompletion,
+				at: goal.createdAt,
+			}] : []),
+		],
 		});
 		if (result.focusChanged) appendFocusEntry(result.goalId, "created");
 		beginAccounting();
@@ -783,6 +811,7 @@ export function createGoalCore(
 		isFocusedOperationCurrent,
 		focusedOperationCancelledResult,
 		installGoalToolProfile,
+		installDraftingToolProfile,
 		stopAuditAnimation,
 		abortAudit,
 		clearContinuationTimer,

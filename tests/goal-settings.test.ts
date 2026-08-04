@@ -356,34 +356,6 @@ test("loadGoalSettings: reads subtaskDepth from file", () => {
 	});
 });
 
-// ── Unified acceptance: buildDraftConfirmationText with tasks ────────────
-
-import { buildDraftConfirmationText } from "../extensions/goal-widget.ts";
-
-test("buildDraftConfirmationText includes task section when appended to objective", () => {
-	const text = buildDraftConfirmationText({
-		focus: "goal",
-		originalTopic: "Build the thing",
-		objective: "=== Goal ===\nObjective: Build the thing\n\n┌─ TASKS ─────────────────────────────────────┐\n[ ] t1: Set up\n  [ ] t1a: Install\n└──────────────────────────────────────────────┘",
-		autoContinue: true,
-	});
-	assert.match(text, /Build the thing/);
-	assert.match(text, /t1: Set up/);
-	assert.match(text, /t1a: Install/);
-	assert.match(text, /┌─ TASKS/);
-});
-
-test("buildDraftConfirmationText works without task section (backward compat)", () => {
-	const text = buildDraftConfirmationText({
-		focus: "goal",
-		originalTopic: "Simple goal",
-		objective: "=== Goal ===\nObjective: Simple goal",
-		autoContinue: true,
-	});
-	assert.match(text, /Simple goal/);
-	assert.equal(text.includes("TASKS"), false);
-});
-
 // ── Scroll fix: hardware cursor toggle ──────────────────────────────────
 
 test("loadGoalSettings respects various subtaskDepth edge cases", () => {

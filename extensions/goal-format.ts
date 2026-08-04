@@ -11,9 +11,9 @@ import { GOAL_PROGRESS_TOOL_NAMES } from "./goal-tool-names.ts";
 import {
 	asRecord,
 	cloneGoal,
-	type DraftingFocus,
 	type GoalEventDetails,
 	type GoalEventKind,
+	type GoalMode,
 	type GoalRecord,
 	type GoalStateEntry,
 	type GoalStatus,
@@ -108,9 +108,11 @@ export function renderGoalResult(result: { details?: unknown; content: Array<{ t
 
 export function normalizeGoalEventDetails(value: unknown): GoalEventDetails {
 	const raw = asRecord(value);
-	const kind: GoalEventKind = raw?.kind === "stale" ? "stale" : raw?.kind === "drafting" ? "drafting" : "checkpoint";
+	// "checkpoint" is the only kind writers emit today; "stale" remains a
+	// legacy read for historical checkpoint entries.
+	const kind: GoalEventKind = raw?.kind === "stale" ? "stale" : "checkpoint";
 	const goalId = typeof raw?.goalId === "string" ? raw.goalId : "unknown";
-	const focus: DraftingFocus | undefined = raw?.focus === "sisyphus" ? "sisyphus" : raw?.focus === "goal" ? "goal" : undefined;
+	const focus: GoalMode | undefined = raw?.focus === "sisyphus" ? "sisyphus" : raw?.focus === "goal" ? "goal" : undefined;
 	const status = raw?.status === "active" || raw?.status === "paused" || raw?.status === "complete" ? (raw.status as GoalStatus) : undefined;
 	const currentStatus =
 		raw?.currentStatus === "active" || raw?.currentStatus === "paused" || raw?.currentStatus === "complete"
@@ -138,10 +140,7 @@ export interface GoalAuditEventDetails {
 
 export function renderGoalEvent(message: { details?: GoalEventDetails }, options: { expanded: boolean }, theme: Theme): Text {
 	const details = normalizeGoalEventDetails(message.details);
-	const label =
-		details.kind === "stale" ? "stale checkpoint"
-			: details.kind === "drafting" ? (details.focus === "sisyphus" ? "sisyphus drafting" : "goal drafting")
-				: "checkpoint";
+	const label = details.kind === "stale" ? "stale checkpoint" : "checkpoint";
 	if (!options.expanded) {
 		return new Text(theme.fg("customMessageLabel", "Goal ") + theme.fg("customMessageText", label), 0, 0);
 	}
@@ -170,9 +169,6 @@ export function renderGoalAuditEvent(message: { content?: unknown; details?: Goa
 }
 
 export function extractGoalIdFromInjectedMessage(text: string): string | null {
-	// Drafting messages (new goal, sisyphus, or tweak) have no continuation goalId and
-	// must never be treated as stale-continuation triggers.
-	if (/^\[GOAL (?:DRAFTING|TWEAK DRAFTING)\b/.test(text)) return null;
 	// Phase 5 C1: structured outer marker `<pi_goal_continuation goal_id="..." kind="...">`.
 	// Borrowed from pi-codex-goal. More robust than bare bracket text because
 	// the angle brackets + attributes are nearly impossible for users to type
@@ -186,8 +182,6 @@ export function extractGoalIdFromInjectedMessage(text: string): string | null {
 export function goalEventMessageId(message: { customType?: string; details?: unknown; content?: unknown }): string | null {
 	if (message.customType !== GOAL_EVENT_ENTRY) return null;
 	const details = asRecord(message.details);
-	// Drafting messages never correspond to a real goal id; they must not be staleness-checked.
-	if (details?.kind === "drafting") return null;
 	const goalId = details && typeof details.goalId === "string" ? details.goalId : null;
 	if (goalId) return goalId;
 	return typeof message.content === "string" ? extractGoalIdFromInjectedMessage(message.content) : null;

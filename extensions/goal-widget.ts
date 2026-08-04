@@ -1,6 +1,5 @@
 import { matchesKey } from "@earendil-works/pi-tui";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { showProposalDialog } from "./goal-questionnaire.ts";
 import { cloneGoal, createGoal, nowIso, type GoalTask } from "./goal-record.ts";
 import { serializeGoalFile } from "./storage/goal-files.ts";
 import { showTaskListOverlay } from "./widgets/task-list-overlay.ts";
@@ -40,23 +39,6 @@ if (trimmed.startsWith("│")) {
 function formatSectionDebug(title: string, content: string): string[] {
 	const body = formatPrefixedLinesDebug(content);
 	return ["", `─── ${title} ───`, "", ...body];
-}
-
-export function buildDraftConfirmationText(args: {
-	focus: "goal" | "sisyphus";
-	originalTopic: string;
-	objective: string;
-	autoContinue: boolean;
-}): string {
-	const lines: string[] = [];
-	lines.push("● Goal draft ready for confirmation.");
-	lines.push("");
-	lines.push("─── Draft Details ───");
-	lines.push(`│   Mode: ${formatModeLabelDebug(args.focus === "sisyphus")}`);
-	lines.push(`│   Auto-continue: ${args.autoContinue ? "yes" : "no"}`);
-	lines.push(...formatSectionDebug("Original Topic", args.originalTopic.trim()));
-	lines.push(...formatSectionDebug("Proposed Goal", args.objective));
-	return lines.join("\n");
 }
 
 
@@ -342,24 +324,12 @@ Verification contract:
 				{ id: "t4", title: "Manual TUI verification", status: "pending" },
 			];
 			goal.taskList = { tasks, blockCompletion: false, proposedAt: now };
-
-			// Build proposal from goal state — exactly like the real flow
-			const confirmationText = buildDraftConfirmationText({
-				focus: "goal",
-				originalTopic: "Refactor the goal widget component to support collapsible task sections",
-				objective: goal.objective,
-				autoContinue: goal.autoContinue,
-			});
-
-			// Append the task proposal to the confirmation text
-			const taskLines = renderDebugTaskLines(tasks).map((l) => `│   ${l}`);
-			const taskProposal = [
-				"",
-				"│ Proposed task list:",
-				"",
-				...taskLines,
-			].join("\n");
-
-			showProposalDialog(ctx, confirmationText + taskProposal, "goal", true);
+			// Development-only diagnostic: the legacy proposal dialog is
+			// gone; the injected sample task list is inspected through the goal
+			// file and the debug task overlay (Ctrl+Shift+T).
+			ctx.ui.notify(
+				`Injected sample task list into debug goal ${goal.id}; inspect the goal file or use the debug task overlay.`,
+				"info",
+			);
 		}
 }

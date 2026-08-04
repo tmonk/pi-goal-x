@@ -14,12 +14,11 @@ import { showEscapeDialog, type EscapeDialogResult } from "./widgets/goal-escape
 import type { GoalCore } from "./goal-state.ts";
 import type { GoalMutationOutcome } from "./goal-service.ts";
 
-// Agent's goal-confirmation entry point. Shows the user a full plain-text
-// draft report with two choices: [Confirm] (creates the goal) or
-// [Continue Chatting] (returns control to the agent for more clarification).
-// Schema gates enforce focus-vs-sisyphus consistency; draftId is ignored for
-// one-release compatibility with older prompt residue.
-// In headless mode (no UI), auto-confirms — harness-friendly.
+// update_goal(complete) execution path: validates the completable state,
+// runs the independent auditor (or the disabled/legacy-skip branches), and
+// commits through the single completion transaction. The auditor derives the
+// requirements from the objective and any verification contract and inspects
+// actual workspace evidence — there is no paperwork parameter.
 export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContext): Promise<AgentToolResult<unknown>> {
 	const { pi } = core;
 	core.reconcileFocusedGoalFromDisk(ctx);

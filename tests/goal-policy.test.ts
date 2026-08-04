@@ -69,25 +69,23 @@ test("resume and clear policy preserve human-owned lifecycle affordances", () =>
 	assert.match(rejectedMessage(validateResumeGoal(goal({ status: "active", autoContinue: true }))), /already running/);
 	assert.deepEqual(validateResumeGoal(goal({ status: "paused", autoContinue: false })), { ok: true });
 
-	assert.equal(clearGoalCommandMessage({ archived: true, wasDrafting: false }), "Goal cleared and archived.");
-	assert.equal(clearGoalCommandMessage({ archived: false, wasDrafting: true }), "Drafting cancelled.");
-	assert.equal(clearGoalCommandMessage({ archived: false, wasDrafting: false }), "No goal is set.");
+	assert.equal(clearGoalCommandMessage({ archived: true }), "Goal cleared and archived.");
+	assert.equal(clearGoalCommandMessage({ archived: false }), "No goal is set.");
 
 	assert.equal(
-		buildCompletionReport({ detailedSummary: "Goal: full objective\nStatus: complete", completionSummary: "All requested checks passed." }),
-		"Goal complete.\n\nCompletion summary:\nAll requested checks passed.\n\nGoal: full objective\nStatus: complete",
+		buildCompletionReport({ detailedSummary: "Goal: full objective\nStatus: complete" }),
+		"Goal complete.\n\nGoal: full objective\nStatus: complete",
 	);
 	assert.equal(
-		buildCompletionReport({ detailedSummary: "Goal: full objective", completionSummary: "   " }),
+		buildCompletionReport({ detailedSummary: "Goal: full objective" }),
 		"Goal complete.\n\nGoal: full objective",
 	);
 	assert.equal(
 		buildCompletionReport({
 			detailedSummary: "Goal: full objective\nStatus: complete",
-			completionSummary: "All requested checks passed.",
 			auditorReport: "Audit Report\n\n<approved/>",
 		}),
-		"Goal audit approved.\n\nAuditor approval:\nAudit Report\n\n<approved/>\n\nGoal complete.\n\nCompletion summary:\nAll requested checks passed.\n\nGoal: full objective\nStatus: complete",
+		"Goal audit approved.\n\nAuditor approval:\nAudit Report\n\n<approved/>\n\nGoal complete.\n\nGoal: full objective\nStatus: complete",
 	);
 	// When the auditor approves, the full auditor output MUST be included in the
 	// completion report so the executor agent can see the auditor's reasoning.
@@ -103,7 +101,6 @@ test("resume and clear policy preserve human-owned lifecycle affordances", () =>
 	].join("\n");
 	const result = buildCompletionReport({
 		detailedSummary: "Goal: Build X\nStatus: active",
-		completionSummary: "Done",
 		auditorReport: longAuditorReport,
 	});
 	assert.ok(result.includes(longAuditorReport), "completion report must include full auditor output");
@@ -117,7 +114,6 @@ test("resume and clear policy preserve human-owned lifecycle affordances", () =>
 	// auditSkippedReason produces "Goal audit skipped." header and includes the reason
 	const skipReport = buildCompletionReport({
 		detailedSummary: "Goal: Do the thing\nStatus: active",
-		completionSummary: "Done",
 		auditSkippedReason: "auditor disabled in settings",
 	});
 	assert.ok(skipReport.includes("Goal audit skipped."), "skip report must indicate audit was skipped");
@@ -126,7 +122,6 @@ test("resume and clear policy preserve human-owned lifecycle affordances", () =>
 	// auditSkippedReason takes precedence over auditorReport
 	const skipPrecedence = buildCompletionReport({
 		detailedSummary: "Goal: Precedence test",
-		completionSummary: "Done",
 		auditorReport: "<approved/>",
 		auditSkippedReason: "bypassed",
 	});

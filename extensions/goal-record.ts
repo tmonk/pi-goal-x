@@ -1,7 +1,8 @@
 export type GoalStatus = "active" | "paused" | "blocked" | "budget_limited" | "complete";
 export type StopReason = "user" | "agent";
-export type GoalEventKind = "checkpoint" | "stale" | "drafting";
-export type DraftingFocus = "goal" | "sisyphus";
+export type GoalEventKind = "checkpoint" | "stale";
+/** Goal creation mode used by the /goal and /sisyphus commands. */
+export type GoalMode = "goal" | "sisyphus";
 export type GoalFocusReason = "created" | "selected" | "unfocused" | "resumed" | "completed" | "cleared" | "aborted" | "migrated";
 
 export type TaskStatus = "pending" | "complete" | "skipped";
@@ -79,13 +80,15 @@ export interface GoalEventDetails {
 	timestamp?: number;
 	currentGoalId?: string | null;
 	currentStatus?: GoalStatus | null;
-	focus?: DraftingFocus;
+	/** Legacy-read-only creation mode on historical event entries; no writer emits it today. */
+	focus?: GoalMode;
 }
 
 export interface GoalCreationConfig {
 	objective: string;
 	autoContinue: boolean;
 	sisyphus: boolean;
+	taskList?: GoalTaskList;
 }
 
 export interface AssistantUsage {

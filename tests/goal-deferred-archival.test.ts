@@ -117,7 +117,6 @@ test("deferred archival lifecycle via writeActiveGoalFile then archiveGoalFile",
 test("approval path: buildCompletionReport includes auditor report", () => {
 	const report = buildCompletionReport({
 		detailedSummary: "Goal: Audit approval test\nStatus: active",
-		completionSummary: "All requirements satisfied.",
 		auditorReport: "Auditor: I have verified all requirements.\n\n<approved/>",
 	});
 	assert.ok(report.includes("Goal audit approved."), "approval path must say 'Goal audit approved.'");
@@ -132,7 +131,6 @@ test("approval path: buildCompletionReport includes auditor report", () => {
 test("disabled-bypass path: buildCompletionReport includes auditSkippedReason", () => {
 	const report = buildCompletionReport({
 		detailedSummary: "Goal: Disabled bypass test\nStatus: active",
-		completionSummary: "Marked complete via bypass.",
 		auditSkippedReason: "auditor disabled in settings",
 	});
 	assert.ok(report.includes("Goal audit skipped."), "disabled-bypass path must say 'Goal audit skipped.'");
@@ -149,7 +147,6 @@ test("disabled-bypass path: buildCompletionReport includes auditSkippedReason", 
 test("Esc-skip path: buildCompletionReport includes Esc-abort reason", () => {
 	const report = buildCompletionReport({
 		detailedSummary: "Goal: Esc abort test\nStatus: active",
-		completionSummary: "Bypassed during audit.",
 		auditSkippedReason: "auditor bypassed (user pressed Escape during audit)",
 	});
 	assert.ok(report.includes("Goal audit skipped."), "Esc-skip path must say 'Goal audit skipped.'");
@@ -167,17 +164,14 @@ test("all three paths produce distinct tool output text", () => {
 
 	const approval = buildCompletionReport({
 		detailedSummary: commonDetailed,
-		completionSummary: "Approved case.",
 		auditorReport: "Inspected and verified.\n\n<approved/>",
 	});
 	const disabled = buildCompletionReport({
 		detailedSummary: commonDetailed,
-		completionSummary: "Disabled bypass case.",
 		auditSkippedReason: "auditor disabled in settings",
 	});
 	const esc = buildCompletionReport({
 		detailedSummary: commonDetailed,
-		completionSummary: "Esc abort case.",
 		auditSkippedReason: "auditor bypassed (user pressed Escape during audit)",
 	});
 

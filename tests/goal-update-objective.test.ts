@@ -112,7 +112,6 @@ test("update_goal(complete) with status=complete still works (completion flow un
 test("buildCompletionReport handles updated objective display", () => {
 	const report = buildCompletionReport({
 		detailedSummary: "Goal: Build feature X\nUpdated objective: Build feature Y\nStatus: active",
-		completionSummary: "Feature Y built successfully.",
 		auditorReport: "Inspected and verified.\n\n<approved/>",
 	});
 	assert.ok(report.includes("Goal complete."));

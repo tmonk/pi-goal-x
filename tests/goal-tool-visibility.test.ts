@@ -90,8 +90,7 @@ const HOST_SEED_B = ["read", "grep", "find", "ls", "fetch", "custom-ext-tool"];
 
 const REMOVED_TOOLS = [
 	"complete_goal", "pause_goal", "abort_goal", "propose_goal_tweak",
-	"propose_goal_draft", "step_complete", "propose_task_list",
-	"complete_task", "skip_task", "goal_question", "goal_questionnaire",
+	"step_complete", "propose_task_list", "complete_task", "skip_task",
 ];
 
 // ── Test Suite ───────────────────────────────────────────────────────────────
@@ -319,11 +318,16 @@ describe("Tool profile invariance", () => {
 	});
 
 	// ── Registration invariants ────────────────────────────────────────────
-	it("all five model tools are registered with execute handlers; removed tools are not", () => {
+	it("execution and transient drafting tools are registered with execute handlers", () => {
 		for (const name of FIVE_GOAL_TOOLS) {
 			const tool = registeredTools.find((t) => t.name === name);
 			assert.ok(tool, `Tool "${name}" must be registered`);
 			assert.ok(typeof tool!.execute === "function", `Tool "${name}" must have an execute handler`);
+		}
+		for (const name of ["goal_question", "goal_questionnaire", "propose_goal_draft"]) {
+			const tool = registeredTools.find((t) => t.name === name);
+			assert.ok(tool, `Drafting tool "${name}" must be registered`);
+			assert.ok(typeof tool!.execute === "function", `Drafting tool "${name}" must have an execute handler`);
 		}
 		for (const removed of REMOVED_TOOLS) {
 			assert.equal(registeredTools.some((t) => t.name === removed), false, `${removed} must not be registered`);

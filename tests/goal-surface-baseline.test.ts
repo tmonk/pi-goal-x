@@ -21,6 +21,7 @@ import piGoalExtension from "../extensions/goal.ts";
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
 	CORE_GOAL_TOOLS,
+	DRAFTING_GOAL_TOOLS,
 	FIVE_GOAL_TOOLS,
 } from "../extensions/goal-tool-names.ts";
 
@@ -67,6 +68,9 @@ const EXPECTED_REGISTERED_TOOLS = [
 	"update_goal",
 	"set_goal_tasks",
 	"update_goal_task",
+	"goal_question",
+	"goal_questionnaire",
+	"propose_goal_draft",
 ] as const;
 
 /**
@@ -79,6 +83,8 @@ const EXPECTED_REGISTERED_TOOLS = [
 const EXPECTED_REGISTERED_COMMANDS = [
 	"goal",
 	"sisyphus",
+	"goal-direct",
+	"sisyphus-direct",
 	"goal-list",
 	"goal-focus",
 	"goal-unfocus",
@@ -89,14 +95,14 @@ const EXPECTED_REGISTERED_COMMANDS = [
 	"goal-resume",
 ] as const;
 
-test("baseline: exactly 5 goal tools are registered, in pinned order", () => {
+test("baseline: execution and drafting tools are registered in pinned order", () => {
 	const { pi, registeredTools } = createRecordingPi();
 	piGoalExtension(pi as never);
 
 	assert.deepEqual(registeredTools, [...EXPECTED_REGISTERED_TOOLS]);
 });
 
-test("baseline: exactly 10 slash commands are registered, in pinned order", () => {
+test("baseline: exactly 12 slash commands are registered, in pinned order", () => {
 	const { pi, registeredCommands } = createRecordingPi();
 	piGoalExtension(pi as never);
 
@@ -111,13 +117,16 @@ test("baseline: no duplicate tool or command registrations", () => {
 	assert.equal(new Set(registeredCommands).size, registeredCommands.length);
 });
 
-test("baseline: fixed profiles are the three/five-tool surface", () => {
+test("baseline: execution profiles remain three/five tools and drafting is separate", () => {
 	assert.deepEqual(FIVE_GOAL_TOOLS, [
 		"create_goal", "get_goal", "update_goal",
 		"set_goal_tasks", "update_goal_task",
 	]);
 	assert.deepEqual(CORE_GOAL_TOOLS, [
 		"create_goal", "get_goal", "update_goal",
+	]);
+	assert.deepEqual(DRAFTING_GOAL_TOOLS, [
+		"goal_question", "goal_questionnaire", "propose_goal_draft",
 	]);
 });
 

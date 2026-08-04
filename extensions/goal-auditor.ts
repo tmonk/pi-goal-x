@@ -115,9 +115,7 @@ function taskSummaryBlock(taskList?: GoalTaskList | null): string {
 
 export function buildGoalAuditorPrompt(args: {
 	goal: GoalRecord;
-	completionSummary?: string | null;
 	detailedSummary: string;
-	verificationSummary?: string | null;
 	settings?: GoalSettings;
 }): string {
 	return [
@@ -136,23 +134,13 @@ export function buildGoalAuditorPrompt(args: {
 		args.goal.objective,
 		"</objective>",
 		"",
-		"Executor completion claim:",
-		"<completion_summary>",
-		args.completionSummary?.trim() || "(none provided)",
-		"</completion_summary>",
+		"There is no separate executor claim field: the requirements are the objective below and any verification contract.",
 		"",
 		"Current goal metadata:",
 		"<goal_details>",
 		args.detailedSummary,
 		...(!args.settings?.disableTasks && taskSummaryBlock(args.goal.taskList) ? ["", taskSummaryBlock(args.goal.taskList)] : []),
 		"</goal_details>",
-		...(args.verificationSummary?.trim() ? [
-			"",
-			"Executor verification summary:",
-			"<verification_summary>",
-			args.verificationSummary.trim(),
-			"</verification_summary>",
-		] : []),
 		...(!args.settings?.disableContracts && args.goal.verificationContract?.trim() ? [
 			"",
 			"Goal verification contract (what the executor was required to verify):",
@@ -165,14 +153,11 @@ export function buildGoalAuditorPrompt(args: {
 		...[
 			"1. Extract the real success criteria from the objective, including quality/reader outcomes.",
 			"2. Inspect artifacts or command output that can prove or disprove those criteria.",
-			...(args.verificationSummary?.trim()
-				? ["3. Check the <verification_summary> against real artifacts. If the executor claims to have run tests or searched for references, verify those claims with actual file/shell evidence. The summary is a claim, not proof — cross-check it."]
-				: []),
 			...(!args.settings?.disableContracts && args.goal.verificationContract?.trim()
-				? ["4. Verify that the executor has satisfied every item in the <verification_contract>. If any item is missing or weakly addressed, disapprove."]
+				? ["3. Verify that the executor has satisfied every item in the <verification_contract>. If any item is missing or weakly addressed, disapprove."]
 				: []),
-			"5. Explain missing or weak evidence, especially scaffold-vs-final quality gaps.",
-			"6. End with exactly <approved/> only if the objective is truly complete; otherwise end with exactly <disapproved/>.",
+			"4. Explain missing or weak evidence, especially scaffold-vs-final quality gaps.",
+			"5. End with exactly <approved/> only if the objective is truly complete; otherwise end with exactly <disapproved/>.",
 		],
 		"",
 		"Progress reporting:",
@@ -273,9 +258,7 @@ function modelLabel(model: Model<any> | undefined): string | undefined {
 export async function runGoalCompletionAuditor(args: {
 	ctx: ExtensionContext;
 	goal: GoalRecord;
-	completionSummary?: string | null;
 	detailedSummary: string;
-	verificationSummary?: string | null;
 	settings?: GoalSettings;
 	signal?: AbortSignal;
 	onProgress?: AuditorProgressCallback;

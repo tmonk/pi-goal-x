@@ -16,12 +16,13 @@ import {
 } from "./goal-pool.ts";
 import { clearGoalCommandMessage, validateResumeGoal } from "./goal-policy.ts";
 import { mergeGoalPromptFromDisk } from "./storage/goal-files.ts";
-import { nowIso, type DraftingFocus, type GoalRecord } from "./goal-record.ts";
+import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
+import { clearGoalDrafting, startGoalDrafting } from "./goal-drafting.ts";
 import type { GoalCore } from "./goal-state.ts";
 
 /**
- * The curated ten-command palette (Stage 5). /goal and /sisyphus are the two
- * direct creation paths; every frequent lifecycle action is independently
+ * The curated twelve-command palette. /goal and /sisyphus begin guided
+ * drafting; -direct commands are the explicit bypass. Every frequent lifecycle action is independently
  * registered so it appears in slash-command tab completion. No aliases.
  */
 export function registerGoalCommands(core: GoalCore): void {
@@ -57,7 +58,7 @@ export function registerGoalCommands(core: GoalCore): void {
 	async function focusGoalCommand(ctx: ExtensionContext): Promise<void> {
 		const open = core.openGoals();
 		if (open.length === 0) {
-			ctx.ui.notify("No open goals. Use /goal <objective> or /sisyphus <objective> to start immediately.", "warning");
+			ctx.ui.notify("No open goals. Use /goal to draft one, or /goal-direct <objective> to start immediately.", "warning");
 			return;
 		}
 		if (open.length === 1) {
@@ -113,17 +114,18 @@ export function registerGoalCommands(core: GoalCore): void {
 		ctx.ui.notify(`Goal unfocused for this session. It remains open in .pi/goals: ${current.id}`, "info");
 	}
 
-	function handleDirectGoalSet(rawObjective: string, ctx: ExtensionContext, focus: DraftingFocus): void {
+	function handleDirectGoalSet(rawObjective: string, ctx: ExtensionContext, mode: GoalMode): void {
 		const raw = rawObjective.trim();
 		if (!raw) {
-			const command = focus === "sisyphus" ? "/sisyphus <objective>" : "/goal <objective>";
+			const command = mode === "sisyphus" ? "/sisyphus <objective>" : "/goal <objective>";
 			ctx.ui.notify(`No objective provided. Use ${command}.`, "warning");
 			return;
 		}
 		const { objective, verificationContract } = extractVerificationContract(raw);
+		clearGoalDrafting(core);
 		core.clearContinuationState();
 		core.clearActiveAccounting();
-		core.replaceGoal({ objective, autoContinue: true, sisyphus: focus === "sisyphus" }, ctx, true, verificationContract);
+		core.replaceGoal({ objective, autoContinue: true, sisyphus: mode === "sisyphus" }, ctx, true, verificationContract);
 	}
 
 	async function showGoalStatus(ctx: ExtensionContext): Promise<void> {
@@ -340,7 +342,7 @@ export function registerGoalCommands(core: GoalCore): void {
 			if (!selected) return;
 		}
 		if (!core.state.goal) {
-			ctx.ui.notify(clearGoalCommandMessage({ archived: false, wasDrafting: false }), "warning");
+			ctx.ui.notify(clearGoalCommandMessage({ archived: false }), "warning");
 			return;
 		}
 		// Snapshot the selected goal id and focus revision before asking.
@@ -368,25 +370,25 @@ export function registerGoalCommands(core: GoalCore): void {
 		const archived = core.archiveCurrentGoal(ctx, "user");
 		const didArchive = !!archived;
 		core.setGoal(null, ctx, true, "cleared");
-		const msg = clearGoalCommandMessage({ archived: didArchive, wasDrafting: false });
+		const msg = clearGoalCommandMessage({ archived: didArchive });
 		ctx.ui.notify(msg, didArchive ? "info" : "warning");
 	}
 
-	async function startGoalTweakDrafting(replacement: string, ctx: ExtensionContext): Promise<void> {
+	async function runGoalTweak(replacement: string, ctx: ExtensionContext): Promise<void> {
 		core.reconcileFocusedGoalFromDisk(ctx);
 		if (!core.state.goal) {
 			if (core.openGoals().length > 0) {
 				const selected = await chooseOpenGoal(ctx, "Tweak which open goal?");
 				if (!selected) return;
 			} else {
-				ctx.ui.notify("No goal is set. Use /goal <objective> or /sisyphus <objective> to create one.", "warning");
+				ctx.ui.notify("No goal is set. Use /goal to draft one, or /goal-direct <objective> to create one immediately.", "warning");
 				return;
 			}
 		}
 		const currentGoal = core.state.goal;
 		if (!currentGoal) return;
 		if (currentGoal.status === "complete") {
-			ctx.ui.notify("Goal is complete. Use /goal <objective> to create a new one.", "warning");
+			ctx.ui.notify("Goal is complete. Use /goal to draft a new one, or /goal-direct <objective> to create one immediately.", "warning");
 			return;
 		}
 		const trimmed = replacement.trim();
@@ -398,66 +400,29 @@ export function registerGoalCommands(core: GoalCore): void {
 			ctx.ui.notify(`Replacement objective exceeds 4000 characters (${trimmed.length}).`, "warning");
 			return;
 		}
-		// User-owned tweak (Stage 6): apply the replacement directly through the
-		// service — preserve usage/tasks/mode/budget, reactivate budget-limited
-		// goals, clear any agent pause reason, and record the tweak ledger event.
-		core.syncGoalPromptFromDisk(ctx);
-		const current = core.state.goal;
-		if (!current) return;
-		const { objective: cleanedObjective, verificationContract } = extractVerificationContract(trimmed);
-		const now = nowIso();
-		const result = core.goalService.apply(ctx, {
-			reconcile: false,
-			mutate: (g) => {
-				const reactivate = g.status === "budget_limited";
-				return {
-					...g,
-					objective: cleanedObjective,
-					verificationContract: verificationContract ?? g.verificationContract,
-					updatedAt: now,
-					pauseReason: undefined,
-					pauseSuggestedAction: undefined,
-					status: reactivate ? "active" : g.status,
-					autoContinue: reactivate ? true : g.autoContinue,
-				} as GoalRecord;
-			},
-			ledger: (written) => [{
-				type: "goal_tweaked",
-				goalId: written.id,
-				changeSummary: "Objective updated by the user via /goal-tweak.",
-				at: written.updatedAt,
-			}],
-		});
-		if (!result.ok) {
-			ctx.ui.notify(`Goal tweak failed: ${result.message}`, "error");
-			return;
-		}
-		core.runtime.markTurnStopped(result.goal.id);
-		core.clearContinuationState();
-		core.updateUI(ctx);
-		ctx.ui.notify("Goal objective updated.", "info");
+		startGoalDrafting(core, ctx, "tweak", trimmed, currentGoal);
 	}
 
-	// /goal: status when empty, direct creation otherwise. /sisyphus: direct creation.
+	// /goal and /sisyphus are the guided default. -direct commands are the explicit bypass.
 	pi.registerCommand("goal", {
-		description: "Create a regular goal from the objective, or show status when empty.",
+		description: "Draft a regular goal with clarification, task planning, and confirmation.",
 		handler: async (rawArgs, ctx) => {
-			if (rawArgs.trim()) {
-				handleDirectGoalSet(rawArgs, ctx, "goal");
-				return;
-			}
-			await showGoalStatus(ctx);
+			startGoalDrafting(core, ctx, "goal", rawArgs);
 		},
 	});
 	pi.registerCommand("sisyphus", {
-		description: "Create a Sisyphus goal (strict ordered steps) from the objective.",
+		description: "Draft a Sisyphus goal with clarification, task planning, and confirmation.",
 		handler: async (rawArgs, ctx) => {
-			if (rawArgs.trim()) {
-				handleDirectGoalSet(rawArgs, ctx, "sisyphus");
-				return;
-			}
-			ctx.ui.notify("Provide an objective: /sisyphus <ordered-steps objective>", "info");
+			startGoalDrafting(core, ctx, "sisyphus", rawArgs);
 		},
+	});
+	pi.registerCommand("goal-direct", {
+		description: "Create and start a regular goal immediately, without drafting.",
+		handler: async (rawArgs, ctx) => { handleDirectGoalSet(rawArgs, ctx, "goal"); },
+	});
+	pi.registerCommand("sisyphus-direct", {
+		description: "Create and start a Sisyphus goal immediately, without drafting.",
+		handler: async (rawArgs, ctx) => { handleDirectGoalSet(rawArgs, ctx, "sisyphus"); },
 	});
 	pi.registerCommand("goal-list", {
 		description: "List all open goals and the current focus.",
@@ -488,7 +453,7 @@ export function registerGoalCommands(core: GoalCore): void {
 	pi.registerCommand("goal-tweak", {
 		description: "Refine the current goal's objective with the user.",
 		handler: async (rawArgs, ctx) => {
-			await startGoalTweakDrafting(rawArgs, ctx);
+			await runGoalTweak(rawArgs, ctx);
 		},
 	});
 	pi.registerCommand("goal-clear", {

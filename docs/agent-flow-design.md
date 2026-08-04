@@ -31,7 +31,7 @@ Core principle:
 ```text
 User command
   -> pi-goal command handler (/goal, /sisyphus, /goal-*)
-  -> direct creation, or focus/lifecycle state update
+  -> guided draft and explicit confirmation, direct creation, or focus/lifecycle state update
   -> runtime reconciles from disk, re-computes prompts and the active tool subset
   -> executing agent works on the focused goal
   -> tool call / turn events update accounting and the ledger
@@ -90,12 +90,14 @@ in place.
 
 ## 5. Command palette: the user owns intent
 
-The curated ten-command palette:
+The curated twelve-command palette:
 
 | Command | Behavior |
 |---|---|
-| `/goal <objective>` | Direct regular-goal creation; bare `/goal` shows status |
-| `/sisyphus <objective>` | Direct Sisyphus creation (numbered ordered steps) |
+| `/goal [seed]` | Guided regular-goal drafting, questionnaire where useful, then explicit confirmation |
+| `/sisyphus [seed]` | Guided Sisyphus drafting with ordered-work constraints and explicit confirmation |
+| `/goal-direct <objective>` | Direct regular-goal creation without drafting |
+| `/sisyphus-direct <objective>` | Direct Sisyphus creation without drafting |
 | `/goal-list` | List all open goals and the current focus |
 | `/goal-focus` | Choose this session's focused goal |
 | `/goal-unfocus` | Detach the session without modifying the shared goal |
@@ -107,22 +109,23 @@ The curated ten-command palette:
 
 ## 6. Goal creation flow
 
-`/goal <objective>` and `/sisyphus <objective>` create and focus a goal
-directly — the explicit command is the user's confirmation, so no separate
-confirmation phase exists. A conversational request may call `create_goal`
-directly when the user explicitly asks to start a persistent goal; the model
-must not infer a goal from an ordinary one-off task. Creating a goal focuses
-it and leaves other open goals untouched. `create_goal` accepts an objective
-of 1–4000 characters, an optional `mode` (regular/sisyphus), and an optional
-`token_budget`.
+`/goal [seed]` and `/sisyphus [seed]` enter a temporary draft profile.
+The agent can ask questions, select a questionnaire when it adds value, and
+propose both a full objective and a task tree in a single confirmation dialog.
+Confirm creates and focuses the goal atomically; Continue Chatting retains the
+draft. `/goal-direct` and `/sisyphus-direct` are the explicit immediate paths.
 
 ## 7. Tool surface and runtime gates
 
-The model surface is a FIXED three/five profile (hardening stage 2):
+The normal execution surface is a FIXED three/five profile; guided drafting
+temporarily replaces it with three draft tools:
 
 - exactly five goal tools are installed when tasks are enabled — `create_goal`,
   `get_goal`, `update_goal`, `set_goal_tasks`, `update_goal_task`;
 - exactly the three core tools when tasks are disabled;
+- during a user-started `/goal`, `/sisyphus`, or `/goal-tweak` draft, only
+  `goal_question`, `goal_questionnaire`, and `propose_goal_draft` are
+  advertised until confirm or cancellation;
 - the profile is installed once at session start and after a settings change
   that toggles `disableTasks`; focus, status, budget, completion, audit, and
   compaction transitions never add/remove/restore goal tools;
@@ -234,7 +237,7 @@ goal.ts (thin installer)
 ├─ goal-completion.ts audit orchestration + completion commit
 ├─ goal-task-tools.ts task structure/status handlers + tree helpers
 ├─ goal-task-confirmation.ts task result boundary (currently uses legacy dialog labels)
-├─ goal-commands.ts  ten-command palette
+├─ goal-commands.ts  twelve-command palette
 ├─ goal-events.ts    13 lifecycle event handlers
 ├─ goal-widget.ts    terminal keybindings + debug helpers
 ├─ goal-format.ts    pure formatting/message helpers

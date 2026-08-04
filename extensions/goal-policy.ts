@@ -53,18 +53,14 @@ export function validateGoalBlock(args: {
 }
 
 export function validateResumeGoal(goal: GoalPolicyRecordLike | null): PolicyValidation {
-	if (!goal) return { ok: false, message: "No goal is set. Use /goal <objective> or /sisyphus <objective> to start immediately." };
-	if (goal.status === "complete") return { ok: false, message: "Goal is complete. Use /goal <objective> or /sisyphus <objective> to start a new one." };
+	if (!goal) return { ok: false, message: "No goal is set. Use /goal to draft one, or /goal-direct <objective> to start immediately." };
+	if (goal.status === "complete") return { ok: false, message: "Goal is complete. Use /goal to draft a new one, or /goal-direct <objective> to start immediately." };
 	if (goal.status === "active" && goal.autoContinue) return { ok: false, message: "Goal is already running." };
 	return { ok: true };
 }
 
-export function clearGoalCommandMessage(args: { archived: boolean; wasDrafting: boolean }): string {
-	return args.archived ? "Goal cleared and archived." : args.wasDrafting ? "Drafting cancelled." : "No goal is set.";
-}
-
-export function abortGoalCommandMessage(args: { archived: boolean; wasDrafting: boolean }): string {
-	return args.archived ? "Goal aborted and archived." : args.wasDrafting ? "Drafting cancelled." : "No goal is set.";
+export function clearGoalCommandMessage(args: { archived: boolean }): string {
+	return args.archived ? "Goal cleared and archived." : "No goal is set.";
 }
 
 /** Count tasks in subtree recursively */
@@ -102,8 +98,8 @@ export function taskCompletionBlockWarning(taskList: GoalTaskList): string | nul
 }
 
 /**
- * Validate that a verificationSummary satisfies a verificationContract.
- * If a contract exists, the summary must be non-empty.
+ * Validate a task completion transition (evidence requirement is enforced by
+ * the update_goal_task handler against the task's verification contract).
  */
 export function validateTaskCompletion(args: {
 	goal: GoalPolicyRecordLike | null;
@@ -272,7 +268,7 @@ export function skipAllSubtasks(task: GoalTask, now: string, reason: string): Go
 	};
 }
 
-export function buildCompletionReport(args: { detailedSummary: string; completionSummary?: string | null; auditorReport?: string | null; auditSkippedReason?: string | null; taskSummary?: string | null }): string {
+export function buildCompletionReport(args: { detailedSummary: string; auditorReport?: string | null; auditSkippedReason?: string | null; taskSummary?: string | null }): string {
 	const auditSkipped = args.auditSkippedReason?.trim();
 	const auditorReport = args.auditorReport?.trim();
 	const lines = auditSkipped
@@ -280,10 +276,6 @@ export function buildCompletionReport(args: { detailedSummary: string; completio
 		: auditorReport
 			? ["Goal audit approved.", "", "Auditor approval:", auditorReport, "", "Goal complete."]
 			: ["Goal complete."];
-	const summary = args.completionSummary?.trim();
-	if (summary) {
-		lines.push("", "Completion summary:", summary);
-	}
 	const taskSummary = args.taskSummary?.trim();
 	if (taskSummary) {
 		lines.push("", `Task summary: ${taskSummary}`);

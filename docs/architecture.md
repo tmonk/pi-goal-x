@@ -18,7 +18,7 @@ handlers from their dedicated modules:
 | `goal-completion.ts` | The completion transaction: `runGoalCompletionFlow` (audit orchestration) + shared `commitGoalCompletion` |
 | `goal-task-tools.ts` | `set_goal_tasks` / `update_goal_task` executors plus flat parent-linked conversion, id-stable merge, `countTasks` |
 | `goal-task-confirmation.ts` | Task-only result boundary (`{decision}`, no auditor toggle); its current visual dialog still reuses legacy goal-draft labels |
-| `goal-commands.ts` | The curated ten-command palette and its handlers |
+| `goal-commands.ts` | The curated twelve-command palette and its handlers |
 | `goal-events.ts` | The 13 lifecycle event handlers (`context`, `turn_start`, `tool_call`, `tool_execution_end`, `turn_end`, `message_end`, `session_start`, `session_before_compact`, `session_compact`, `session_tree`, `before_agent_start`, `agent_end`, `session_shutdown`) |
 | `goal-widget.ts` | Terminal input keybindings (Esc pause / abort-audit, Ctrl+Shift+T overlay) and the hidden debug helpers |
 | `goal-format.ts` | Pure formatting/message-introspection helpers and renderers |
@@ -78,7 +78,9 @@ direct write or ledger calls.
 
 ```text
 /user command or explicit create_goal request
-  ├─ /goal <objective> or /sisyphus <objective>
+  ├─ /goal [seed] or /sisyphus [seed]
+  │    └─ guided draft: clarify/questionnaire → objective + optional task proposal → explicit confirmation
+  ├─ /goal-direct <objective> or /sisyphus-direct <objective>
   │    └─ direct creation: objective (1–4000 chars) → active goal file → focused → autoContinue
   ├─ focused active goal
   │    ├─ autoContinue queues checkpoint turns
@@ -161,23 +163,22 @@ prompt/criteria level:
 
 ## Creation and tweaking
 
-`/goal <objective>` and `/sisyphus <objective>` create and focus a goal
-directly — the explicit command is the user's confirmation, so no separate
-confirmation phase exists. A conversational request may call `create_goal`
-directly when the user explicitly asks to start a persistent goal; the model
-must not infer a goal from an ordinary one-off task. Creating a goal focuses it
-and leaves other open goals untouched.
+`/goal [seed]` and `/sisyphus [seed]` begin guided drafting. The temporary
+draft profile exposes only question/questionnaire/proposal tools. The agent
+clarifies intent, proposes the full objective and an optional task tree, and
+the user explicitly confirms or continues refining. `/goal-direct` and
+`/sisyphus-direct` bypass this only when the objective is already final.
 
-`/goal-tweak <new objective>` is a direct user-owned objective edit routed
-through GoalService: it preserves usage/tasks/mode/budget, reactivates
-`budget_limited` goals, clears any agent pause reason, and records a
-`goal_tweaked` ledger event. There is no drafting orchestration, no
-confirmation intent state, and no model-side objective mutation.
+`/goal-tweak <change>` starts the same guided-confirmation process for the
+focused goal. It preserves the task list when no replacement is proposed and
+records `goal_tweaked` (plus `task_list_set` if applicable) only after the
+user confirms.
 
 ## Command focus behavior
 
-- `/goal <objective>` creates a regular goal; bare `/goal` shows status.
-- `/sisyphus <objective>` creates a Sisyphus goal; bare `/sisyphus` asks for an objective.
+- `/goal [seed]` starts a regular guided draft; bare `/goal` asks what to accomplish.
+- `/sisyphus [seed]` starts a Sisyphus guided draft.
+- `/goal-direct <objective>` and `/sisyphus-direct <objective>` create directly without drafting.
 - `/goal-list` prints all open goals with id, status, mode, usage, objective title, path, and a focus marker.
 - `/goal-focus` uses `ctx.ui.select` when multiple goals are open and updates only session focus.
 - `/goal-unfocus` writes a null session focus entry, clears continuation/runtime state, aborts in-flight work and audits for that session, and leaves the shared active goal file and project-global focus ledger unchanged. Focus revision tokens prevent pending completion and task-list results from mutating a goal after detachment.
@@ -188,7 +189,7 @@ confirmation intent state, and no model-side objective mutation.
 
 ## Tool surface
 
-The extension registers a five-tool model vocabulary:
+The extension registers five normal-execution tools and three drafting-only tools:
 
 | Tool | Purpose |
 |---|---|
@@ -197,13 +198,15 @@ The extension registers a five-tool model vocabulary:
 | `update_goal` | Terminal outcomes only: `complete` (audited from actual evidence) or `blocked` (after three consecutive identical blockers). |
 | `set_goal_tasks` | Create or structurally replace the task tree (flat parent-linked input, confirmation dialog, id-stable merge). |
 | `update_goal_task` | Update one task without stopping the turn: complete (evidence for contracted tasks), skipped (reason), pending (reopens skipped). |
+| `goal_question` | Drafting-only structured clarification question. |
+| `goal_questionnaire` | Drafting-only multi-question clarification UI. |
+| `propose_goal_draft` | Drafting-only objective/task proposal with Confirm or Continue Chatting. |
 
-The advertised profile is FIXED: exactly five goal tools when tasks are
-enabled, exactly three when disabled. `installGoalToolProfile` is called only
-at session start and after a settings change that toggles `disableTasks`;
-focus, status, budget, completion, audit, and compaction transitions never add,
-remove, or restore goal tools, and ordinary pi work tools are never touched.
-Invalid lifecycle calls return concise state-aware tool results instead.
+The normal execution profile is fixed: exactly five goal tools when tasks are
+enabled, exactly three when disabled. A user-started guided draft is the sole
+exception: it replaces those goal tools with question/questionnaire/proposal
+tools until confirmation or cancellation. Ordinary pi work tools are never
+touched. Invalid lifecycle calls return concise state-aware tool results.
 
 The `tool_call` interceptor blocks work tools after a stop tool has fired in
 the same turn, and blocks work tools when the checkpoint that triggered the

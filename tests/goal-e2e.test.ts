@@ -148,13 +148,12 @@ test("quick-sync then later complete: archived file has updated objective", () =
 test("sync + approval path: report includes new objective and approval", () => {
 	const report = buildCompletionReport({
 		detailedSummary: "Goal: Build feature X\nUpdated objective: Build feature Y\nStatus: active",
-		completionSummary: "Feature Y implemented and tested.",
 		auditorReport: "Inspected and verified.\n\n<approved/>",
 	});
 	assert.ok(report.includes("Goal audit approved."), "must say approved");
 	assert.ok(report.includes("<approved/>"), "must include approval marker");
 	assert.ok(report.includes("Goal complete."), "must conclude with Goal complete.");
-	assert.ok(report.includes("Feature Y"), "must reference the updated objective");
+	assert.ok(report.includes("Build feature Y"), "must reference the updated objective");
 });
 
 // ── 4. Sync + disabled bypass ────────────────────────────────────────────────
@@ -163,13 +162,12 @@ test("sync + approval path: report includes new objective and approval", () => {
 test("sync + disabled bypass: report includes new objective and skip reason", () => {
 	const report = buildCompletionReport({
 		detailedSummary: "Goal: Build feature X\nUpdated objective: Build feature Y\nStatus: active",
-		completionSummary: "Feature Y implemented.",
 		auditSkippedReason: "auditor disabled in settings",
 	});
 	assert.ok(report.includes("Goal audit skipped."), "must say skipped");
 	assert.ok(report.includes("auditor disabled in settings"), "must include skip reason");
 	assert.ok(report.includes("Goal complete."));
-	assert.ok(report.includes("Feature Y"), "must reference the updated objective");
+	assert.ok(report.includes("Build feature Y"), "must reference the updated objective");
 	assert.ok(!report.includes("<approved/>"), "must NOT include approval marker");
 });
 
@@ -179,13 +177,12 @@ test("sync + disabled bypass: report includes new objective and skip reason", ()
 test("sync + Esc bypass: report includes new objective and Esc reason", () => {
 	const report = buildCompletionReport({
 		detailedSummary: "Goal: Build feature X\nUpdated objective: Build feature Y\nStatus: active",
-		completionSummary: "Feature Y implemented.",
 		auditSkippedReason: "auditor bypassed (user pressed Escape during audit)",
 	});
 	assert.ok(report.includes("Goal audit skipped."));
 	assert.ok(report.includes("auditor bypassed (user pressed Escape during audit)"));
 	assert.ok(report.includes("Goal complete."));
-	assert.ok(report.includes("Feature Y"));
+	assert.ok(report.includes("Build feature Y"));
 	assert.ok(!report.includes("<approved/>"));
 });
 
@@ -314,17 +311,14 @@ test("all three bypass paths produce correct distinct reports", () => {
 
 	const approval = buildCompletionReport({
 		detailedSummary: base,
-		completionSummary: "Approval test.",
 		auditorReport: "All verified.\n\n<approved/>",
 	});
 	const disabled = buildCompletionReport({
 		detailedSummary: base,
-		completionSummary: "Disabled test.",
 		auditSkippedReason: "auditor disabled in settings",
 	});
 	const esc = buildCompletionReport({
 		detailedSummary: base,
-		completionSummary: "Esc test.",
 		auditSkippedReason: "auditor bypassed (user pressed Escape during audit)",
 	});
 
