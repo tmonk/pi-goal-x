@@ -2,8 +2,9 @@
 
 ## Status
 
-Implementing. Task-1 (reproduce and root-cause) is complete; the fix is being
-designed against measured TUI renderer behavior.
+Implemented and validated. Task-2 (scroll fix, alternate-screen dialogs) and
+Task-3 (PR #11 port, full wrapped headings) are complete; Task-4 (regression
+tests, changelog, docs, full validation) is in progress.
 
 ## Outcome
 
@@ -38,8 +39,13 @@ Two user-facing defects on the simplification branch:
   bottom sees the dialog appear/close without content jumping.
 - The fix applies to every goal dialog that shares the mechanism:
   `propose_goal_draft` confirmation (`showProposalDialog`), the
-  `goal_question` / `goal_questionnaire` tools (`runGoalQuestionnaire`), and
-  the `set_goal_tasks` task-list confirmation (`showTaskConfirmation`).
+  `goal_question` / `goal_questionnaire` tools (`runGoalQuestionnaire`), the
+  `set_goal_tasks` task-list confirmation (`showTaskConfirmation`), and the
+  audit escape dialog (`showEscapeDialog`).
+- The dialogs render in a DECSET 1049 alternate screen: the main screen is
+  never written to while the dialog is open, so scrollback (and the user's
+  reading position) is preserved exactly; the post-close identity re-render
+  writes zero bytes.
 - No periodic redraws are introduced (the earlier scrollback fix must not
   regress; `tests/no-status-refresh-timer.test.ts` stays green).
 

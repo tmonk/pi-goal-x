@@ -19,6 +19,7 @@
     ".tests/goal-golden.test.ts",
     ".tests/goal-harness-shell.test.ts",
     ".tests/goal-ledger.test.ts",
+    ".tests/goal-lifecycle-rendering.test.ts",
     ".tests/goal-mutation-boundary.test.ts",
     ".tests/goal-notifications.test.ts",
     ".tests/goal-policy.test.ts",

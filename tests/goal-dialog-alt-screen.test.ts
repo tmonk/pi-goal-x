@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { Component, TUI } from "@earendil-works/pi-tui";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 
 import { showTaskConfirmation } from "../extensions/goal-task-confirmation.ts";
 import { showEscapeDialog } from "../extensions/widgets/goal-escape-dialog.ts";
@@ -64,7 +65,7 @@ function runDialog<T>(
 	const record = customCalls[0];
 	if (record) {
 		const originalFactory = record.factory;
-		record.factory = ((tui: TUI, theme: unknown, kb: unknown, done: (r: T) => void) =>
+		record.factory = ((tui: TUI, theme: Theme, kb: unknown, done: (r: T) => void) =>
 			originalFactory(tui, theme, kb, (r: T) => {
 				doneSpy(r);
 				done(r);

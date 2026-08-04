@@ -8,6 +8,26 @@ with the `0.x` prefix indicating pre-1.0 development.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Goal dialogs no longer scroll the terminal viewport:** the accept-goal
+  confirmation dialog (`propose_goal_draft`), the goal questionnaire, the
+  task-list confirmation, and the audit escape dialog now render in a
+  DECSET 1049 alternate screen instead of replacing the editor inline in the
+  main TUI buffer. Rendering is fully isolated from the main screen, so a
+  user reading scrollback keeps their reading position across dialog
+  open/close, and the post-close identity re-render writes zero bytes. When
+  alt-screen support is unavailable the dialogs fall back to pi's default
+  rendering.
+- **Goal tool-call headings always render their complete content:** `update_goal`
+  shows the full agent reason (`paused`/`blocked`) and the full completion
+  summary (`complete`); `set_goal_tasks` and `propose_goal_draft` previews are
+  no longer truncated. Headings wrap to the terminal width via pi's `Text`
+  component — no truncation anywhere (full port of the capyup/pi-goal #11
+  behavior; the "compact previews stay" carve-out is intentionally dropped).
+
 ## [0.22.0] — 2026-08-04
 
 Single consolidated release on the simplification branch: the codex-inspired

@@ -163,6 +163,30 @@ gracefully to pi's default rendering instead of breaking.
   reasons and proposal content (PR #11's "compact previews stay" assertion is
   intentionally inverted per the user's decision).
 
+## Tool-call headings (PR #11 port)
+
+The old monolithic `extensions/goal.ts` (pre-simplification) rendered
+`pause_goal`/`abort_goal` headings with `truncateText(args?.reason ?? "", 80)`;
+PR #11 removed that truncation. On the simplification branch those tools no
+longer exist, so the behavior is ported to the current renderCalls:
+
+- `update_goal` (`extensions/goal-core-tools.ts`): the heading is
+  `update_goal <status>` plus the COMPLETE agent content — `reason` for
+  `paused`/`blocked` (colored `warning`), `completion_summary` for
+  `complete` — wrapped by pi's `Text` component. No `truncateText`, no
+  status-only degradation.
+- `set_goal_tasks` (`extensions/goal-task-tools.ts`): `change_summary`
+  renders in full (previously 80-char truncation); falls back to
+  `<n> tasks` when absent. PR #11's "compact previews stay" carve-out is
+  dropped per the user's decision — every heading is full.
+- `propose_goal_draft` (`extensions/goal-drafting.ts`): already full.
+- Grep-verified: no goal tool `renderCall` uses `truncateText`; remaining
+  truncations are in non-heading surfaces (goal widget rows, pool/compaction
+  summaries, prompts) and are intentionally unchanged.
+
+Execution paths, lifecycle schemas, and persistence are untouched — the
+changes are renderCall-only.
+
 ## Validation plan
 
 - `npm run check` — 0 errors; `npm run test:all` — 0 failures.

@@ -278,7 +278,20 @@ pi.registerTool(defineTool({
 		return deps.runGoalCompletionFlow(core, ctx, params.completion_summary);
 	},
 	renderCall(args, theme) {
-		return new Text(theme.fg("toolTitle", "update_goal ") + theme.fg("muted", args?.status ?? ""), 0, 0);
+		const status = args?.status ?? "";
+		// Port PR #11's full-text heading behavior: never truncate agent-provided
+		// content. The complete reason (paused/blocked) or completion summary
+		// renders in full, wrapped by the Text component.
+		const reason = args?.reason;
+		const summary = args?.completion_summary;
+		const detail = reason ?? summary;
+		const detailColor = reason ? "warning" : "muted";
+		return new Text(
+			theme.fg("toolTitle", "update_goal ") + theme.fg("muted", status) +
+			(detail ? ` ${theme.fg(detailColor, detail)}` : ""),
+			0,
+			0,
+		);
 	},
 	renderResult(result, _options, theme) {
 		return renderGoalResult(result, theme);

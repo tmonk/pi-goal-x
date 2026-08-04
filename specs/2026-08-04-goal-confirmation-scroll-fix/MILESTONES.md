@@ -107,3 +107,43 @@ main-screen write exits scrollback). Only an alternate-screen modal (DECSET
    PgUp/PgDn scroll inside the dialog when the proposal exceeds the terminal
    height; after confirming, the user's scrollback view is exactly where it
    was before the dialog.
+
+## 2026-08-04 — Task-3 complete: PR #11 port (full wrapped headings)
+
+### Implemented
+
+- `extensions/goal-core-tools.ts` — `update_goal` renderCall now renders the
+  complete agent content: full `reason` for `status=paused`/`blocked`
+  (colored warning), full `completion_summary` for `status=complete`;
+  wrapped by the Text component, never truncated. Previously the heading
+  showed only the status word ("update_goal paused").
+- `extensions/goal-task-tools.ts` — `set_goal_tasks` renderCall no longer
+  passes `change_summary` through `truncateText(..., 80)`; renders the full
+  summary (falls back to a task count when absent). `truncateText` import
+  removed from the file.
+- `extensions/goal-drafting.ts` — `propose_goal_draft` already rendered the
+  full objective; unchanged (now covered by regression tests).
+- Verified by grep: no `renderCall` in any goal tool module uses
+  `truncateText`; remaining truncations live only in non-heading surfaces
+  (widget rows, pool/compaction lists, prompts) which are out of scope.
+
+### Tests
+
+- `tests/goal-lifecycle-rendering.test.ts` (7 tests) — adapted from PR #11's
+  test to the five-tool surface: full paused reason >80 chars, full blocked
+  reason, full completion summary, untruncated `set_goal_tasks` summary (the
+  PR #11 "compact previews stay" assertion is inverted per the user's
+  decision), full `propose_goal_draft` objective, task-count fallback, and
+  narrow-width (40-col) wrapping that keeps full content and never ends in
+  "...".
+
+### Validation
+
+- `npm run check` — 0 errors; `npm run test:unit` / `npm run test:serial` —
+  501 pass / 0 fail; `test:selfcheck` OK (43 unit entries, manifest
+  regenerated); `tests/no-status-refresh-timer.test.ts` green.
+- Fixed two tsc errors surfaced in the task-2 test files (`Terminal` cast in
+  `tests/tui-alt-screen.test.ts`, `Theme` typing in
+  `tests/goal-dialog-alt-screen.test.ts`).
+- CHANGELOG: new `[Unreleased]` section documenting both the scroll fix and
+  the full-heading behavior.

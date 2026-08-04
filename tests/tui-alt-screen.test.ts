@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { Container, TUI } from "@earendil-works/pi-tui";
+import type { Terminal } from "@earendil-works/pi-tui";
 
 import { installTuiAltScreenSupport, supportsAltScreen } from "../extensions/tui-alt-screen.ts";
 
@@ -68,7 +69,7 @@ class Modal extends Container {
 
 function freshTui(rows = 40): { tui: AnyTui; terminal: FakeTerminal } {
 	const terminal = createFakeTerminal(120, rows);
-	const tui = new TUI(terminal, false, "/tmp/pi-goal-alt-screen-test") as AnyTui;
+	const tui = new TUI(terminal as unknown as Terminal, false, "/tmp/pi-goal-alt-screen-test") as AnyTui;
 	const chat = new Chat();
 	const footer = new Container();
 	footer.render = () => ["─ footer ─"];
