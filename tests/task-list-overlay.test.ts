@@ -349,19 +349,19 @@ test("dismisses on escape and enter", async () => {
 	assert.ok(true, "dismiss operations completed without error");
 });
 
-test("ctrl+shift+t toggles the unified dashboard expansion (overlay registration removed)", async () => {
+test("configured task shortcut toggles the unified dashboard expansion (overlay registration removed)", async () => {
 	const goalSource = readFileSync(
 		new URL("../extensions/goal-widget.ts", import.meta.url),
 		"utf-8",
 	);
 
 	assert.ok(
-		goalSource.includes('matchesKey(data, "ctrl+shift+t")'),
-		"goal-widget.ts contains the ctrl+shift+t keybinding",
+		goalSource.includes("matchesKey(data, keybindings.toggleExpand)"),
+		"goal-widget.ts reads the configured dashboard keybinding",
 	);
 	assert.ok(
 		goalSource.includes("core.toggleDashboardExpanded()"),
-		"ctrl+shift+t toggles the unified dashboard (overlay registration removed)",
+		"the configured shortcut toggles the unified dashboard (overlay registration removed)",
 	);
 	assert.ok(
 		!goalSource.includes("showTaskListOverlay("),

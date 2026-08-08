@@ -9,7 +9,7 @@ import {
 	type GoalDisplayRecordLike,
 } from "../goal-core.ts";
 import type { GoalRecord, GoalTask, GoalTaskList, TaskStatus } from "../goal-record.ts";
-import type { GoalSettings } from "../goal-settings.ts";
+import type { GoalDashboardKeybindings, GoalSettings } from "../goal-settings.ts";
 import { sisyphusStepProgress } from "../goal-policy.ts";
 import type { GoalLedgerEvent } from "../goal-ledger.ts";
 import {
@@ -190,7 +190,7 @@ export function renderAuditResultCardView(
 	return renderAuditResultCard(deriveAuditResultCard(view.verdict, view.report), theme, width);
 }
 
-export function renderGoalWidgetLines(goal: GoalWidgetRecord | null, theme: Theme, width: number, options: { openGoalCount?: number; auditorProgress?: AuditorWidgetProgress | null; disableTasks?: boolean; stalled?: boolean; ledgerEvents?: GoalLedgerEvent[]; expanded?: boolean; debug?: boolean; model?: GoalDashboardModel | null; compactScrollOffset?: number; expandedScrollOffset?: number; expandedTaskRows?: number } = {}): string[] {
+export function renderGoalWidgetLines(goal: GoalWidgetRecord | null, theme: Theme, width: number, options: { openGoalCount?: number; auditorProgress?: AuditorWidgetProgress | null; disableTasks?: boolean; stalled?: boolean; ledgerEvents?: GoalLedgerEvent[]; expanded?: boolean; debug?: boolean; model?: GoalDashboardModel | null; compactScrollOffset?: number; expandedScrollOffset?: number; expandedTaskRows?: number; keybindings?: GoalDashboardKeybindings } = {}): string[] {
 	// When auditor progress is active, show the structured audit dashboard
 	// instead of the normal goal widget (§15.3).
 	if (options.auditorProgress) {
@@ -213,8 +213,8 @@ export function renderGoalWidgetLines(goal: GoalWidgetRecord | null, theme: Them
 	});
 	if (!model) return [];
 	const lines = options.expanded
-		? renderExpandedDashboard(model, theme, safeWidth, { scrollOffset: options.expandedScrollOffset, rows: options.expandedTaskRows })
-		: renderCompactDashboard(model, theme, safeWidth, { scrollOffset: options.compactScrollOffset });
+		? renderExpandedDashboard(model, theme, safeWidth, { scrollOffset: options.expandedScrollOffset, rows: options.expandedTaskRows, keybindings: options.keybindings })
+		: renderCompactDashboard(model, theme, safeWidth, { scrollOffset: options.compactScrollOffset, keybindings: options.keybindings });
 	return clampLinesToWidth(lines, width);
 }
 
@@ -344,6 +344,7 @@ export class GoalWidgetComponent implements Component {
 			compactScrollOffset: this.compactScrollOffset,
 			expandedScrollOffset: this.expandedScrollOffset,
 			expandedTaskRows: expandedTaskViewportRows(this.lastRenderWidth),
+			keybindings: settings.keybindings?.dashboard,
 		});
 		if (this.getDebugMode()) {
 			lines.push(...this.renderDebugPanel(width));

@@ -359,6 +359,22 @@ Settings are stored in:
 
 Use `/goal-settings` to configure task lists, verification contracts, subtask depth, automatic goal selection, and completion auditing. Goal objectives have no hard length limit by default; set `objectiveMaxChars` (or `PI_GOAL_OBJECTIVE_MAX_CHARS`, `0` = no limit) to cap objective length across `create_goal`, `propose_goal_draft`, and `/goal-tweak`.
 
+Configure the task shortcuts in the same file when the terminal captures the defaults:
+
+```json
+{
+  "keybindings": {
+    "dashboard": {
+      "toggleExpand": "ctrl+shift+t",
+      "scrollUp": "ctrl+shift+up",
+      "scrollDown": "ctrl+shift+down"
+    }
+  }
+}
+```
+
+The default task bindings are `ctrl+shift+t`, `ctrl+shift+up`, and `ctrl+shift+down`. Use pi key names such as `ctrl+shift+up`.
+
 ## License
 
 MIT

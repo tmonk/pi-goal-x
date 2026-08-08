@@ -227,6 +227,11 @@ auditor's findings, and returns to the normal dashboard so work can continue.
 | `Esc` | Collapse the expanded dashboard; otherwise pause the goal |
 | `Esc` (during audit) | Stop the audit and choose to continue working or complete without audit |
 
+Configure the three task shortcuts with `keybindings.dashboard.toggleExpand`,
+`keybindings.dashboard.scrollUp`, and `keybindings.dashboard.scrollDown` in
+`.pi/pi-goal-x-settings.json`. The defaults are `ctrl+shift+t`,
+`ctrl+shift+up`, and `ctrl+shift+down`.
+
 ## Width behavior
 
 Layout modes (§5.5):

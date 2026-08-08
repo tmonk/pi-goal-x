@@ -26,6 +26,7 @@ import {
 } from "./goal-dashboard-model.ts";
 import type { GoalActivityItem } from "../goal-activity.ts";
 import { truncateText } from "../goal-core.ts";
+import { DEFAULT_GOAL_KEYBINDINGS, formatGoalKeybinding, type GoalDashboardKeybindings } from "../goal-settings.ts";
 
 // mdLink is deliberately excluded: the chrome must stay neutral gray, not
 // blue-tinged ("more grey than blue").
@@ -291,7 +292,7 @@ export function renderCompactDashboard(
 	model: GoalDashboardModel,
 	theme: Theme,
 	width: number,
-	opts: { footerHint?: string; scrollOffset?: number } = {},
+	opts: { footerHint?: string; scrollOffset?: number; keybindings?: GoalDashboardKeybindings } = {},
 ): string[] {
 	const safeWidth = Math.max(10, width);
 	const mode = layoutMode(safeWidth);
@@ -397,14 +398,22 @@ export function renderCompactDashboard(
 		lines.push(boxLine(theme, safeWidth, `${dim(theme, `File     ${model.filePath}`)}`));
 	}
 
+	const keybindings = opts.keybindings ?? DEFAULT_GOAL_KEYBINDINGS.dashboard;
+	const toggleShortcut = formatGoalKeybinding(keybindings.toggleExpand);
+	const scrollShortcut = `${formatGoalKeybinding(keybindings.scrollUp)}/${formatGoalKeybinding(keybindings.scrollDown)}`;
+	const usesDefaultScrollKeys = keybindings.scrollUp === DEFAULT_GOAL_KEYBINDINGS.dashboard.scrollUp && keybindings.scrollDown === DEFAULT_GOAL_KEYBINDINGS.dashboard.scrollDown;
+	const scrollHint = usesDefaultScrollKeys
+		? mode === "minimal" ? "↑↓" : "Ctrl+Shift+↑↓"
+		: scrollShortcut;
+	const expandHint = mode === "wide" || mode === "medium"
+		? `${toggleShortcut}: expand tasks`
+		: `${toggleShortcut}: expand`;
 	const footerHint = opts.footerHint
 		?? (listOverflows
-			? mode === "minimal"
-				? "↑↓: scroll"
-				: mode === "narrow"
-					? "Ctrl+Shift+↑↓: scroll"
-					: "Ctrl+Shift+T: expand · Ctrl+Shift+↑↓: scroll"
-			: spec.footerHint);
+			? mode === "wide" || mode === "medium"
+				? `${toggleShortcut}: expand · ${scrollHint}: scroll`
+				: `${scrollHint}: scroll`
+			: expandHint);
 	// The auditor dot sits at the bottom-right of the border: green when the
 	// focused goal's independent auditor is on, muted gray when off. In
 	// wide/medium a right-aligned note (same frame tone as the hint) explains
@@ -434,7 +443,7 @@ export function renderExpandedDashboard(
 	model: GoalDashboardModel,
 	theme: Theme,
 	width: number,
-	opts: { scrollOffset?: number; rows?: number } = {},
+	opts: { scrollOffset?: number; rows?: number; keybindings?: GoalDashboardKeybindings } = {},
 ): string[] {
 	const safeWidth = Math.max(10, width);
 	const mode = layoutMode(safeWidth);
@@ -497,7 +506,8 @@ export function renderExpandedDashboard(
 		lines.push(...renderActivityBlock(model.recentActivity, theme, safeWidth));
 	}
 
-	lines.push(boxFooter(theme, safeWidth, "Esc/Ctrl+Shift+T: collapse"));
+	const toggleShortcut = formatGoalKeybinding(opts.keybindings?.toggleExpand ?? DEFAULT_GOAL_KEYBINDINGS.dashboard.toggleExpand);
+	lines.push(boxFooter(theme, safeWidth, `Esc/${toggleShortcut}: collapse`));
 	return lines;
 }
 

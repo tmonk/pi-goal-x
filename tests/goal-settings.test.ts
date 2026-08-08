@@ -75,6 +75,23 @@ test("parseGoalSettings: unknown keys rejected", () => {
 	);
 });
 
+test("parseGoalSettings: task keybindings use pi-tui key names", () => {
+	assert.deepEqual(parseGoalSettings({ keybindings: { dashboard: {
+		toggleExpand: "ctrl+shift+t",
+		scrollUp: "ctrl+shift+up",
+		scrollDown: "ctrl+shift+down",
+	} } }), { keybindings: { dashboard: {
+		toggleExpand: "ctrl+shift+t",
+		scrollUp: "ctrl+shift+up",
+		scrollDown: "ctrl+shift+down",
+	} } });
+	assert.equal(loadGoalSettings("/tmp/does-not-exist", {}).keybindings?.dashboard.toggleExpand, "ctrl+shift+t");
+});
+
+test("parseGoalSettings: unknown task keybindings are rejected", () => {
+	assert.throws(() => parseGoalSettings({ keybindings: { dashboard: { expand: "ctrl+t" } } }), /Unknown dashboard keybinding/);
+});
+
 test("parseGoalSettings: multiple unknown keys rejected", () => {
 	assert.throws(
 		() => parseGoalSettings({ disableTasks: true, foo: "bar", baz: 42 }),
@@ -249,6 +266,21 @@ test("loadGoalSettings: objectiveMaxChars defaults to no limit and honors the en
 		assert.equal(loadGoalSettings(dir, { PI_GOAL_OBJECTIVE_MAX_CHARS: "8000" }).objectiveMaxChars, 8000, "env var overrides file");
 	});
 	assert.equal(loadGoalSettings("/tmp/does-not-exist", {}).objectiveMaxChars, undefined, "unset = no limit");
+});
+
+test("saveGoalSettingsFileConfig: task keybindings round-trip", () => {
+	withTempDir((dir) => {
+		saveGoalSettingsFileConfig(dir, { keybindings: { dashboard: {
+			toggleExpand: "ctrl+shift+t",
+			scrollUp: "ctrl+shift+up",
+			scrollDown: "ctrl+shift+down",
+		} } });
+		assert.deepEqual(loadGoalSettingsFileConfig(dir).keybindings, { dashboard: {
+			toggleExpand: "ctrl+shift+t",
+			scrollUp: "ctrl+shift+up",
+			scrollDown: "ctrl+shift+down",
+		} });
+	});
 });
 
 test("saveGoalSettingsFileConfig: objectiveMaxChars persists (including 0) and clears", () => {

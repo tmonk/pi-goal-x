@@ -9,15 +9,49 @@
  *
  * The file may contain:
  *   disableTasks, disableContracts, subtaskDepth,
- *   provider, model, thinkingLevel, disabled, objectiveMaxChars
+ *   provider, model, thinkingLevel, disabled, objectiveMaxChars, keybindings
+ *
+ * `keybindings.dashboard` accepts `toggleExpand`, `scrollUp`, and `scrollDown`.
  *
  * additionalProperties: false — unknown keys are rejected.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { KeyId } from "@earendil-works/pi-tui";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+export interface GoalDashboardKeybindings {
+	toggleExpand: KeyId;
+	scrollUp: KeyId;
+	scrollDown: KeyId;
+}
+
+export interface GoalKeybindings {
+	dashboard: GoalDashboardKeybindings;
+}
+
+export const DEFAULT_GOAL_KEYBINDINGS: GoalKeybindings = {
+	dashboard: {
+		toggleExpand: "ctrl+shift+t",
+		scrollUp: "ctrl+shift+up",
+		scrollDown: "ctrl+shift+down",
+	},
+};
+
+export function formatGoalKeybinding(key: string): string {
+	return key.split("+").map((part) => ({
+		ctrl: "Ctrl",
+		control: "Ctrl",
+		shift: "Shift",
+		alt: "Alt",
+		up: "↑",
+		down: "↓",
+		left: "←",
+		right: "→",
+	}[part.toLowerCase()] ?? part.toUpperCase())).join("+");
+}
 
 export interface GoalSettings {
 	disableTasks?: boolean;
@@ -38,6 +72,8 @@ export interface GoalSettings {
 	 * /goal-tweak).
 	 */
 	objectiveMaxChars?: number;
+	/** Keyboard shortcuts for the compact task list and dashboard expansion. */
+	keybindings?: GoalKeybindings;
 }
 
 export const PI_GOAL_SETTINGS_FILE_ENV = "PI_GOAL_SETTINGS_FILE";
@@ -84,7 +120,11 @@ const ALLOWED_SETTINGS_KEYS = new Set([
 	"auditorProjectResources",
 	"stallTimeoutMinutes",
 	"objectiveMaxChars",
+	"keybindings",
 ]);
+
+const ALLOWED_KEYBINDING_KEYS = new Set(["dashboard"]);
+const ALLOWED_DASHBOARD_KEYBINDING_KEYS = new Set(["toggleExpand", "scrollUp", "scrollDown"]);
 
 /**
  * Resolve the path to the unified settings file.
@@ -128,6 +168,31 @@ function asNonNegativeInt(value: unknown): number | undefined {
 	return undefined;
 }
 
+function asKeybinding(value: unknown): KeyId | undefined {
+	const key = asNonEmptyString(value);
+	if (!key) return undefined;
+	return key as KeyId;
+}
+
+function parseKeybindings(value: unknown): GoalKeybindings | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const record = value as Record<string, unknown>;
+	const unknownKeys = Object.keys(record).filter((key) => !ALLOWED_KEYBINDING_KEYS.has(key));
+	if (unknownKeys.length > 0) throw new Error(`Unknown keybindings key(s): ${unknownKeys.join(", ")}`);
+	const dashboard = record.dashboard;
+	if (!dashboard || typeof dashboard !== "object" || Array.isArray(dashboard)) return undefined;
+	const dashboardRecord = dashboard as Record<string, unknown>;
+	const unknownDashboardKeys = Object.keys(dashboardRecord).filter((key) => !ALLOWED_DASHBOARD_KEYBINDING_KEYS.has(key));
+	if (unknownDashboardKeys.length > 0) throw new Error(`Unknown dashboard keybinding(s): ${unknownDashboardKeys.join(", ")}`);
+	return {
+		dashboard: {
+			toggleExpand: asKeybinding(dashboardRecord.toggleExpand) ?? DEFAULT_GOAL_KEYBINDINGS.dashboard.toggleExpand,
+			scrollUp: asKeybinding(dashboardRecord.scrollUp) ?? DEFAULT_GOAL_KEYBINDINGS.dashboard.scrollUp,
+			scrollDown: asKeybinding(dashboardRecord.scrollDown) ?? DEFAULT_GOAL_KEYBINDINGS.dashboard.scrollDown,
+		},
+	};
+}
+
 function asThinkingLevel(value: unknown): ThinkingLevel | undefined {
 	const text = asNonEmptyString(value);
 	return text && THINKING_LEVELS.has(text) ? text as ThinkingLevel : undefined;
@@ -164,6 +229,8 @@ export function parseGoalSettings(raw: unknown): GoalSettings {
 	if (stallTimeoutMinutes !== undefined) settings.stallTimeoutMinutes = stallTimeoutMinutes;
 	const objectiveMaxChars = asNonNegativeInt(record.objectiveMaxChars);
 	if (objectiveMaxChars !== undefined) settings.objectiveMaxChars = objectiveMaxChars;
+	const keybindings = parseKeybindings(record.keybindings);
+	if (keybindings) settings.keybindings = keybindings;
 	return settings;
 }
 
@@ -207,6 +274,7 @@ export function loadGoalSettings(cwd: string, env: NodeJS.ProcessEnv = process.e
 		auditorProjectResources: fileConfig.auditorProjectResources ?? false,
 		stallTimeoutMinutes: fileConfig.stallTimeoutMinutes,
 		objectiveMaxChars: asNonNegativeInt(env.PI_GOAL_OBJECTIVE_MAX_CHARS) ?? fileConfig.objectiveMaxChars,
+		keybindings: fileConfig.keybindings ?? DEFAULT_GOAL_KEYBINDINGS,
 	};
 }
 
@@ -250,6 +318,7 @@ export function effectiveSettingsReport(cwd: string, env: NodeJS.ProcessEnv = pr
 		{ key: "auditorProjectResources", label: "auditor project resources", format: (v) => (v.auditorProjectResources === true ? "true" : "false") },
 		{ key: "stallTimeoutMinutes", label: "stall timeout (minutes)", format: (v) => String(v.stallTimeoutMinutes ?? 0) },
 		{ key: "objectiveMaxChars", label: "max objective length (0 = none)", format: (v) => String(v.objectiveMaxChars ?? 0) },
+		{ key: "keybindings", label: "dashboard keybindings", format: (v) => `${v.keybindings?.dashboard.toggleExpand ?? DEFAULT_GOAL_KEYBINDINGS.dashboard.toggleExpand}, ${v.keybindings?.dashboard.scrollUp ?? DEFAULT_GOAL_KEYBINDINGS.dashboard.scrollUp}, ${v.keybindings?.dashboard.scrollDown ?? DEFAULT_GOAL_KEYBINDINGS.dashboard.scrollDown}` },
 	];
 	for (const row of rows) {
 		const envVar = envOverrideFor(row.key, env);
@@ -286,6 +355,7 @@ export function saveGoalSettingsFileConfig(cwd: string, settings: GoalSettings):
 	if (settings.auditorProjectResources === true) clean.auditorProjectResources = true;
 	if (settings.stallTimeoutMinutes !== undefined) clean.stallTimeoutMinutes = settings.stallTimeoutMinutes;
 	if (settings.objectiveMaxChars !== undefined) clean.objectiveMaxChars = settings.objectiveMaxChars;
+	if (settings.keybindings) clean.keybindings = parseKeybindings(settings.keybindings);
 	const configPath = goalSettingsPath(cwd);
 	fs.mkdirSync(path.dirname(configPath), { recursive: true });
 	settingsFileCache.delete(configPath);
@@ -301,6 +371,7 @@ export function saveGoalSettingsFileConfig(cwd: string, settings: GoalSettings):
 	if (settings.auditorProjectResources === true) persisted.auditorProjectResources = true;
 	if (clean.stallTimeoutMinutes !== undefined) persisted.stallTimeoutMinutes = clean.stallTimeoutMinutes;
 	if (clean.objectiveMaxChars !== undefined) persisted.objectiveMaxChars = clean.objectiveMaxChars;
+	if (clean.keybindings) persisted.keybindings = clean.keybindings;
 	fs.writeFileSync(configPath, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
 	return clean;
 }

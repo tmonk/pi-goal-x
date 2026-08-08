@@ -278,7 +278,9 @@ export function registerGoalCommands(core: GoalCore): void {
 		if (key === "subtaskDepth") return config.subtaskDepth !== undefined ? String(config.subtaskDepth) : "1";
 		if (key === "stallTimeoutMinutes") return config.stallTimeoutMinutes !== undefined ? String(config.stallTimeoutMinutes) : "0";
 		if (key === "objectiveMaxChars") return config.objectiveMaxChars !== undefined ? String(config.objectiveMaxChars) : "0";
-		return config[key] ?? "(default)";
+		if (key === "keybindings") return config.keybindings ? `${config.keybindings.dashboard.toggleExpand}, ${config.keybindings.dashboard.scrollUp}, ${config.keybindings.dashboard.scrollDown}` : "(default)";
+		const value = config[key];
+		return typeof value === "string" ? value : "(default)";
 	}
 
 	function settingsLines(config: GoalSettings): string[] {
