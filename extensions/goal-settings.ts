@@ -287,6 +287,7 @@ export function loadGoalSettings(cwd: string, env: NodeJS.ProcessEnv = process.e
 		thinkingLevel: fileConfig.thinkingLevel,
 		disabled: fileConfig.disabled,
 		autoSelectSingleGoal: fileConfig.autoSelectSingleGoal ?? false,
+		hideUnfocusedBanner: fileConfig.hideUnfocusedBanner ?? false,
 		auditorProjectResources: fileConfig.auditorProjectResources ?? false,
 		stallTimeoutMinutes: fileConfig.stallTimeoutMinutes,
 		objectiveMaxChars: asNonNegativeInt(env.PI_GOAL_OBJECTIVE_MAX_CHARS) ?? fileConfig.objectiveMaxChars,
