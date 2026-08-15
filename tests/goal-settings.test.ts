@@ -69,6 +69,13 @@ test("parseGoalSettings: autoSelectSingleGoal accepted as bool or string", () =>
 	assert.deepEqual(parseGoalSettings({ autoSelectSingleGoal: "false" }), {});
 });
 
+test("parseGoalSettings: hideUnfocusedBanner accepted as bool or string", () => {
+	assert.deepEqual(parseGoalSettings({ hideUnfocusedBanner: true }), { hideUnfocusedBanner: true });
+	assert.deepEqual(parseGoalSettings({ hideUnfocusedBanner: "true" }), { hideUnfocusedBanner: true });
+	assert.deepEqual(parseGoalSettings({ hideUnfocusedBanner: false }), {});
+	assert.deepEqual(parseGoalSettings({ hideUnfocusedBanner: "false" }), {});
+});
+
 test("parseGoalSettings: unknown keys rejected", () => {
 	assert.throws(
 		() => parseGoalSettings({ disableTasks: true, disableContracts: false, foo: "bar" }),

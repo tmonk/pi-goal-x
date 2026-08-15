@@ -376,6 +376,8 @@ Settings are stored in:
 
 Use `/goal-settings` to configure task lists, verification contracts, subtask depth, automatic goal selection, and completion auditing. Goal objectives have no hard length limit by default; set `objectiveMaxChars` (or `PI_GOAL_OBJECTIVE_MAX_CHARS`, `0` = no limit) to cap objective length across `create_goal`, `propose_goal_draft`, and `/goal-tweak`.
 
+Set `hideUnfocusedBanner: true` in `.pi/pi-goal-x-settings.json` to suppress the "Goal focus required" banner (and the matching status-line hint) in sessions that are not focused on any goal while open goals exist. The banner returns as soon as the setting is disabled again or a goal is focused.
+
 Configure the task shortcuts in the same file when the terminal captures the defaults:
 
 ```json

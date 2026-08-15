@@ -9,7 +9,8 @@
  *
  * The file may contain:
  *   disableTasks, disableContracts, subtaskDepth,
- *   provider, model, thinkingLevel, disabled, objectiveMaxChars, keybindings
+ *   provider, model, thinkingLevel, disabled, objectiveMaxChars, keybindings,
+ *   hideUnfocusedBanner
  *
  * `keybindings.dashboard` accepts `toggleExpand`, `scrollUp`, and `scrollDown`.
  *
@@ -80,6 +81,13 @@ export interface GoalSettings {
 	objectiveMaxChars?: number;
 	/** Keyboard shortcuts for the compact task list and dashboard expansion. */
 	keybindings?: GoalKeybindings;
+	/**
+	 * When true, sessions that are not focused on any goal show no
+	 * "Goal focus required" banner/status hint while open goals exist.
+	 * The banner returns when the setting is disabled again or a goal
+	 * is focused. Default: false (banner shown).
+	 */
+	hideUnfocusedBanner?: boolean;
 }
 
 export const PI_GOAL_SETTINGS_FILE_ENV = "PI_GOAL_SETTINGS_FILE";
@@ -123,6 +131,7 @@ const ALLOWED_SETTINGS_KEYS = new Set([
 	"thinking_level",
 	"disabled",
 	"autoSelectSingleGoal",
+	"hideUnfocusedBanner",
 	"auditorProjectResources",
 	"stallTimeoutMinutes",
 	"objectiveMaxChars",
@@ -230,6 +239,7 @@ export function parseGoalSettings(raw: unknown): GoalSettings {
 	if (thinkingLevel !== undefined) settings.thinkingLevel = thinkingLevel;
 	if (record.disabled === true || record.disabled === "true") settings.disabled = true;
 	if (record.autoSelectSingleGoal === true || record.autoSelectSingleGoal === "true") settings.autoSelectSingleGoal = true;
+	if (record.hideUnfocusedBanner === true || record.hideUnfocusedBanner === "true") settings.hideUnfocusedBanner = true;
 	if (record.auditorProjectResources === true || record.auditorProjectResources === "true") settings.auditorProjectResources = true;
 	const stallTimeoutMinutes = asPositiveInt(record.stallTimeoutMinutes);
 	if (stallTimeoutMinutes !== undefined) settings.stallTimeoutMinutes = stallTimeoutMinutes;
@@ -314,6 +324,7 @@ export function effectiveSettingsReport(cwd: string, env: NodeJS.ProcessEnv = pr
 	const lines = ["Settings (provenance):"];
 	const rows: Array<{ key: keyof GoalSettings; label: string; format: (v: GoalSettings) => string }> = [
 		{ key: "autoSelectSingleGoal", label: "autoSelectSingleGoal", format: (v) => (v.autoSelectSingleGoal === true ? "true" : "false") },
+		{ key: "hideUnfocusedBanner", label: "hideUnfocusedBanner", format: (v) => (v.hideUnfocusedBanner === true ? "true" : "false") },
 		{ key: "disableContracts", label: "disableContracts", format: (v) => (v.disableContracts === true ? "true" : "false") },
 		{ key: "disableTasks", label: "disableTasks", format: (v) => (v.disableTasks === true ? "true" : "false") },
 		{ key: "subtaskDepth", label: "subtaskDepth", format: (v) => String(v.subtaskDepth ?? 1) },

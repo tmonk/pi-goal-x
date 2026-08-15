@@ -645,6 +645,15 @@ export function createGoalCore(
 			return;
 		}
 		if (!state.goal) {
+			// Optional quiet mode: with hideUnfocusedBanner the unfocused
+			// widget + status hint are suppressed entirely while open goals
+			// exist, so a session that never focuses stays silent. The
+			// banner returns as soon as the setting is turned off again or
+			// a goal is focused (both re-enter renderUI via updateUI).
+			if (loadGoalSettings(ctx.cwd).hideUnfocusedBanner === true) {
+				clearGoalWidget(ctx);
+				return;
+			}
 			ctx.ui.setStatus("goal", `goal: unfocused [${totalOpen} open] - /goal-focus`);
 			if (!widgetRegistered) {
 				ctx.ui.setWidget(
