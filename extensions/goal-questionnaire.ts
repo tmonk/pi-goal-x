@@ -304,6 +304,51 @@ export function isHeadlessQuestionSufficientForDraft(args: { topic: string; ques
 	return !vagueTopic;
 }
 
+const CUSTOM_ANSWER_LABEL = "Write your own answer...";
+
+/**
+ * Run the questionnaire with the dialog primitives every host implements.
+ *
+ * `ui.custom` renders a terminal component, so it exists only in pi's TUI.
+ * `confirm`, `select` and `input` are part of the same UI contract and are
+ * what a non-terminal host (a browser front end, for one) can actually
+ * present, so the questionnaire degrades onto them instead of disappearing.
+ * The auditor toggle has no place in these primitives, so the caller's
+ * default carries through untouched.
+ */
+async function runQuestionnaireWithBasicDialogs(
+	ctx: ExtensionContext,
+	questions: GoalQuestionnaireQuestion[],
+	auditorToggleInit?: { defaultEnabled: boolean },
+): Promise<GoalQuestionnaireResult> {
+	const answers: GoalQuestionnaireAnswer[] = [];
+	for (const question of questions) {
+		// Context is the substance of a proposal, not decoration, so it has to
+		// travel with the question the host displays.
+		const prompt = question.context === undefined || question.context === "" ? question.question : `${question.question}\n\n${question.context}`;
+		const options = question.allowCustom === false ? question.options : [...question.options, CUSTOM_ANSWER_LABEL];
+		let answer: string | undefined;
+		let wasCustom = false;
+		if (options.length === 0) {
+			answer = await ctx.ui.input(prompt, undefined);
+			wasCustom = true;
+		} else {
+			const picked = await ctx.ui.select(prompt, options);
+			if (picked === CUSTOM_ANSWER_LABEL) {
+				answer = await ctx.ui.input(question.question, undefined);
+				wasCustom = true;
+			} else {
+				answer = picked;
+			}
+		}
+		// A dismissed dialog is a cancelled questionnaire: partial answers would
+		// be presented as if the user had finished.
+		if (answer === undefined || answer === "") return { questions, answers: [], cancelled: true, auditorEnabled: auditorToggleInit?.defaultEnabled };
+		answers.push({ id: question.id, question: question.question, answer, wasCustom });
+	}
+	return { questions, answers, cancelled: false, auditorEnabled: auditorToggleInit?.defaultEnabled };
+}
+
 export const DIALOG_UNAVAILABLE_HINT = "This host cannot display goal-drafting dialogs (ui.custom is unavailable outside pi's terminal UI). Set PI_GOAL_AUTO_CONFIRM=1 to confirm proposals without a dialog, or run the draft from the pi TUI.";
 
 export function proposalDialogFailureMessage(error: unknown): string {
@@ -960,7 +1005,18 @@ function advanceAfterAnswer() {
 	// browser, for one) install a real UI context - so `hasUI` is true - while
 	// `ui.custom` remains the SDK's headless default and resolves to undefined.
 	// Reading `.cancelled` off that crashed every drafting tool on those hosts.
-	return result ?? { questions: [], answers: [], cancelled: true, unavailable: true };
+	if (result !== undefined) return result;
+	// `ctx.hasUI` only reports that a UI context is installed, not that it can
+	// render a TUI component, so a host with a non-terminal UI lands here with
+	// `hasUI === true` and an undefined result. Falling back keeps drafting
+	// usable there; hosts with no dialogs at all report `unavailable` so the
+	// caller can explain itself instead of claiming the user cancelled.
+	if (!hostSupportsBasicDialogs(ctx)) return { questions: [], answers: [], cancelled: true, unavailable: true };
+	return await runQuestionnaireWithBasicDialogs(ctx, questions, auditorToggleInit);
+}
+
+function hostSupportsBasicDialogs(ctx: ExtensionContext): boolean {
+	return typeof ctx.ui.select === "function" && typeof ctx.ui.input === "function";
 }
 
 /**

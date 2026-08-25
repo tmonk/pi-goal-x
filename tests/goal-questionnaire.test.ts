@@ -879,6 +879,50 @@ test("runGoalQuestionnaire reports an unavailable dialog instead of dereferencin
 	assert.deepEqual(result, { questions: [], answers: [], cancelled: true, unavailable: true });
 });
 
+// A host with a non-terminal UI implements the same confirm/select/input
+// contract; only `custom` is terminal-only. Drafting degrades onto those.
+
+function browserLikeUiContext(script: { picks?: (string | undefined)[]; typed?: string }) {
+	const picks = [...(script.picks ?? [])];
+	const prompts: string[] = [];
+	const ctx = {
+		hasUI: true,
+		cwd: "/test",
+		ui: {
+			custom: async () => undefined,
+			select: async (title: string, options: string[]) => { prompts.push(title); return picks.length > 0 ? picks.shift() : options[0]; },
+			input: async (title: string) => { prompts.push(title); return script.typed; },
+		},
+	} as unknown as Parameters<typeof runGoalQuestionnaire>[0];
+	return { ctx, prompts };
+}
+
+test("drafting degrades onto select/input where only ui.custom is missing", async () => {
+	const { ctx, prompts } = browserLikeUiContext({ picks: ["B"] });
+	const result = await runGoalQuestionnaire(ctx, [{ id: "scope", question: "Scope?", context: "Pick one", options: ["A", "B"] }]);
+	assert.equal(result.cancelled, false);
+	assert.equal(result.unavailable, undefined);
+	assert.deepEqual(result.answers, [{ id: "scope", question: "Scope?", answer: "B", wasCustom: false }]);
+	// Context is part of the question the host shows, not decoration dropped on
+	// the way: a proposal is unreadable without it.
+	assert.match(prompts[0] ?? "", /Scope\?[\s\S]*Pick one/);
+});
+
+test("the proposal dialog is answerable through plain select on such a host", async () => {
+	const { ctx, prompts } = browserLikeUiContext({ picks: ["Confirm — create this goal now"] });
+	assert.deepEqual(await showProposalDialog(ctx, "OBJECTIVE\n\nTasks:\n1. one", "goal", true), { decision: "confirm", auditorEnabled: true, unavailable: false });
+	assert.match(prompts[0] ?? "", /Confirm Goal Draft[\s\S]*OBJECTIVE[\s\S]*1\. one/);
+});
+
+test("a free-text question falls back to input, and a dismissed dialog cancels", async () => {
+	const typed = await runGoalQuestionnaire(browserLikeUiContext({ typed: "my own words" }).ctx, [{ id: "notes", question: "Notes?", options: [] }]);
+	assert.deepEqual(typed.answers, [{ id: "notes", question: "Notes?", answer: "my own words", wasCustom: true }]);
+	const dismissed = await runGoalQuestionnaire(browserLikeUiContext({ picks: [undefined] }).ctx, [{ id: "scope", question: "Scope?", options: ["A"] }]);
+	assert.equal(dismissed.cancelled, true);
+	// Partial answers must not be presented as a finished questionnaire.
+	assert.deepEqual(dismissed.answers, []);
+});
+
 test("showProposalDialog survives a host whose ui.custom resolves to undefined", async () => {
 	const decision = await showProposalDialog(nonTerminalUiContext(), "objective", "goal", true);
 	assert.deepEqual(decision, { decision: "continue", auditorEnabled: true, unavailable: true });
