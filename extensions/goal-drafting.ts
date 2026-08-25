@@ -8,7 +8,7 @@ import { deriveTasksFromObjective } from "./goal-task-derive.ts";
 import { goalDetails, renderGoalResult } from "./goal-format.ts";
 import { buildGoalCreatedReport } from "./goal-policy.ts";
 import { loadGoalSettings } from "./goal-settings.ts";
-import { formatQuestionnaireAnswers, runGoalQuestionnaire, shouldAutoConfirmProposal, showProposalDialog, type GoalQuestionnaireQuestion, type ProposalDecision } from "./goal-questionnaire.ts";
+import { DIALOG_UNAVAILABLE_HINT, formatQuestionnaireAnswers, runGoalQuestionnaire, shouldAutoConfirmProposal, showProposalDialog, type GoalQuestionnaireQuestion, type ProposalDecision } from "./goal-questionnaire.ts";
 import { currentTaskIdIsPending, nowIso, type GoalRecord, type GoalTaskList } from "./goal-record.ts";
 import type { GoalCore } from "./goal-state.ts";
 import { convertFlatTasks, countTasks, mergeTasksWithExisting, type FlatTaskInput } from "./goal-task-tools.ts";
@@ -250,6 +250,7 @@ export function registerDraftingTools(core: GoalCore): void {
 			core.enterGoalModal();
 			try {
 				const result = await runGoalQuestionnaire(ctx, [{ id: "question", question: params.question, options: params.options ?? [], recommended: params.recommended, allowCustom: params.allow_custom }]);
+				if (result.unavailable === true) return { content: [{ type: "text", text: `${DIALOG_UNAVAILABLE_HINT} Ask the question in chat instead.` }], details: goalDetails(core.state.goal) };
 				return { content: [{ type: "text", text: result.cancelled ? "The user cancelled the question. Continue drafting conversationally." : formatQuestionnaireAnswers(result) }], details: goalDetails(core.state.goal) };
 			} finally {
 				core.exitGoalModal();
@@ -284,6 +285,7 @@ export function registerDraftingTools(core: GoalCore): void {
 					const active = activeDraft(core);
 					if (active) active.questionnaireEcho = formatQuestionnaireAnswers(result); // E5
 				}
+				if (result.unavailable === true) return { content: [{ type: "text", text: `${DIALOG_UNAVAILABLE_HINT} Ask the questions in chat instead.` }], details: goalDetails(core.state.goal) };
 				return { content: [{ type: "text", text: result.cancelled ? "The user cancelled the questionnaire. Continue drafting conversationally." : formatQuestionnaireAnswers(result) }], details: goalDetails(core.state.goal) };
 			} finally {
 				core.exitGoalModal();
@@ -329,9 +331,9 @@ export function registerDraftingTools(core: GoalCore): void {
 			const auditorLine = draft.auditorEnabled
 				? "\n\nAuditor for this goal: enabled (independent approval required before completion)."
 				: "\n\nAuditor for this goal: disabled (completion skips the audit).";
-			let confirmation: { decision: ProposalDecision; auditorEnabled: boolean };
+			let confirmation: { decision: ProposalDecision; auditorEnabled: boolean; unavailable: boolean };
 			if (shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM })) {
-				confirmation = { decision: "confirm" as const, auditorEnabled: draft.auditorEnabled };
+				confirmation = { decision: "confirm" as const, auditorEnabled: draft.auditorEnabled, unavailable: false };
 			} else {
 				core.enterGoalModal();
 				try {
@@ -355,6 +357,9 @@ export function registerDraftingTools(core: GoalCore): void {
 			if (confirmation.decision === "cancel") {
 				clearGoalDrafting(core, ctx);
 				return { content: [{ type: "text", text: `${summary}\n\nDraft cancelled; no goal was created. Run /goal or /sisyphus to start a new draft.` }], details: goalDetails(core.state.goal) };
+			}
+			if (confirmation.unavailable) {
+				return { content: [{ type: "text", text: `${summary}\n\n${DIALOG_UNAVAILABLE_HINT} The goal was NOT created and drafting remains active; do not propose again until the user confirms in chat or restarts with PI_GOAL_AUTO_CONFIRM=1.` }], details: goalDetails(core.state.goal) };
 			}
 			if (confirmation.decision !== "confirm") {
 				// Continue refining: preserve the user's auditor choice for the

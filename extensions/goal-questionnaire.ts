@@ -25,6 +25,13 @@ export interface GoalQuestionnaireResult {
 	answers: GoalQuestionnaireAnswer[];
 	cancelled: boolean;
 	auditorEnabled?: boolean;
+	/**
+	 * The host could not present the dialog at all, so `cancelled` reflects an
+	 * absent UI rather than a decision the user made. Hosts that expose a
+	 * non-terminal UI keep `ctx.hasUI` true while `ctx.ui.custom` stays the
+	 * SDK's headless default, which resolves to `undefined`.
+	 */
+	unavailable?: boolean;
 }
 
 export type ProposalDecision = "confirm" | "continue" | "cancel";
@@ -297,6 +304,8 @@ export function isHeadlessQuestionSufficientForDraft(args: { topic: string; ques
 	return !vagueTopic;
 }
 
+export const DIALOG_UNAVAILABLE_HINT = "This host cannot display goal-drafting dialogs (ui.custom is unavailable outside pi's terminal UI). Set PI_GOAL_AUTO_CONFIRM=1 to confirm proposals without a dialog, or run the draft from the pi TUI.";
+
 export function proposalDialogFailureMessage(error: unknown): string {
 	const detail = error instanceof Error ? error.message : String(error);
 	return `Goal draft confirmation failed: ${detail}. The goal was NOT created; drafting remains active.`;
@@ -316,7 +325,7 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 	const isMulti = questions.length > 1;
 	const totalTabs = questions.length + 1;
 
-	return await ctx.ui.custom<GoalQuestionnaireResult>((tui, theme, _kb, done) => {
+	const result = await ctx.ui.custom<GoalQuestionnaireResult>((tui, theme, _kb, done) => {
 		// Suppress hardware cursor during dialog to reduce TUI auto-scroll
 		// (the TUI render loop runs at ~60fps and writes ANSI cursor positioning
 		// sequences every cycle, which can cause terminal viewport snapping).
@@ -946,6 +955,12 @@ function advanceAfterAnswer() {
 			},
 		};
 	});
+	// `ctx.hasUI` only reports that a UI context is installed, not that it can
+	// render a TUI component. Hosts embedding pi behind a non-terminal UI (a
+	// browser, for one) install a real UI context - so `hasUI` is true - while
+	// `ui.custom` remains the SDK's headless default and resolves to undefined.
+	// Reading `.cancelled` off that crashed every drafting tool on those hosts.
+	return result ?? { questions: [], answers: [], cancelled: true, unavailable: true };
 }
 
 /**
@@ -957,7 +972,7 @@ export async function showProposalDialog(
 	confirmationText: string,
 	focus: GoalDraftingFocus,
 	defaultAuditorEnabled?: boolean,
-): Promise<{ decision: ProposalDecision; auditorEnabled: boolean }> {
+): Promise<{ decision: ProposalDecision; auditorEnabled: boolean; unavailable: boolean }> {
 	const headerTitle = focus === "sisyphus" ? "Confirm Sisyphus Goal Draft" : "Confirm Goal Draft";
 	const result = await runGoalQuestionnaire(ctx, [{
 		id: "confirm",
@@ -971,5 +986,5 @@ export async function showProposalDialog(
 		cancelled: result.cancelled,
 		answer: result.answers[0]?.answer,
 	});
-	return { decision, auditorEnabled: result.auditorEnabled ?? true };
+	return { decision, auditorEnabled: result.auditorEnabled ?? true, unavailable: result.unavailable === true };
 }

@@ -15,8 +15,10 @@ import {
 	normalizeQuestionnaireQuestions,
 	proposalDialogFailureMessage,
 	proposalDecisionFromQuestionnaireResult,
+	showProposalDialog,
 	runGoalQuestionnaire,
 	shouldAutoConfirmProposal,
+	DIALOG_UNAVAILABLE_HINT,
 	type GoalQuestionnaireResult,
 } from "../extensions/goal-questionnaire.ts";
 
@@ -860,4 +862,35 @@ test("custom answer flows to the summary as (wrote) and Enter submits it", () =>
 	const view = component.render(100).map(strip).join("\n");
 	assert.ok(view.includes("Ready to submit"), "submit summary shown");
 	assert.ok(view.includes("(wrote) my custom answer"), "custom answer recorded as (wrote) in the summary");
+});
+
+// ── Hosts with a UI that cannot render TUI components ───────────────────
+// A host embedding pi behind a non-terminal UI installs a real UI context, so
+// `ctx.hasUI` is true, while `ui.custom` stays the SDK's headless default
+// (`async () => undefined`). Every drafting tool used to crash there with
+// "Cannot read properties of undefined (reading 'cancelled')".
+
+function nonTerminalUiContext() {
+	return { hasUI: true, cwd: "/test", ui: { custom: async () => undefined } } as unknown as Parameters<typeof runGoalQuestionnaire>[0];
+}
+
+test("runGoalQuestionnaire reports an unavailable dialog instead of dereferencing undefined", async () => {
+	const result = await runGoalQuestionnaire(nonTerminalUiContext(), [{ id: "q", question: "Scope?", options: ["A", "B"] }]);
+	assert.deepEqual(result, { questions: [], answers: [], cancelled: true, unavailable: true });
+});
+
+test("showProposalDialog survives a host whose ui.custom resolves to undefined", async () => {
+	const decision = await showProposalDialog(nonTerminalUiContext(), "objective", "goal", true);
+	assert.deepEqual(decision, { decision: "continue", auditorEnabled: true, unavailable: true });
+});
+
+test("a dialog the host never rendered is not reported as a user decision", async () => {
+	const cancelledByUser = proposalDecisionFromQuestionnaireResult({ cancelled: true, answer: undefined });
+	assert.equal(cancelledByUser, "continue");
+	// Same decision, different cause: only `unavailable` distinguishes "the user
+	// pressed escape" from "no dialog was ever shown", which is what lets the
+	// drafting tools explain themselves instead of claiming a cancellation.
+	const result = await runGoalQuestionnaire(nonTerminalUiContext(), [{ id: "q", question: "Scope?", options: [] }]);
+	assert.equal(result.unavailable, true);
+	assert.match(DIALOG_UNAVAILABLE_HINT, /PI_GOAL_AUTO_CONFIRM=1/);
 });
