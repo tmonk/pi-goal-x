@@ -238,6 +238,13 @@ async function countCheckpoints(h: ReturnType<typeof createHarness>): Promise<nu
 	).length;
 }
 
+/** Mark this agent run as having done goal work (empty-turn gate). */
+async function markGoalWork(h: ReturnType<typeof createHarness>): Promise<void> {
+	await h.handlers["turn_start"]!({}, h.ctx);
+	await h.handlers["tool_call"]!({ toolName: "bash", args: { command: "ls" } }, h.ctx);
+	await h.handlers["tool_execution_end"]!({}, h.ctx);
+}
+
 test("provider-error guard: turn_end with stopReason=error never queues a continuation", async () => {
 	const { cwd, goal } = fixtureCwd();
 	const h = createHarness(cwd);
@@ -341,6 +348,7 @@ test("a successful Pi retry clears the pending network-error recovery", async ()
 		await h.handlers["agent_end"]!({
 			messages: [{ role: "assistant", stopReason: "error", errorMessage: "Provider finish_reason: network_error" }],
 		}, idleCtx(h.ctx));
+		await markGoalWork(h);
 		await h.handlers["agent_end"]!({
 			messages: [{ role: "assistant", stopReason: "end_turn" }],
 		}, idleCtx(h.ctx));
@@ -358,12 +366,33 @@ test("successful agent_end waits for agent_settled before queuing a continuation
 	const h = createHarness(cwd);
 	try {
 		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+		await markGoalWork(h);
 
 		await h.handlers["agent_end"]!({ messages: [{ role: "assistant", stopReason: "end_turn" }] }, idleCtx(h.ctx));
 		assert.equal(await countCheckpoints(h), 0, "agent_end runs before pi is truly idle");
 
 		await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
 		assert.equal(await countCheckpoints(h), 1, "agent_settled queues the continuation without idle polling");
+	} finally {
+		// temp dir cleanup is best-effort.
+	}
+});
+
+test("empty no-tool run does not auto-continue after agent_settled", async () => {
+	const { cwd, goal } = fixtureCwd();
+	const h = createHarness(cwd);
+	try {
+		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+		await h.handlers["before_agent_start"]!({
+			systemPrompt: "base",
+			prompt: "<pi_goal_continuation goal_id=\"" + goal.id + "\" kind=\"checkpoint\" v=\"2\"/>",
+			systemPromptOptions: {},
+		}, h.ctx);
+
+		await h.handlers["agent_end"]!({ messages: [{ role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "Paused. No action." }] }] }, idleCtx(h.ctx));
+		await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
+
+		assert.equal(await countCheckpoints(h), 0, "a no-tool reply must not re-queue auto-continuation");
 	} finally {
 		// temp dir cleanup is best-effort.
 	}

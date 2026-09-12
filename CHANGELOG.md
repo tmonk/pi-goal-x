@@ -2,6 +2,12 @@
 
 All notable changes to pi-goal-x are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **Empty-turn auto-continue loop** — `agent_end` clears the turn_end continuation timer, then `agent_settled` re-queued with `force: true` even when the run called no goal-work tools. A no-tool reply (for example "Paused. No action." after `/goal-resume`) therefore injected another checkpoint forever. Auto-continue now waits for meaningful work in that agent run. User resume, goal creation, and session kickoff still start the first continuation.
+
 ## [0.31.2] — 2026-09-08
 
 ### Changed
