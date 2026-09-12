@@ -86,6 +86,11 @@ export function registerGoalEvents(core: GoalCore): void {
 	const { pi } = core;
 	let continuationAfterSettleFor: string | null = null;
 	let networkErrorRecoveryAfterSettleFor: string | null = null;
+	// Run-scoped empty-turn gate: turn_start resets the per-turn flag, so a text-only
+	// last turn after earlier work must not wipe the run. before_agent_start starts a
+	// new run. agent_settled must not auto-continue a run that did no goal work, or
+	// empty replies ("Paused. No action.") loop forever.
+	let goalWorkThisRun = false;
 
 	pi.on("context", async (event) => {
 		const filtered = filterGoalSessionContext(event.messages);
@@ -128,9 +133,10 @@ export function registerGoalEvents(core: GoalCore): void {
 					`End the turn with a brief summary and yield to the user.`,
 			};
 		}
-		// Track for #4 empty-turn gate.
+		// Track for #4 empty-turn gate (per-turn and per-run).
 		if (isMeaningfulProgressToolCall(event.toolName, asRecord(event)?.args)) {
 			core.goalWorkToolCalledThisTurn = true;
+			goalWorkThisRun = true;
 			// Issue #26: record a meaningful work attempt against armed Oracle
 			// advice. get_goal / echo-only reads are excluded upstream by
 			// isMeaningfulProgressToolCall.
@@ -339,6 +345,7 @@ export function registerGoalEvents(core: GoalCore): void {
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
+		goalWorkThisRun = false;
 		core.advanceTurnSeq();
   if (!hasActiveDraft(core)) core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
 		const currentSystemPrompt = () => ctx.getSystemPrompt?.() || event.systemPrompt;
@@ -524,6 +531,10 @@ export function registerGoalEvents(core: GoalCore): void {
 		core.runtime.clearNetworkErrorBackoff();
 		core.persist(ctx);
 		core.updateUI(ctx);
+		// Empty-turn gate: agent_end clears any turn_end continuation timer, then
+		// agent_settled re-queues with force=true. Without this check, a no-tool
+		// reply (chat, or "Paused. No action." after resume) loops forever.
+		if (!goalWorkThisRun) return;
 		// agent_end runs before pi finishes retries, compaction, terminating-tool
 		// settlement, and queued messages. Starting the continuation timer here
 		// can poll a stale busy context for minutes on pi 0.84. agent_settled is

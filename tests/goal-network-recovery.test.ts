@@ -160,6 +160,12 @@ async function countCheckpoints(h: ReturnType<typeof createHarness>): Promise<nu
 	).length;
 }
 
+async function markGoalWork(h: ReturnType<typeof createHarness>): Promise<void> {
+	await h.handlers["turn_start"]!({}, h.ctx);
+	await h.handlers["tool_call"]!({ toolName: "bash", args: { command: "ls" } }, h.ctx);
+	await h.handlers["tool_execution_end"]!({}, h.ctx);
+}
+
 // ── Classification unit coverage ─────────────────────────────────────────────
 
 test("classification: exact reported 503 server_error payload is a network error", () => {
@@ -480,6 +486,7 @@ test("lifecycle: a successful turn resets the recovery counter and clears pendin
 		// A successful turn uses the normal continuation path.
 		const checkpointsFromRecoveryTimers = await countCheckpoints(h);
 		const notificationsBeforeSuccess = h.notifications.length;
+		await markGoalWork(h);
 		await h.handlers["agent_end"]!({ messages: [{ role: "assistant", stopReason: "end_turn" }] }, idleCtx(h.ctx));
 		await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
 		assert.equal(await countCheckpoints(h), checkpointsFromRecoveryTimers + 1, "success queues the normal continuation");
