@@ -375,13 +375,19 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 	}
 
 	const questions = normalizeQuestionnaireQuestions(rawQuestions);
-	if (ctx.mode === "rpc" || typeof ctx.ui.custom !== "function") {
+	// `mode` is not a capability signal: pi-web runs in "rpc" mode and still renders
+	// TUI components (headless TUI + line capture + key forwarding), so the rich
+	// single-dialog questionnaire works there. The host itself decides — the factory
+	// below bails out with done(undefined) when the TUI it passes lacks the required
+	// surface, and that path already falls back to one dialog per question (rpc mode
+	// additionally degrades on a thrown error — see the `showRichDialog()` call below).
+	if (typeof ctx.ui.custom !== "function") {
 		return runQuestionnaireWithBasicDialogs(ctx, questions, auditorToggleInit);
 	}
 	const isMulti = questions.length > 1;
 	const totalTabs = questions.length + 1;
 
-	const result = await ctx.ui.custom<GoalQuestionnaireResult | undefined>((tui, theme, _kb, done) => {
+	const showRichDialog = async () => await ctx.ui.custom<GoalQuestionnaireResult | undefined>((tui, theme, _kb, done) => {
 		// Some web hosts invoke the factory with a render callback in place of a TUI.
 		if (!tui || typeof tui.getShowHardwareCursor !== "function" || typeof tui.setShowHardwareCursor !== "function" || typeof tui.requestRender !== "function") {
 			done(undefined);
@@ -1016,6 +1022,22 @@ function advanceAfterAnswer() {
 			},
 		};
 	});
+	// RPC hosts historically never reached this path (the mode check sent them
+	// straight to the per-question dialogs), so keep their safety net: a host that
+	// advertises `custom` yet throws while building or rendering the component
+	// degrades to per-question dialogs instead of failing the whole draft. Non-rpc
+	// hosts keep upstream semantics — their errors surface to the caller.
+	const result = ctx.mode === "rpc"
+		? await showRichDialog().catch((error) => {
+			// Degrading silently would look like the per-question dialogs came back for no
+			// reason (and any already-answered questions are re-asked): say why first.
+			ctx.ui.notify(
+				`Goal dialog could not be rendered by this host (${error instanceof Error ? error.message : String(error)}); falling back to one dialog per question.`,
+				"warning",
+			);
+			return undefined;
+		})
+		: await showRichDialog();
 	if (result !== undefined) return result;
 	return runQuestionnaireWithBasicDialogs(ctx, questions, auditorToggleInit);
 }
