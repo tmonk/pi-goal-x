@@ -30,6 +30,45 @@ test("implicit caches, disabled caching, unknown payloads and another extension'
  }
 });
 
+test("a contentless trailing message from the host does not defeat the repair", () => {
+ // Pi's persistent-effort support appends an effort-only marker after the
+ // message it has already marked for caching. Until that was tolerated the
+ // breakpoint stayed on the live block, so only the prefix ahead of the
+ // conversation was ever reusable.
+ const marker = {role: "system", content: [], output_config: {effort: "high"}};
+ for (const trailing of [marker, {role: "system", content: ""}, {role: "system", content: null}, {role: "system"}]) {
+  const payload: any = {messages: [
+   {role: "user", content: [{type: "text", text: "history"}]},
+   {role: "user", content: [{type: "text", text: live, cache_control: control}]},
+   structuredClone(trailing),
+  ]};
+  assert.equal(cacheGoalHistory(payload, live), payload);
+  assert.deepEqual(payload.messages[0].content[0].cache_control, control);
+  assert.equal(payload.messages[1].content[0].cache_control, undefined);
+  assert.deepEqual(payload.messages[2], trailing);
+ }
+
+ const bedrock: any = {messages: [
+  {role: "user", content: [{text: "history"}]},
+  {role: "user", content: [{text: live}, {cachePoint: {type: "default", ttl: "1h"}}]},
+  marker,
+ ]};
+ cacheGoalHistory(bedrock, live);
+ assert.deepEqual(bedrock.messages[0].content.at(-1), {cachePoint: {type: "default", ttl: "1h"}});
+ assert.deepEqual(bedrock.messages[1].content, [{text: live}]);
+
+ // A trailing message that does carry content is still another extension's
+ // business: the tail no longer matches the live block, so nothing moves.
+ const foreign: any = {messages: [
+  {role: "user", content: [{type: "text", text: "history"}]},
+  {role: "user", content: [{type: "text", text: live, cache_control: control}]},
+  {role: "user", content: [{type: "text", text: "another extension"}]},
+ ]};
+ const before = structuredClone(foreign);
+ assert.equal(cacheGoalHistory(foreign, live), undefined);
+ assert.deepEqual(foreign, before);
+});
+
 test("Bedrock moves its existing cachePoint before the live message", () => {
  const payload: any = {messages: [{role: "user", content: [{text: "history"}]}, {role: "user", content: [{text: live}, {cachePoint: {type: "default", ttl: "1h"}}]}]};
  cacheGoalHistory(payload, live);
