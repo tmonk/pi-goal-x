@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const testsRoot = join(projectRoot, "tests");
@@ -34,6 +34,10 @@ if (testFiles.length === 0) {
 	throw new Error("No " + suite + " test files were discovered.");
 }
 
+// Manifest entries are repo-relative and always forward-slashed, so the pinned
+// entry list is identical on every platform that regenerates it.
+const relativeEntry = (file) => file.replace(projectRoot, ".").replaceAll("\\", "/");
+
 // ---- Self-check / manifest maintenance -------------------------------
 // The manifest pins the EXPECTED discovered entries so drift (a new test
 // file, a deleted one, or a directory change) is caught explicitly instead
@@ -42,9 +46,9 @@ if (wantWriteManifest) {
 	writeFileSync(manifestPath, JSON.stringify({
 		version: 1,
 		note: "Expected test-entry manifest for the runner self-check (npm run test:selfcheck). Regenerate with: node scripts/run-unit-tests.mjs --write-manifest",
-		unitFiles: unitFiles.map((file) => file.replace(projectRoot, ".")),
-		integrationFiles: integrationFiles.map((file) => file.replace(projectRoot, ".")),
-		e2eFiles: e2eFiles.map((file) => file.replace(projectRoot, ".")),
+		unitFiles: unitFiles.map(relativeEntry),
+		integrationFiles: integrationFiles.map(relativeEntry),
+		e2eFiles: e2eFiles.map(relativeEntry),
 	}, null, 2) + "\n");
 	console.log("Wrote " + manifestPath + " (" + unitFiles.length + " unit, " + integrationFiles.length + " integration, " + e2eFiles.length + " e2e entries).");
 	process.exit(0);
@@ -55,7 +59,7 @@ if (wantSelfCheck) {
 		throw new Error("Missing " + manifestPath + ". Run: node scripts/run-unit-tests.mjs --write-manifest");
 	}
 	const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-	const rel = (file) => file.replace(projectRoot, ".");
+	const rel = relativeEntry;
 	const expectedUnit = new Set(manifest.unitFiles ?? []);
 	const expectedIntegration = new Set(manifest.integrationFiles ?? []);
 	const expectedE2e = new Set(manifest.e2eFiles ?? []);
@@ -85,7 +89,7 @@ const isolationArgs = isolationProbe.status === 0 ? ["--test-isolation=none"] : 
 const result = spawnSync(
 	process.execPath,
 	[
-		"--import", join(projectRoot, "scripts", "test-adapter-hooks.mjs"),
+		"--import", pathToFileURL(join(projectRoot, "scripts", "test-adapter-hooks.mjs")).href,
 		"--experimental-strip-types",
 		"--test",
 		...isolationArgs,

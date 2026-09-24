@@ -5,6 +5,22 @@ import { asRecord, type GoalRecord } from "./goal-record.ts";
 import { budgetReached } from "./goal-accounting.ts";
 import { loadGoalSettings, invalidateGoalSettingsCache } from "./goal-settings.ts";
 import { newGoalScheduler, schedulerSummary, type GoalContinuation, type GoalSchedulerState } from "./goal-scheduler-state.ts";
+import { isPendingTaskPoll, observeBackgroundTask, type BackgroundTaskRef, type TaskResultLike } from "./goal-background-task.ts";
+import { backgroundTaskDeferralPrompt } from "./prompts/goal-prompts.ts";
+import { CORE_GOAL_TOOL_NAMES } from "./goal-tool-names.ts";
+
+/** Goal bookkeeping results describe the goal; they are never deferring work. */
+const BOOKKEEPING_TOOL_NAMES = new Set<string>(CORE_GOAL_TOOL_NAMES);
+
+/**
+ * How long a task wait sleeps before the scheduled re-check, in milliseconds.
+ * The wait is event-driven: this interval only covers a result report that
+ * never arrives.
+ */
+export const BACKGROUND_TASK_WAIT_MS = 10 * 60_000;
+
+/** Slack over the re-check interval so the check dispatch always wins over the deadline pause. */
+const BACKGROUND_TASK_DEADLINE_MARGIN_MS = 60_000;
 
 /** Scheduling intent is durable; timers only arrange an opportunity to claim it. */
 export class GoalScheduler {
@@ -14,6 +30,10 @@ export class GoalScheduler {
 	private armedGeneration: string | undefined;
 	private declared = false;
 	private runGoalId: string | undefined;
+	/** Detached work this run left running; it replaces the implicit continuation. */
+	private pendingTask: BackgroundTaskRef | null = null;
+	/** Whether this run did work after it recorded the pending task. Per run. */
+	private postTaskProgress = false;
 	private denied = false;
 	private unsubscribe: (() => void) | undefined;
 	private core: GoalCore;
@@ -22,10 +42,17 @@ export class GoalScheduler {
 	private owner(ctx: ExtensionContext): string { return ctx.sessionManager.getSessionId() || "unknown-session"; }
 	private limit(ctx: ExtensionContext): number | undefined { return loadGoalSettings(ctx.cwd).maxAutonomousRuns; }
 	private strict(ctx: ExtensionContext, s: GoalSchedulerState): boolean {
-		return loadGoalSettings(ctx.cwd).strictExecutionContract === true || !!s.wait;
+		// A wait the runtime raised for a detected background task stays
+		// system-managed: it must not put the goal under the explicit execution
+		// contract, or every later turn would owe a declaration the model did not
+		// choose to make.
+		return loadGoalSettings(ctx.cwd).strictExecutionContract === true || (!!s.wait && s.wait.taskId === undefined);
 	}
 	private implicitReady(s: GoalSchedulerState): void {
 		s.phase = "ready"; s.dispatch = undefined; s.generation = randomUUID();
+		// A task wait ends with the task: the result is the context for the next run.
+		if (s.wait?.taskId !== undefined) s.wait = undefined;
+		s.postTaskProgress = false;
 		s.decision = { kind: "ready", nextAction: "Continue pursuing the goal, then verify and complete it when satisfied.", purpose: "ready" };
 	}
 	private available(ctx: ExtensionContext, s: GoalSchedulerState): boolean {
@@ -93,11 +120,127 @@ export class GoalScheduler {
 			if (raw && this.ctx) this.signal(this.ctx, raw.goalId, raw.waitToken);
 		});
 	}
-	shutdown(): void { this.cancelTimer(); this.unsubscribe?.(); this.unsubscribe = undefined; this.ctx = undefined; }
+	shutdown(): void { this.cancelTimer(); this.unsubscribe?.(); this.unsubscribe = undefined; this.ctx = undefined; this.pendingTask = null; this.postTaskProgress = false; }
+
+	/**
+	 * Read a tool result for detached work. Memory-only: the wait it implies is
+	 * persisted at settlement, and a result that reports neither a running status
+	 * nor a background launch is ignored.
+	 *
+	 * A result that arrives after this run recorded a task is also remembered as
+	 * progress: settlement then defers the wait, because work that does not depend
+	 * on the task's result must not be stranded behind it.
+	 */
+	noteToolResult(event: TaskResultLike): BackgroundTaskRef | null {
+		const observation = observeBackgroundTask(event);
+		if (!observation) {
+			this.notePostTaskProgress(event);
+			return null;
+		}
+		if (observation.kind === "settled") {
+			if (this.pendingTask?.id === observation.taskId) this.pendingTask = null;
+			return null;
+		}
+		// Detached work only matters while the focused goal can sleep on it. A
+		// complete, paused, or non-continuing goal neither waits nor announces.
+		if (!this.canWaitForTask()) return null;
+		// The result that records the task is a launch, not progress: it announces
+		// detached work instead of doing any. A later launch is treated the same.
+		this.pendingTask = observation.task;
+		return this.pendingTask;
+	}
+
+	/**
+	 * Record that this run did work after it recorded a detached task. Goal
+	 * bookkeeping and a refused poll of the tracked task are not work, so they
+	 * never defer the wait. The flag is persisted once per run so a reload does
+	 * not lose the deferral; settlement reads the in-memory value.
+	 */
+	private notePostTaskProgress(event: TaskResultLike): void {
+		if (!this.pendingTask || this.postTaskProgress) return;
+		if (BOOKKEEPING_TOOL_NAMES.has(event.toolName)) return;
+		if (isPendingTaskPoll(event.toolName, event.input, this.pendingTask.id)) return;
+		this.postTaskProgress = true;
+		const ctx = this.ctx;
+		if (!ctx) return;
+		try { this.update(ctx, s => { s.postTaskProgress = true; }); }
+		catch { /* Durability only: settlement still defers from the in-memory flag. */ }
+	}
+
+	/** Whether settlement would defer for a detected task: an active auto-continue goal. */
+	private canWaitForTask(): boolean {
+		const goal = this.core.state.goal;
+		return goal !== null && goal.status === "active" && goal.autoContinue;
+	}
+
+	/** The background task this run is waiting on, if any. */
+	pendingBackgroundTask(): BackgroundTaskRef | null { return this.pendingTask; }
+
+	/** Whether a call would wait on the pending task again instead of ending the turn. */
+	blocksTaskPoll(toolName: string, input: unknown): boolean {
+		return this.pendingTask !== null && this.canWaitForTask() && isPendingTaskPoll(toolName, input, this.pendingTask.id);
+	}
+
+	/**
+	 * Sleep until pi reports the pending task's result, with one scheduled
+	 * re-check in case the report never arrives. The standing deadline bounds a
+	 * goal whose report keeps getting lost; once it expires the deadline pause
+	 * governs and no further task wait is raised.
+	 */
+	private deferForTask(ctx: ExtensionContext, task: BackgroundTaskRef): void {
+		const now = Date.now();
+		const standing = this.core.state.goal?.scheduler?.wait;
+		const continuing = standing?.taskId !== undefined && standing.taskId === task.id;
+		if (continuing && standing.deadline <= now) {
+			// The standing deadline governs: schedule() raises the deadline pause.
+			this.schedule(ctx);
+			return;
+		}
+		const deadline = continuing ? standing.deadline : now + BACKGROUND_TASK_WAIT_MS + BACKGROUND_TASK_DEADLINE_MARGIN_MS;
+		const goal = this.update(ctx, s => {
+			s.wait = {
+				id: continuing && s.wait?.taskId === task.id ? s.wait.id : randomUUID(),
+				token: randomUUID(),
+				taskId: task.id,
+				reason: `Waiting for ${task.label} to finish.`,
+				deadline,
+				intervalMs: BACKGROUND_TASK_WAIT_MS,
+				remainingChecks: 1,
+				nextCheckAt: now + BACKGROUND_TASK_WAIT_MS,
+			};
+			s.phase = "waiting"; s.decision = { kind: "wait" }; s.dispatch = undefined; s.generation = randomUUID();
+			s.postTaskProgress = false;
+		});
+		this.cancelTimer();
+		this.core.runtime.clearContinuationState();
+		this.core.runtime.markTurnStopped(goal.id);
+		// No notification here: ui.notify renders a transient status row, which
+		// resizes the editor and clips the goal widget for as long as it shows.
+		// The wait is already visible in the widget's scheduling rows and in the
+		// injected state, and it is a routine event, not something to announce.
+		// Arm the re-check. The wait is event-driven, so this timer only covers a
+		// result report that never arrives.
+		this.schedule(ctx);
+	}
+
+	/**
+	 * Defer the task wait because the run did work after the detection. Mirrors
+	 * the declared-ready dispatch: persist a ready decision whose next action
+	 * steers the model at the independent work, then arm the continuation. A
+	 * later settle without new work raises the wait as usual.
+	 */
+	private deferForTaskProgress(ctx: ExtensionContext, task: BackgroundTaskRef): void {
+		this.update(ctx, s => {
+			this.implicitReady(s);
+			s.postTaskProgress = false;
+			s.decision = { kind: "ready", nextAction: backgroundTaskDeferralPrompt(task), purpose: "ready" };
+		});
+		this.schedule(ctx);
+	}
 
 	restore(ctx: ExtensionContext): void {
 		this.attach(ctx);
-		this.inRun = false; this.declared = false; this.runGoalId = undefined;
+		this.inRun = false; this.declared = false; this.runGoalId = undefined; this.pendingTask = null; this.postTaskProgress = false;
 		this.cancelTimer();
 		this.safe(ctx, () => {
 			this.core.reconcileFocusedGoalFromDisk(ctx);
@@ -152,6 +295,7 @@ export class GoalScheduler {
 				if (input.kind === "ready") {
 					if (typeof input.next_action !== "string" || !input.next_action.trim() || input.next_action.length > 2000) throw new Error("ready requires a nonempty next_action (at most 2000 characters).");
 					s.phase = "ready"; s.decision = { kind: "ready", nextAction: input.next_action.trim(), purpose: "ready" }; s.wait = undefined;
+					s.postTaskProgress = false;
 				} else if (input.kind === "wait") {
 					if (!this.strict(ctx, s)) throw new Error("New waits require strictExecutionContract=true in /goal-settings. This is a user preference; continue pursuing the goal without a wait unless the user opts in.");
 					if (typeof input.reason !== "string" || !input.reason.trim() || input.reason.length > 2000) throw new Error("wait requires a nonempty reason (at most 2000 characters).");
@@ -186,6 +330,10 @@ export class GoalScheduler {
 		this.ctx = ctx;
 		if (this.inRun) { this.core.runningGoalId = this.core.state.goal?.id ?? null; return; }
 		this.inRun = true; this.declared = false; this.denied = false;
+		// A detached task outlives one run: the deferred continuation must still
+		// see it so a run that does no new work can raise the wait. Only the
+		// per-run progress flag resets here.
+		this.postTaskProgress = false;
 		this.runGoalId = this.core.state.goal?.id;
 		this.cancelTimer(); this.core.runtime.clearContinuationTimer();
 		this.core.runningGoalId = this.core.state.goal?.id ?? null;
@@ -222,6 +370,8 @@ export class GoalScheduler {
 	takeover(ctx: ExtensionContext): void {
 		this.cancelTimer(); this.core.runtime.clearContinuationState();
 		this.declared = false;
+		this.pendingTask = null;
+		this.postTaskProgress = false;
 		const s = this.core.state.goal?.scheduler;
 		if (!s || s.owner !== this.owner(ctx)) return;
 		this.safe(ctx, () => this.update(ctx, state => {
@@ -238,6 +388,17 @@ export class GoalScheduler {
 			if (!goal || goal.status !== "active" || !goal.autoContinue || !successful) return;
 			if (this.declared && goal.scheduler?.decision) { this.schedule(ctx); return; }
 			const s = this.state(ctx, goal);
+			// Detached work is a wait, not a disposition: sleep instead of running a
+			// continuation that could only poll the task pi already reports on. A run
+			// that did work after the detection defers the wait instead, so that work
+			// is not stranded behind the task.
+			if (this.pendingTask) {
+				const progressed = this.postTaskProgress;
+				this.postTaskProgress = false;
+				if (progressed) { this.deferForTaskProgress(ctx, this.pendingTask); return; }
+				this.deferForTask(ctx, this.pendingTask); return;
+			}
+			this.postTaskProgress = false;
 			if (!this.strict(ctx, s)) {
 				this.update(ctx, state => this.implicitReady(state));
 				this.schedule(ctx); return;
@@ -318,6 +479,7 @@ export class GoalScheduler {
 				}
 				if (!kind) throw new Error("No scheduling decision authorizes this checkpoint.");
 				s.used++; s.phase = "claimed"; s.dispatch = { id: randomUUID(), kind, claimedAt: Date.now() };
+				s.postTaskProgress = false;
 				if (kind === "repair") s.repairUsed = true;
 				else if (kind !== "recovery") s.repairUsed = false;
 				if (s.wait) { s.wait.signalled = false; s.wait.token = randomUUID(); }

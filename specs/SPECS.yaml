@@ -51,3 +51,10 @@ specs:
     focused: true
     last_audit: null
     updated: 2026-08-04
+  - id: 2026-09-24-background-task-wait
+    path: specs/2026-09-24-background-task-wait
+    title: Wait for a detected background task instead of polling it
+    status: ready_for_review
+    focused: false
+    last_audit: null
+    updated: 2026-09-24

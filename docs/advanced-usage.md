@@ -29,6 +29,8 @@ update_goal({ continuation: {
 
 Use a future deadline appropriate to the task. Omit `polling` for an event-only wait. Successful declarations terminate the execution segment. On a scheduled check, reuse the returned `wait_id` and original deadline, omitting `polling`; remaining checks cannot be reset. A ready decision ends the wait. Time spent waiting is not active execution time.
 
+A background task the agent starts is detected from the producer's own tool result, and the goal waits for its report instead of continuing into polls. No declaration, strict mode, or setting is involved: the wait is system-managed, and the goal stays under its normal continuation rules. The task's result report wakes the goal; if none arrives, one scheduled re-check runs at the wait interval (10 minutes), and the standing deadline then pauses the goal. Waiting on the tracked task again from a check keeps the original deadline, so a lost report cannot loop forever. Polling the tracked task is refused while the goal sleeps; `stop` still cancels it.
+
 The dashboard, `/goal-status`, and `get_goal` show scheduling state, timing, checks, and allowance consumption. Expired waits and exhausted checks or allowance pause without another model call. Waits survive reopening the same session, without replaying missed checks; Pi must remain open for timers to execute. Another session requires explicit resume to take ownership. An ambiguous interrupted dispatch requires resume instead of automatic replay.
 
 ## Background producer integration
