@@ -78,9 +78,11 @@ async function fixture(t: TestContext, owner = "owner", existing?: string) {
 	const call = (toolName: string, input: Record<string, unknown>) => handlers.tool_call!({ type: "tool_call", toolCallId: "call-1", toolName, input }, ctx);
 	/** A pi-pwsh style result that leaves the task running. */
 	const running = (id: string) => ({ toolName: "pwsh", details: { version: 1, taskId: id, status: "running", ready: false }, input: { command: "sleep" }, isError: false, content: [{ type: "text" as const, text: `taskId: ${id}\nstatus: running` }] });
+	/** An ordinary work result that is not detached work. */
+	const work = (name = "step-1.txt") => ({ toolName: "write", details: undefined, input: { file_path: name }, isError: false, content: [{ type: "text" as const, text: "written" }] });
 	/** The host report that a task finished, which opens a turn. */
 	const report = () => core.scheduler.message(ctx, { role: "user", content: "Background task updates." });
-	return { cwd, ctx, core, handlers, tools, sent, notifications, result, call, running, report };
+	return { cwd, ctx, core, handlers, tools, sent, notifications, result, call, running, work, report };
 }
 
 test("only structured producer results identify detached work", () => {
@@ -287,6 +289,65 @@ test("a declared ready decision keeps the goal working while a task runs", async
 	assert.equal(h.core.state.goal?.scheduler?.wait, undefined, "no task wait may be raised");
 	assert.equal(h.sent.length, 1, "the goal continues with the declared next action");
 	assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "ready");
+});
+
+test("a settle after post-detection work defers the task wait", async t => {
+	const h = await fixture(t);
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	h.core.scheduler.begin(h.ctx);
+	await h.result(h.running("t1"));
+	// Work that does not depend on the task's result must not be stranded behind
+	// it, so the settle keeps the goal running instead of sleeping on the task.
+	await h.result(h.work());
+	h.core.scheduler.settled(h.ctx);
+	assert.equal(h.core.state.goal?.scheduler?.wait, undefined, "progress defers the wait");
+	assert.equal(h.core.state.goal?.scheduler?.phase, "ready");
+	t.mock.timers.tick(1);
+	assert.equal(h.sent.length, 1, "exactly one continuation is dispatched");
+	const decision = h.core.state.goal?.scheduler?.decision;
+	assert.equal(decision?.kind, "ready");
+	const nextAction = decision?.kind === "ready" ? decision.nextAction : "";
+	assert.match(nextAction, /PI GOAL DEFERRING ON BACKGROUND TASK/);
+	assert.match(nextAction, /does not depend on that task's result/);
+});
+
+test("a following settle without new work raises the task wait", async t => {
+	const h = await fixture(t);
+	h.core.scheduler.begin(h.ctx);
+	await h.result(h.running("t1"));
+	await h.result(h.work());
+	h.core.scheduler.settled(h.ctx);
+	const first = h.core.state.goal?.scheduler;
+	assert.equal(first?.wait, undefined, "the first settle defers");
+	// The deferred run does nothing new, so the deferral is bounded: the goal
+	// sleeps on the task instead of running forever.
+	h.core.scheduler.begin(h.ctx);
+	h.core.scheduler.settled(h.ctx);
+	assert.equal(h.core.state.goal?.scheduler?.phase, "waiting");
+	assert.equal(h.core.state.goal?.scheduler?.wait?.taskId, "t1");
+	assert.equal(h.sent.length, 0, "no continuation is dispatched for the wait");
+});
+
+test("goal bookkeeping after detection does not defer the task wait", async t => {
+	const h = await fixture(t);
+	h.core.scheduler.begin(h.ctx);
+	await h.result(h.running("t1"));
+	// update_goal describes the goal; it is not work that justifies staying up.
+	await h.result({ toolName: "update_goal", details: undefined, input: { status: "paused" }, isError: false, content: [] });
+	h.core.scheduler.settled(h.ctx);
+	assert.equal(h.core.state.goal?.scheduler?.phase, "waiting");
+	assert.equal(h.core.state.goal?.scheduler?.wait?.taskId, "t1");
+});
+
+test("the launch result itself does not defer the task wait", async t => {
+	const h = await fixture(t);
+	h.core.scheduler.begin(h.ctx);
+	// Starting a task and stopping is not progress: the goal sleeps on it.
+	await h.result(h.running("t1"));
+	h.core.scheduler.settled(h.ctx);
+	assert.equal(h.core.state.goal?.scheduler?.phase, "waiting");
+	assert.equal(h.core.state.goal?.scheduler?.wait?.taskId, "t1");
+	assert.equal(h.sent.length, 0);
 });
 
 test("detection stays inert while the focused goal cannot wait", async t => {

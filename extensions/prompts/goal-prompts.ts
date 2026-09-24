@@ -347,3 +347,18 @@ export function backgroundTaskWaitPrompt(wait: { taskId: string; reason: string 
 		"If this turn carries the result or is the scheduled re-check, inspect the result and continue the goal. If work remains that does not depend on the result, do it and declare it with update_goal({ continuation: { kind: \"ready\", next_action: \"<what remains>\" } }) so the goal keeps running. Otherwise end the turn with a one-line status.",
 	].join("\n");
 }
+
+/**
+ * Steering for the run a task detection deferred. The wait is not dropped: it
+ * is raised once a run settles without new work. Until then the goal keeps
+ * running, because work that does not depend on the task's result must not be
+ * stranded behind it.
+ */
+export function backgroundTaskDeferralPrompt(task: BackgroundTaskRef): string {
+	return [
+		"[PI GOAL DEFERRING ON BACKGROUND TASK]",
+		`${task.label} is still running. The goal keeps running while work remains that does not depend on that task's result.`,
+		"Do that work now. Do not wait on or poll the task; pi reports its result automatically.",
+		"When nothing is left that does not depend on the result, stop calling tools and end the turn with a one-line status; the goal then waits for the result.",
+	].join("\n");
+}

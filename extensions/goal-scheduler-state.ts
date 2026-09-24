@@ -27,6 +27,13 @@ export interface GoalSchedulerState {
 	wait?: GoalWait;
 	dispatch?: { id: string; kind: GoalDispatchKind; claimedAt: number };
 	repairUsed: boolean;
+	/**
+	 * Set when this run did work after it recorded a detached task. Settlement
+	 * defers the task wait while it is set, so work that does not depend on the
+	 * task's result is not stranded behind it. Per run: reset when a run begins
+	 * and after settlement consumes it.
+	 */
+	postTaskProgress?: boolean;
 }
 export type GoalContinuation =
 	| { kind: "ready"; next_action: string }
@@ -45,6 +52,7 @@ export function normalizeGoalScheduler(raw: unknown): GoalSchedulerState | undef
 	const integer = (n: unknown) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
 	const text = (v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 2000;
 	if (s.version !== 1 || !text(s.owner) || !text(s.generation) || !integer(s.used) || typeof s.repairUsed !== "boolean" || !["idle", "ready", "waiting", "claimed", "running", "interrupted"].includes(s.phase)) return invalid();
+	if (s.postTaskProgress !== undefined && typeof s.postTaskProgress !== "boolean") return invalid();
 	if (s.decision && (s.decision.kind !== "wait" && (s.decision.kind !== "ready" || !text(s.decision.nextAction) || !["ready", "repair", "kickoff", "recovery"].includes(s.decision.purpose)))) return invalid();
 	if (s.wait) {
 		const w = s.wait;
