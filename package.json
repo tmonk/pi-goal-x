@@ -1,6 +1,6 @@
 {
   "name": "pi-goal-x",
-  "version": "0.31.8",
+  "version": "0.31.9",
   "description": "Adds /goal to pi: conversational goal planning, flexible or ordered goals, persistent progress, and an independent completion auditor.",
   "license": "MIT",
   "author": "pi-goal-x contributors",

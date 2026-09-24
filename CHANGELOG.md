@@ -4,6 +4,12 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+## [0.31.9] — 2026-09-24
+
+### Documentation
+
+- Update the README Pi link to https://pi.dev.
+
 ## [0.31.8] — 2026-09-22
 
 ### Documentation
