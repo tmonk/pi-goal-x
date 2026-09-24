@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   trigger:
-    if: github.event.head_commit.message == 'chore: trigger v0.31.9 release'
+    if: "${{ github.event.head_commit.message == 'chore: trigger v0.31.9 release' }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
