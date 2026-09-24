@@ -59,6 +59,15 @@ Findings from this pass:
 - The blind run failed, and only then was its shape read: `bg_run` returns `details: { task: snapshot }` with `{ id, name, command, status }`, so the value sat one level below the flat fields. Nested-task support and `name` as a label field were added, and the cycle was re-run to confirm (`snap_019`-`snap_045` waiting on the task id).
 - `bg_run` shells out through `cmd.exe`; a POSIX `sleep` command fails in 136 ms.
 
+## 2026-09-24 — the wait is deferred while a run keeps working
+
+A live run in a clean session exposed the defect the wait itself created: the goal started a 120 s background task, wrote file step 1, ended its turn, and the record read `phase: "waiting"` with that work still pending — it had not run 3+ minutes later. The wait was raised at settlement, so independent work the run left undone was stranded behind a task it did not depend on.
+
+- `settled()` now defers the wait when the run recorded post-detection progress and dispatches one more run, mirroring the declared-`ready` dispatch: `deferForTaskProgress()` persists a `ready` decision whose next action is the deferral steering text. It repeats while each run keeps progressing, and the wait is raised on the first settle that adds nothing new, which is what bounds it.
+- Progress is mechanical: any tool result after the task was recorded, excluding goal bookkeeping (`create_goal`, `get_goal`, `update_goal`) and a refused poll of the tracked task. The detecting result never counts, so start-the-task-and-stop still waits. The per-run flag is persisted as the optional `postTaskProgress` scheduler field (older records normalize cleanly, no schema version bump); `begin()` keeps the pending task so the deferred run can still raise the wait, and `takeover()` still clears it when the task's own report arrives.
+- Steering hardened: the notice and the standing wait prompt now tell the model to finish work that does not depend on the result and to declare `update_goal({ continuation: { kind: "ready", next_action: "<what remains>" } })` when work remains for a later turn. The notice previously only said to end the turn, which is what stranded the independent work.
+- Verification, all live in clean sessions: a single background task and nothing else — the goal pauses on the first settle (`used: 0`, `phase: "waiting"`, `taskId: ps_5123bc5a`, `reason: "Waiting for pwsh task ps_5123bc5a to finish."`, `kind: "wait"`), the widget read `goal: waiting`, and the report woke the goal about two minutes later; observed twice independently. A background task plus an independent task — step 2 was written 14.4 s after step 1 while the task ran, and the record showed `used: 1` with `decision: { kind: "ready", nextAction: "Task B step 2: append …" }`. Unit tests: `tests/goal-background-task-pause.test.ts` 16/16, four of them covering the deferral.
+
 ## Open items
 
 - The scheduled re-check is covered by unit tests only. Both live tasks reported before their re-check, so exercising it live needs a task that outlives ten minutes.
