@@ -1,0 +1,39 @@
+name: Trigger v0.31.9 release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  trigger:
+    if: github.event.head_commit.message == 'chore: trigger v0.31.9 release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create release tag
+        env:
+          TARGET_SHA: a5bdf61bed449735132a61da983c3f6a5ae82222
+          RELEASE_TAG: v0.31.9
+        shell: bash
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$TARGET_SHA" origin/main
+          test "$(git show "$TARGET_SHA:package.json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).version))")" = "0.31.9"
+          if git rev-parse -q --verify "refs/tags/$RELEASE_TAG" >/dev/null; then
+            test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$TARGET_SHA"
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a "$RELEASE_TAG" "$TARGET_SHA" -m "Release $RELEASE_TAG"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+      - name: Dispatch normal publish workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run publish.yml --ref main -f tag=v0.31.9 -f dry_run=false
