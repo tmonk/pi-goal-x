@@ -4,6 +4,17 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Wait for a detected background task instead of polling it. A producer tool result that reports a running task (`details.status`) or a detached launch (`run_in_background`) now records a scheduler wait in place of the next automatic run, and the task's own result report wakes the goal. One scheduled re-check covers a report that never arrives, the standing deadline then pauses the goal, and waiting on the tracked task again keeps that deadline. Polling the tracked task is refused while the goal sleeps. The wait is system-managed: no setting is required and it never puts the goal under the explicit execution contract.
+
+### Fixed
+
+- Keep a background-task wait out of the goal widget's rows. The widget latches its rendered height per state regime and a wait is not a regime change, so the rows it added were head-sliced away and took the box footer with them. The wait now rides the existing runs line, and its status row already read "Waiting".
+- Do not announce a background-task wait. `ui.notify` renders a transient status row, which resized the editor and clipped the goal widget for as long as it showed. The wait is already visible in the widget's scheduling rows and in the injected state.
+- Read tool arguments from the `input` field of Pi's `tool_call` event. The background-task poll gate and the metadata-only progress exclusion in `isMeaningfulProgressToolCall` both read an `args` field the event never carries, so neither could fire.
+- Make the unit-test runner work on Windows: resolve its adapter hook as a file URL (`npm test` failed at startup with `ERR_UNSUPPORTED_ESM_URL_SCHEME`), and emit manifest entries with forward slashes so `--write-manifest` is byte-identical on every platform and `test:selfcheck` passes.
+
 ## [0.31.8] — 2026-09-22
 
 ### Documentation

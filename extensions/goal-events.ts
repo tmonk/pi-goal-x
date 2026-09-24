@@ -26,6 +26,8 @@ import { consumeOracleFollowupMarker, hasPendingOracleAdviceForFocusedGoal } fro
 import { LiveTailRetention } from "./goal-live-retention.ts";
 import {
 	goalPromptParts,
+	backgroundTaskNotice,
+	backgroundTaskWaitPrompt,
 	staleContinuationPrompt,
 	unfocusedOpenGoalsPrompt,
 	untrustedObjectiveBlock,
@@ -106,6 +108,18 @@ export function registerGoalEvents(core: GoalCore): void {
 	pi.on("tool_call", async (event, ctx) => {
 		const stoppedGoalId = core.currentTurnStoppedGoalId();
 		if (core.scheduler.isDenied()) return { block: true, reason: "Stale goal dispatch; use /goal-resume." };
+		// A second wait on a task the goal already sleeps on would only burn runs:
+		// pi reports the result on its own and the goal wakes for it.
+		// The pinned pi API carries tool arguments on `input` (ToolCallEventBase),
+		// never on `args`.
+		if (core.scheduler.blocksTaskPoll(event.toolName, event.input)) {
+			return {
+				block: true,
+				reason: `The goal is waiting on this background task, and its result is reported automatically. ` +
+					`Do not wait on ${event.toolName} again — end the turn with a one-line status. ` +
+					`Use stop to cancel the task if that is now the intent.`,
+			};
+		}
 		// Post-stop in-turn block: after update_goal / set_goal_tasks (or a user
 		// lifecycle command) fires in this turn, block all subsequent tool calls
 		// except read-only inspection.
@@ -129,7 +143,7 @@ export function registerGoalEvents(core: GoalCore): void {
 			};
 		}
 		// Track Oracle work attempts; this does not authorize scheduling.
-		if (isMeaningfulProgressToolCall(event.toolName, asRecord(event)?.args)) {
+		if (isMeaningfulProgressToolCall(event.toolName, event.input)) {
 			core.goalWorkToolCalledThisTurn = true;
 			// Issue #26: record a meaningful work attempt against armed Oracle
 			// advice. get_goal / echo-only reads are excluded upstream by
@@ -157,6 +171,15 @@ export function registerGoalEvents(core: GoalCore): void {
 	pi.on("tool_execution_end", async (_event, ctx) => {
 		core.touchGoalActivity(); // F5
 		core.accountProgress(ctx);
+	});
+
+	// Detached work is a wait, not a disposition. The notice teaches the model to
+	// stop at the moment it starts a long task instead of polling it turn after
+	// turn; the wait itself is raised at settlement, once the turn is over.
+	pi.on("tool_result", async (event, _ctx) => {
+		const task = core.scheduler.noteToolResult(event);
+		if (!task) return;
+		return { content: [...event.content, { type: "text" as const, text: backgroundTaskNotice(task) }] };
 	});
 
 	pi.on("turn_end", async (event, ctx) => {
@@ -438,6 +461,12 @@ export function registerGoalEvents(core: GoalCore): void {
 		// Rare transitional steering rides in the stable block; per-turn usage and
 		// scheduling counters stay in the volatile block so retention grows slowly.
 		let state = policy;
+		// A task wait is system-managed: say so on every turn it spans, including
+		// the scheduled re-check and the turn a task result opens.
+		const taskWait = activeGoal.scheduler?.phase === "waiting" ? activeGoal.scheduler.wait : undefined;
+		if (taskWait?.taskId !== undefined) {
+			state += `\n\n${backgroundTaskWaitPrompt({ taskId: taskWait.taskId, reason: taskWait.reason })}`;
+		}
 		// F5: [GOAL STALLED] steering note when the detector fired.
 		const stalledNote = core.checkStall(ctx);
 		if (stalledNote) state += stalledNote;

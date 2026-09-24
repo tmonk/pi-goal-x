@@ -5,6 +5,7 @@ import { promptSafeObjective } from "../goal-contract.ts";
 import type { GoalRecord, GoalTask } from "../goal-record.ts";
 import type { GoalSettings } from "../goal-settings.ts";
 import { modelBudgetLine, contextUsageLine, type GoalContextUsage } from "../goal-accounting.ts";
+import type { BackgroundTaskRef } from "../goal-background-task.ts";
 
 /** Hard cap for the complete injected prompt fragment (TECH Stage 6). */
 export const MAX_PROMPT_FRAGMENT_CHARS = 10_000;
@@ -316,4 +317,33 @@ function formatUsage(goal: GoalRecord): string {
 	}
 	if (goal.usage.tokensUsed > 0) bits.push(`${goal.usage.tokensUsed} tokens`);
 	return bits.length > 0 ? bits.join(" · ") : "none";
+}
+
+/**
+ * Steer a turn that is running while a detected background task is in flight.
+ * Injected as an extra tool-result block: the model must learn to stop at the
+ * moment it starts the task, not one turn later when the loop would continue.
+ * It must also not stop *too* early: work that does not depend on the result is
+ * still work, and leaving it for after the wait delays it for no reason.
+ */
+export function backgroundTaskNotice(task: BackgroundTaskRef): string {
+	return [
+		"[PI GOAL WAITING ON BACKGROUND TASK]",
+		`${task.label} is still running. The goal now waits for its result instead of polling it, and pi reports that result automatically.`,
+		"Do not wait on or poll this task again.",
+		"Finish anything in this turn that does not depend on that result. If work remains for a later turn, keep the goal running with update_goal({ continuation: { kind: \"ready\", next_action: \"<what remains>\" } }). Otherwise end this turn with a one-line status; the goal wakes when the result arrives.",
+	].join("\n");
+}
+
+/**
+ * Standing steering while a task wait is on the goal record. Covers the two
+ * turns that run during a wait: the scheduled re-check, and a turn the host
+ * opened for a task result.
+ */
+export function backgroundTaskWaitPrompt(wait: { taskId: string; reason: string }): string {
+	return [
+		`[PI GOAL WAITING ON BACKGROUND TASK taskId=${wait.taskId}]`,
+		`${wait.reason} The goal waits for that result; do not poll it.`,
+		"If this turn carries the result or is the scheduled re-check, inspect the result and continue the goal. If work remains that does not depend on the result, do it and declare it with update_goal({ continuation: { kind: \"ready\", next_action: \"<what remains>\" } }) so the goal keeps running. Otherwise end the turn with a one-line status.",
+	].join("\n");
 }

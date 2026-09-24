@@ -8,6 +8,7 @@
     ".tests/goal-audit-dashboard.test.ts",
     ".tests/goal-auditor-selector.test.ts",
     ".tests/goal-auditor.test.ts",
+    ".tests/goal-background-task-pause.test.ts",
     ".tests/goal-budget.test.ts",
     ".tests/goal-command-palette.test.ts",
     ".tests/goal-compaction.test.ts",
