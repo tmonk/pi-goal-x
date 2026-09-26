@@ -229,14 +229,15 @@ export function isErrorAssistantMessage(message: unknown): boolean {
 /**
  * Transient provider failures are safe for goal-level recovery backoff:
  * Pi-declared network errors plus HTTP 429/5xx-style outages surfaced by
- * providers (429 rate limits, 503 server_error, "Endpoint is unavailable",
- * overloaded, gateway failures). Deliberately excludes auth and
+ * providers (429 rate limits, 503 server_error, HTTP/2 PROTOCOL_ERROR,
+ * "Endpoint is unavailable", overloaded, gateway failures). Deliberately excludes auth and
  * malformed-request failures (and quota/billing text), which retrying
  * cannot fix.
  */
 const TRANSIENT_PROVIDER_ERROR_RE = new RegExp(
 	[
 		"\\bnetwork[_\\s-]?error\\b",
+		"\\bprotocol[_\\s-]?error\\b",
 		"\\bserver[_\\s]?error\\b",
 		"\\b(?:429|502|503|504|529)\\b",
 		"\\brate[_\\s-]?limited\\b",

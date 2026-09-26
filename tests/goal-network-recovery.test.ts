@@ -43,6 +43,8 @@ const FIXTURE_GOAL = readFileSync(
 const REPORTED_503_MESSAGE =
 	'503: {"type":"server_error","message":"Error from provider (Console): Upstream request failed: Endpoint is unavailable."}';
 const REPORTED_503_AFTER_RETRIES = `Retry failed after 3 attempts: ${REPORTED_503_MESSAGE}`;
+const REPORTED_HTTP2_PROTOCOL_ERROR =
+	'Post "https://chatgpt.com/backend-api/codex/responses": stream error: stream ID 1; PROTOCOL_ERROR; received from peer';
 
 // ── Harness (mirrors tests/goal-stale-continuation-golden.test.ts) ──────────
 
@@ -171,6 +173,18 @@ async function markGoalWork(h: ReturnType<typeof createHarness>): Promise<void> 
 }
 
 // ── Classification unit coverage ─────────────────────────────────────────────
+
+test("classification: HTTP/2 stream PROTOCOL_ERROR is transient", () => {
+	assert.equal(
+		isNetworkErrorAssistantMessage({
+			role: "assistant",
+			stopReason: "error",
+			errorMessage: REPORTED_HTTP2_PROTOCOL_ERROR,
+		}),
+		true,
+		"the reported transport failure must engage goal-level recovery",
+	);
+});
 
 test("classification: exact reported 503 server_error payload is a network error", () => {
 	assert.equal(
