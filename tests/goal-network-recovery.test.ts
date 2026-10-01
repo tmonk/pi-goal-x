@@ -513,3 +513,50 @@ test("lifecycle: a successful turn resets the recovery counter and clears pendin
 		delete process.env.PI_GOAL_NETWORK_RECOVERY_MAX_DELAY_MS;
 	}
 });
+// ── pi 1.0.0 session_compact_failed ─────────────────────────────────────────
+
+test("session_compact_failed warns the user instead of failing silently (pi 1.0.0)", async () => {
+	// pi 1.0.0 added `session_compact_failed`. The extension already charges
+	// progress to the goal at `session_before_compact`, so a failed compaction
+	// must not leave the goal silently uncompacted — that is how a long-running
+	// goal walks into the same context overflow on the next turn.
+	const { cwd, goal } = fixtureCwd();
+	const h = createHarness(cwd);
+	await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+	await h.handlers["before_agent_start"]!({ systemPrompt: "base", prompt: "user typed: go", systemPromptOptions: {} }, h.ctx);
+
+	const before = h.notifications.length;
+	await h.handlers["session_compact_failed"]!({
+		type: "session_compact_failed",
+		reason: "threshold",
+		errorMessage: "provider rejected the summarization request",
+		aborted: false,
+		willRetry: false,
+		fromExtension: false,
+	}, h.ctx);
+
+	assert.equal(h.notifications.length, before + 1, "a failed compaction is announced");
+	const message = lastNotification(h);
+	assert.match(message, /compaction failed/i, "the warning names the failure");
+	assert.match(message, /threshold/, "the warning names the trigger reason");
+	assert.match(message, /provider rejected the summarization request/, "the warning carries the error text");
+	assert.match(message, /stays active/i, "the goal is not silently stopped");
+});
+
+test("session_compact_failed stays silent when the user aborted or no goal is focused", async () => {
+	// An abort is a user action, not a fault: warning about it would be noise.
+	const { cwd, goal } = fixtureCwd();
+	const h = createHarness(cwd);
+	await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+	await h.handlers["before_agent_start"]!({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, h.ctx);
+
+	const before = h.notifications.length;
+	await h.handlers["session_compact_failed"]!({
+		type: "session_compact_failed",
+		reason: "manual",
+		aborted: true,
+		willRetry: false,
+		fromExtension: false,
+	}, h.ctx);
+	assert.equal(h.notifications.length, before, "an aborted compaction produces no warning");
+});

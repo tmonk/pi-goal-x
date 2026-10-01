@@ -4,6 +4,15 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **pi 1.0.0 compatibility.** `@earendil-works/pi-ai`, `pi-coding-agent`, and `pi-tui` peer and dev ranges move to `^1.0.0`; support for the 0.8x SDK line is dropped. Requires pi 1.0.0 or newer.
+- Goal drafting can no longer invent a token budget. A drafted goal carries no budget unless you explicitly asked for one; the drafting tool now says so in its prompt guidelines. New goals have always started budgetless — this stops the model from proposing one unprompted.
+
+### Added
+
+- Handle the new pi 1.0.0 `session_compact_failed` event. A failed context compaction previously passed silently, leaving a long-running goal uncompacted and able to re-hit the same context overflow. The goal transaction is now flushed and persisted, and the failure is reported with its trigger and provider error.
+
 ## [0.31.5] — 2026-09-16
 
 ### Changed

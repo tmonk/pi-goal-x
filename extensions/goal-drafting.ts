@@ -307,6 +307,7 @@ export function registerDraftingTools(core: GoalCore): void {
 		promptGuidelines: [
 			"Use only during a /goal, /sisyphus, or /goal-tweak guided draft.",
 			"Clarify ambiguity before proposing. Include tasks when the work naturally decomposes into trackable milestones; omit them for genuinely simple work.",
+			"Set token_budget only when the user explicitly asked for a token budget or a spend limit. Never invent, estimate, or infer one from the objective's size; omitting it creates a goal with no budget.",
 			"Confirmation creates or revises the goal atomically. Continue Chatting leaves drafting active for refinement.",
 		],
 		parameters: Type.Object({

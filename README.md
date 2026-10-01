@@ -19,6 +19,8 @@ The extension saves goal objectives, tasks, and progress across sessions. You ca
 
 ## Install
 
+Requires **pi 1.0.0 or newer** (`@earendil-works/pi-ai`, `pi-coding-agent`, and `pi-tui` `^1.0.0`). pi-goal-x 0.32.0 dropped support for the 0.8x SDK line; install pi 1.0.0 first.
+
 ```bash
 pi install npm:pi-goal-x
 ```
