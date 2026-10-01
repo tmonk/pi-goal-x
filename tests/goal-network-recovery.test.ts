@@ -167,7 +167,7 @@ async function markGoalWork(h: ReturnType<typeof createHarness>): Promise<void> 
 	await h.handlers["turn_start"]!({}, h.ctx);
 	await h.handlers["tool_call"]!({ toolName: "bash", args: { command: "ls" } }, h.ctx);
 	await h.handlers["tool_execution_end"]!({}, h.ctx);
-	assert.equal(h.core.scheduler.declare(h.ctx, { kind: "ready", next_action: "Continue after recovery" }).terminate, true);
+	assert.equal(h.core.scheduler.declare(h.ctx, { kind: "ready" }).terminate, true);
 }
 
 // ── Classification unit coverage ─────────────────────────────────────────────

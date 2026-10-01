@@ -43,7 +43,7 @@ async function fixture(t: TestContext, limit?: number, owner = "owner", existing
 	});
 	const begin = () => core.scheduler.begin(ctx);
 	const admit = () => { begin(); core.scheduler.message(ctx, { ...sent.at(-1), role: "custom" }); };
-	const ready = () => core.scheduler.declare(ctx, { kind: "ready", next_action: "Inspect the next result" });
+	const ready = () => core.scheduler.declare(ctx, { kind: "ready" });
 	const wait = () => core.scheduler.declare(ctx, { kind: "wait", reason: "Await fixture job", deadline: new Date(Date.now() + 10000).toISOString(), polling: { interval_seconds: 1, max_checks: 2 } });
 	return { cwd, ctx, core, handlers, tools, sent, notifications, begin, admit, ready, wait, pi, aborts: () => aborts };
 }
@@ -86,7 +86,11 @@ test("uncapped ready runs keep counting when limits are added and removed", asyn
 		h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); h.admit();
 		assert.equal(h.core.state.goal?.scheduler?.used, used);
 	}
-	assert.match(schedulerSummary(h.core.state.goal?.scheduler), /5\/unlimited/);
+	// Uncapped runs still count. The summary reports nothing while the allowance is
+	// unlimited, because there is no limit to report.
+	assert.equal(h.core.state.goal?.scheduler?.used, 5);
+	assert.equal(schedulerSummary(h.core.state.goal?.scheduler), "");
+	assert.match(schedulerSummary(h.core.state.goal?.scheduler, 5), /5\/5/);
 	saveGoalSettingsFileConfig(h.cwd, { maxAutonomousRuns: 5 });
 	assert.equal(h.ready().terminate, false, "adding a cap includes previously uncapped dispatches");
 	saveGoalSettingsFileConfig(h.cwd, {});
@@ -212,7 +216,7 @@ test("update_goal rejects mixed forms and scheduler cloning protects rollback", 
 	const h = await fixture(t, 5);
 	h.begin();
 	const tool = h.tools.get("update_goal");
-	const mixed = await tool.execute("mixed", { status: "complete", continuation: { kind: "ready", next_action: "x" } }, undefined, undefined, h.ctx);
+	const mixed = await tool.execute("mixed", { status: "complete", continuation: { kind: "ready" } }, undefined, undefined, h.ctx);
 	assert.equal(mixed.terminate, false);
 	h.ready();
 	const before = structuredClone(h.core.state.goal!.scheduler);
@@ -337,7 +341,7 @@ test("readiness polling, failure after claim, and active-time waiting", async t 
 	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
 	let busy = true;
 	const ctx = { ...h.ctx, hasPendingMessages: () => busy };
-	h.core.scheduler.begin(ctx); h.core.scheduler.declare(ctx, { kind: "ready", next_action: "work" }); h.core.scheduler.settled(ctx);
+	h.core.scheduler.begin(ctx); h.core.scheduler.declare(ctx, { kind: "ready" }); h.core.scheduler.settled(ctx);
 	t.mock.timers.tick(200);
 	assert.equal(h.sent.length, 0);
 	assert.equal(h.core.state.goal?.scheduler?.used, 0);
@@ -462,6 +466,86 @@ test("default settings inherit strict mode with explicit false overriding global
  assert.equal(parseGoalSettings({strictExecutionContract: "invalid"}).strictExecutionContract, undefined);
 });
 
+test("showAutonomousRuns is a layered boolean that defaults to on", async t => {
+	const h = await fixture(t);
+	assert.equal(loadGoalSettings(h.cwd).showAutonomousRuns, true);
+	saveGoalSettingsFileConfig(h.cwd, { showAutonomousRuns: false });
+	invalidateGoalSettingsCache();
+	assert.equal(loadGoalSettings(h.cwd).showAutonomousRuns, false);
+	writeFileSync(process.env.PI_GOAL_GLOBAL_SETTINGS_FILE!, JSON.stringify({ showAutonomousRuns: true }));
+	invalidateGoalSettingsCache();
+	assert.equal(loadGoalSettings(h.cwd).showAutonomousRuns, false, "project false beats global true");
+	saveGoalSettingsFileConfig(h.cwd, { showAutonomousRuns: true });
+	invalidateGoalSettingsCache();
+	assert.equal(loadGoalSettings(h.cwd).showAutonomousRuns, true, "project true beats global true");
+	saveGoalSettingsFileConfig(h.cwd, {});
+	invalidateGoalSettingsCache();
+	assert.equal(loadGoalSettings(h.cwd).showAutonomousRuns, true, "global value applies when the project is unset");
+	for (const bad of ["yes", 1, null, {}]) assert.equal(parseGoalSettings({ showAutonomousRuns: bad }).showAutonomousRuns, undefined);
+	assert.equal(parseGoalSettings({ showAutonomousRuns: false }).showAutonomousRuns, false);
+});
+
+test("the runs line is omitted when unlimited and controlled by the setting when finite", async t => {
+	const h = await fixture(t);
+	const s = { ...normalizeGoalScheduler({ version: 1, owner: "owner", generation: "gen", used: 4, phase: "idle", repairUsed: false })!, used: 4 };
+
+	// Unlimited: no line at all, because there is no limit to report.
+	assert.equal(schedulerSummary(s), "");
+	assert.equal(schedulerSummary(s, undefined), "");
+	assert.equal(schedulerSummary(s, undefined, true), "", "the setting cannot force a line when there is no limit");
+
+	// Finite: reported by default.
+	assert.match(schedulerSummary(s, 20), /Autonomous runs: 4\/20\./);
+	assert.match(schedulerSummary(h.core.state.goal?.scheduler, 20), /Autonomous runs/);
+
+	// Finite with the setting off.
+	assert.equal(schedulerSummary(s, 20, false), "");
+
+	// Zero is a finite allowance, so the disabled suffix still reports.
+	assert.match(schedulerSummary(s, 0), /4\/0 \(automatic continuation disabled\)/);
+	assert.equal(schedulerSummary(s, 0, false), "");
+
+	assert.match(schedulerSummary(undefined, 20), /Autonomous runs: 0\/20\./);
+});
+
+test("a ready disposition needs no next action and the schema no longer accepts one", async t => {
+	const h = await fixture(t);
+	const schema = JSON.stringify(h.tools.get("update_goal")?.parameters ?? {});
+	assert.ok(!/next_action/.test(schema), `update_goal schema must not expose next_action: ${schema.slice(0, 400)}`);
+
+	const result = h.core.scheduler.declare(h.ctx, { kind: "ready" });
+	assert.equal(result.terminate, true, "ready with no next action succeeds");
+	const declaredText = (result.content ?? []).map((part) => (part && "text" in part ? String(part.text) : "")).join(" ");
+	assert.match(declaredText, /Scheduling decision saved/);
+	assert.deepEqual(h.core.state.goal?.scheduler?.decision, { kind: "ready", purpose: "ready" }, "purpose is kept and no nextAction is stored");
+	assert.ok(!/Next action/.test(declaredText), "the declaration result renders no next-action line");
+	assert.doesNotMatch(schedulerSummary(h.core.state.goal?.scheduler, 20), /Next action/);
+});
+
+test("a goal saved with decision.nextAction loads and strips the field", () => {
+	const legacy = {
+		version: 1,
+		owner: "legacy-owner",
+		generation: "legacy-gen",
+		used: 3,
+		phase: "ready",
+		decision: { kind: "ready", nextAction: "Continue pursuing the goal, then verify and complete it when satisfied.", purpose: "repair" },
+		repairUsed: false,
+	};
+	const normalized = normalizeGoalScheduler(legacy);
+	assert.ok(normalized, "a legacy scheduler state must still normalize");
+	assert.equal(normalized!.phase, "ready");
+	assert.equal(normalized!.used, 3, "spent allowance is preserved");
+	assert.deepEqual(normalized!.decision, { kind: "ready", purpose: "repair" }, "purpose is preserved and nextAction is stripped");
+	assert.ok(!("nextAction" in (normalized!.decision as object)));
+	assert.equal(JSON.stringify(normalized).includes("nextAction"), false, "the stripped field is never written back");
+	for (const purpose of ["ready", "repair", "kickoff", "recovery"] as const) {
+		const s = normalizeGoalScheduler({ ...legacy, decision: { kind: "ready", nextAction: "x", purpose } });
+		assert.equal((s?.decision as { purpose?: string } | undefined)?.purpose, purpose);
+	}
+	assert.equal(normalizeGoalScheduler({ ...legacy, decision: { kind: "ready", purpose: "bogus" } })?.phase, "interrupted", "an invalid decision is still rejected");
+});
+
 test("prompt cache: normal and custom runs preserve history while refreshing all live goal state", async t => {
  const h = await fixture(t);
  const history: any[] = [{role: "user", content: "Work on the goal", timestamp: 1}];
@@ -490,7 +574,7 @@ test("prompt cache: normal and custom runs preserve history while refreshing all
  assert.match(second[1].content, /PI GOAL ACTIVE/);
  assert.equal(second.filter((m: any) => m.customType === "pi-goal-live-context").length, 3, "changed counters append one small tail; the policy block is retained, not resent");
  assert.match(second.at(-1).content, /12345 tokens/);
- assert.match(second.at(-1).content, /7\/unlimited/);
+ assert.doesNotMatch(second.at(-1).content, /Autonomous runs/, "an unlimited allowance reports no runs line");
  // An objective edit changes the stable policy block: retention resets once so no
  // stale objective lingers mid-history, and the fresh pair anchors the new prefix.
  h.core.state.goal!.objective = "Changed objective";
@@ -536,7 +620,9 @@ test("prompt cache: interleaved sessions keep per-session transient sets", async
 test("prompt cache: cleared scheduling instructions vanish from retained history", async t => {
 	const h = await fixture(t);
 	const history: any[] = [{role: "user", content: "Work on the goal", timestamp: 1}];
-	h.core.state.goal!.scheduler = {...newGoalScheduler("owner"), phase: "ready", decision: {kind: "ready", purpose: "ready", nextAction: "Publish release v1"}};
+	// The standing instruction is a saved wait reason. A ready decision no longer
+	// carries text: next actions were removed.
+	h.core.state.goal!.scheduler = {...newGoalScheduler("owner"), phase: "waiting", decision: {kind: "wait"}, wait: {id: "w1", token: "t1", reason: "Publish release v1", deadline: Date.now() + 60_000}};
 	const first: any[] = (await h.handlers.context!({messages: history}, h.ctx)).messages;
 	assert.ok(first.some((m: any) => typeof m.content === "string" && m.content.includes("Publish release v1")), "standing instruction rides the live state");
 	// Cleared by omission: a plain scheduler with no decision must not re-issue the order.

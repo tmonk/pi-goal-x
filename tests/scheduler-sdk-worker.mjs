@@ -32,7 +32,7 @@ const server = http.createServer(async (req, res) => {
 	const n = compacting ? (compactionRequests++, -1) : ++workRequests;
 	let call;
 	if (n === 1) call = ['write', { path: 'sample.txt', content: 'fixture' }];
-	if (n === 2 || n === 6) call = ['update_goal', { continuation: { kind: 'ready', next_action: 'Inspect the fixture result' } }];
+	if (n === 2 || n === 6) call = ['update_goal', { continuation: { kind: 'ready' } }];
 	if (n === 3 || n === 5) call = ['read', { path: 'sample.txt' }];
 	if (n === 4) call = ['update_goal', { continuation: { kind: 'wait', reason: 'Await producer', deadline: new Date(Date.now() + 15000).toISOString(), polling: { interval_seconds: 10, max_checks: 1 } } }];
 	if (implicit) call = undefined;
@@ -89,9 +89,14 @@ try {
 	assert.equal(workRequests, 8, 'ready, wake, ready, one repair only');
 	assert.equal(core.state.goal.scheduler.used, 4);
 	if (uncapped) assert.match(core.state.goal.pauseReason, /No execution disposition/, 'uncapped mode stops after its only repair');
-	assert.ok(JSON.stringify(requests.at(-1)).includes('This is the only repair prompt'), 'the admitted repair action must reach the provider');
+	// Next actions were removed, so a repair dispatch carries no per-run text. The
+	// mechanism is unchanged: the repair is spent and the goal then pauses.
+	assert.equal(core.state.goal.scheduler.repairUsed, true, 'the repair dispatch was spent');
+	assert.ok(!JSON.stringify(requests).includes('This is the only repair prompt'), 'no next-action repair text reaches the provider');
 	await delay(200); assert.equal(workRequests, 8);
-	assert.ok(JSON.stringify(requests[lifecycleMode ? 3 : 2]).includes('Inspect the fixture result'), 'custom-message run receives current scheduling context');
+	const liveContext = JSON.stringify(requests[lifecycleMode ? 3 : 2]);
+	assert.ok(liveContext.includes('PI GOAL ACTIVE'), 'custom-message run receives the goal prompt with current scheduling context');
+	assert.ok(!liveContext.includes('Inspect the fixture result'), 'a declared next action is never stored or echoed');
 	const oldCheckpoint = session.messages.find(m => m.role === 'custom' && m.customType === 'pi-goal-event');
 	assert.ok(oldCheckpoint);
 	piApi.sendMessage({ customType: 'pi-goal-event', content: oldCheckpoint.content, details: oldCheckpoint.details, display: false }, { triggerTurn: true, deliverAs: 'followUp' });

@@ -249,7 +249,7 @@ async function declareNextRun(h: ReturnType<typeof createHarness>): Promise<void
 	await h.handlers["tool_call"]!({ toolName: "bash", args: { command: "ls" } }, h.ctx);
 	await h.handlers["tool_execution_end"]!({}, h.ctx);
 	saveGoalSettingsFileConfig(h.ctx.cwd, { maxAutonomousRuns: 5 });
-	assert.equal(h.core.scheduler.declare(h.ctx, { kind: "ready", next_action: "Continue explicit work" }).terminate, true);
+	assert.equal(h.core.scheduler.declare(h.ctx, { kind: "ready" }).terminate, true);
 }
 
 test("provider-error guard: turn_end with stopReason=error never queues a continuation", async () => {

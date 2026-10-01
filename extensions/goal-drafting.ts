@@ -491,7 +491,7 @@ export function registerDraftingTools(core: GoalCore): void {
 				// Resume glue mirrors replaceGoal: restart accounting and queue
 				// the auto-continuation so the revived goal keeps going.
 				core.beginAccounting();
-				const scheduling = core.scheduler.declare(ctx, {kind: "ready", next_action: "Continue the goal after the confirmed tweak."});
+				const scheduling = core.scheduler.declare(ctx, {kind: "ready"});
 				if (!scheduling.terminate) schedulingNote = "\n" + scheduling.content.filter(item => item.type === "text").map(item => item.text).join("\n");
 				core.queueContinuation(ctx, true);
 			}

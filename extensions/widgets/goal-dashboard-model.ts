@@ -103,6 +103,8 @@ export interface DashboardTaskNode {
 
 export interface GoalDashboardModelOptions {
 	maxAutonomousRuns?: number;
+	/** Report the runs line for a finite allowance (default on). */
+	showAutonomousRuns?: boolean;
 	focused: boolean;
 	otherOpenGoals: number;
 	ledgerEvents?: readonly GoalLedgerEvent[];
@@ -498,7 +500,7 @@ export function deriveGoalDashboardModel(
 	if (goal.usage.tokensUsed > 0) footerUsageBits.push(formatCompactTokens(goal.usage.tokensUsed));
 
 	return {
-		scheduling: schedulerSummary(goal.scheduler, options.maxAutonomousRuns).split("\n"),
+		scheduling: schedulerSummary(goal.scheduler, options.maxAutonomousRuns, options.showAutonomousRuns !== false).split("\n").filter(Boolean),
 		goalId: goal.id,
 		title: displayObjectiveTitle(goal.objective),
 		status,

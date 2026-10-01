@@ -366,11 +366,13 @@ test("lowering active budget stops immediately and invalidates queued dispatch",
  t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
  await createGoalWithTasks(h,"Objective",[{id:"one",title:"One"}]);
  const goal=diskGoal(cwd);goal.usage.tokensUsed=20;
- goal.scheduler={...newGoalScheduler("tweak-status-session"),phase:"ready",decision:{kind:"ready",purpose:"ready",nextAction:"Old action"},used:2};
+ // A goal saved before next actions were removed still carries decision.nextAction
+ // on disk. Seeding it here shows that such a goal loads and tweaks normally.
+ goal.scheduler={...newGoalScheduler("tweak-status-session"),phase:"ready",decision:{kind:"ready",purpose:"ready",nextAction:"Old action"} as unknown as {kind:"ready";purpose:"ready"},used:2};
  writeActiveGoalFile(h.ctx,goal);h.core.reconcileFocusedGoalFromDisk(h.ctx);
  await h.commands.get("goal-tweak")!.handler("Set budget to 1",h.ctx);
  await confirmDialog(h,runProposal(h,proposalParams(goal.objective,{token_budget:1})));
- const saved=diskGoal(cwd);assert.equal(saved.status,"budget_limited");assert.equal(saved.scheduler?.decision,undefined);assert.notEqual(saved.scheduler?.generation,goal.scheduler.generation);assert.equal(saved.scheduler?.used,2);
+ const saved=diskGoal(cwd);assert.equal(saved.status,"budget_limited");assert.equal(saved.scheduler?.decision,undefined);assert.notEqual(saved.scheduler?.generation,goal.scheduler?.generation);assert.equal(saved.scheduler?.used,2);
 });
 
 test("budget confirmation rejects a changed revision",async t=>{

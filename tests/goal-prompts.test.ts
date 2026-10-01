@@ -445,7 +445,7 @@ test("allowance configuration refreshes cached guidance without bloating disable
 	const waiting = {...current, scheduler: {version: 1 as const, owner: "owner", generation: "generation", used: 1, phase: "waiting" as const, repairUsed: false, wait: {id: "wait", token: "token", reason: "Saved wait", deadline: 9999999999999}}};
 	assert.match(goalPrompt(waiting), /Missing decisions allow one repair/);
 	assert.equal(goalPrompt(current), defaults, "leaving a grandfathered wait restores implicit guidance");
-	assert.match(defaults, /0\/unlimited/);
+	assert.doesNotMatch(defaults, /Autonomous runs/, "an unlimited allowance reports no runs line");
 	assert.equal(goalPrompt(current, { maxAutonomousRuns: 0 }), off, "disabling again must not reuse enabled guidance");
 	const zero = goalPrompt(current, { maxAutonomousRuns: 0 });
 	assert.doesNotMatch(zero, /Saved decisions terminate/);

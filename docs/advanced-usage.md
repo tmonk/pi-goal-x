@@ -14,12 +14,18 @@ Set an appropriate allowance in `/goal-settings`, or in `.pi/pi-goal-x-settings.
 { "maxAutonomousRuns": 20 }
 ```
 
+The `Autonomous runs: used/limit` line reports a finite allowance and is left out when
+allowance is unlimited. Set `showAutonomousRuns` to `false` to drop it for a finite
+allowance as well; it defaults to `true`.
+
 Agents may edit this setting. Changing it does not replenish consumed runs; explicit `/goal-resume` renews the period and continues now, including from a waiting goal. No configured allowance is required unless the effective limit is zero, which disables resume. Tool calls within a run are not separate runs. Existing token budgets still apply.
 
-Explicit `ready` is optional in default mode. New `wait` declarations require strict mode; otherwise they return a non-terminating error. Previously saved waits retain their deadline, checks, and repair rules when upgrading or disabling strict mode, and may be re-declared with the same identity. Mode changes never resume a paused goal or renew consumed runs.
+Explicit `ready` is optional in default mode. A goal saved before next actions were
+removed still loads, with its `nextAction` field stripped during normalization.
+New `wait` declarations require strict mode; otherwise they return a non-terminating error. Previously saved waits retain their deadline, checks, and repair rules when upgrading or disabling strict mode, and may be re-declared with the same identity. Mode changes never resume a paused goal or renew consumed runs.
 
 ```js
-update_goal({ continuation: { kind: "ready", next_action: "Verify the build artifacts" } })
+update_goal({ continuation: { kind: "ready" } })
 update_goal({ continuation: {
   kind: "wait", reason: "Await the remote build",
   deadline: "2026-09-15T12:00:00Z",
