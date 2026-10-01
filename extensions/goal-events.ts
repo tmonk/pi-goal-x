@@ -317,6 +317,27 @@ export function registerGoalEvents(core: GoalCore): void {
 		core.queueContinuation(ctx, true);
 	});
 
+	type SessionCompactFailed = { reason: "manual" | "threshold" | "overflow"; errorMessage?: string; aborted: boolean; willRetry: boolean; fromExtension: boolean };
+	// session_compact_failed is new in pi 1.0.0. The supported peer range also
+	// includes 0.83 through 0.87, where this event does not exist and is never
+	// emitted, so the registration is typed loosely enough to compile against
+	// every supported host. On those hosts the handler is simply never called.
+	type CompactFailedOn = (event: "session_compact_failed", handler: (event: SessionCompactFailed, ctx: ExtensionContext) => unknown) => unknown;
+	(pi.on as unknown as CompactFailedOn)("session_compact_failed", async (event, ctx) => {
+		// `session_before_compact` already charged progress to the goal, so
+		// flush the buffered transaction and persist first. Otherwise the goal
+		// record and the ledger can disagree about a compaction that never
+		// happened.
+		core.goalService.flushTurn(ctx);
+		if (core.state.goal) core.persist(ctx);
+		if (event.aborted || !core.state.goal) return;
+		const detail = event.errorMessage ? `: ${event.errorMessage}` : "";
+		ctx.ui.notify(
+			`Goal context compaction failed (${event.reason})${detail}. The goal stays active; retry with /compact or keep working.`,
+			"warning",
+		);
+	});
+
 	pi.on("session_tree", async (_event, ctx) => {
 		core.auditMessages.clear();
 		core.goalService.flushTurn(ctx); // P1-3: persist any buffered transaction before reload

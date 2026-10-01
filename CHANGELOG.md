@@ -4,6 +4,16 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **pi 1.0.0 support.** The supported host range widens to `>=0.83.0 <2.0.0`, so pi 1.0.0 is supported without revoking the 0.83-0.87 range; development and verification move to 1.0.0. The 1.0 API is additive for this extension: every declaration removed since 0.84.1 was unused, and `ExtensionAPI.on()` returning an unsubscribe function needs no change because no handler is ever detached.
+- Goal drafting can no longer invent a token budget. A drafted goal carries no budget unless you explicitly asked for one; the drafting tool now says so in its prompt guidelines. New goals have always started budgetless — this stops the model from proposing one unprompted.
+
+### Added
+
+- Handle the new pi 1.0.0 `session_compact_failed` event. A failed context compaction previously passed silently, leaving a long-running goal uncompacted and able to re-hit the same context overflow. The goal transaction is now flushed and persisted, and the failure is reported with its trigger and provider error.
+- `scripts/live-session-check.mjs` drives a real `pi --mode rpc` session through draft, confirm, execute, audit, and archival, closing a coverage gap: `createAgentSession` and `createExtensionRuntime` are stubbed or injected in every test, so the auditor's session construction was only ever typechecked, never executed.
+
 ## [0.31.9] — 2026-09-24
 
 ### Documentation

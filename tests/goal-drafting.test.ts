@@ -373,6 +373,47 @@ test("confirmed proposal persists verification contract and nested tasks, then r
 	}
 });
 
+// ── Budget provenance ─────────────────────────────────────────────────────
+
+test("an unrequested token budget is never created: no guideline invites one, and omitting it stores no budget", async () => {
+	// A drafted goal must carry no token budget unless the user explicitly asked
+	// for one. Two independent guards are asserted here:
+	//   1. the tool's promptGuidelines tell the model to omit token_budget unless
+	//      the user asked, so the model does not invent one from objective size;
+	//   2. omitting token_budget persists a goal with no budget at all.
+	// Budgets stay an opt-in, user-supplied lever (see the budget provenance
+	// note in specs/2026-10-01-pi-1-0-0-compatibility/MILESTONES.md).
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-no-budget-"));
+	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
+	try {
+		const h = createHarness(cwd, { hasUI: true });
+		await h.sessionStart();
+		await h.commands.get("goal")!.handler("Add search", h.ctx);
+
+		const proposal = h.tools.get("propose_goal_draft");
+		assert.ok(proposal, "propose_goal_draft must be registered during a draft");
+		const guidelines: string[] = proposal.promptGuidelines ?? [];
+		const budgetGuideline = guidelines.find((line) => /token_budget/i.test(line));
+		assert.ok(budgetGuideline, "propose_goal_draft must carry a token_budget prompt guideline");
+		assert.match(budgetGuideline, /only when the user explicitly asked/i, "guideline must scope budgets to explicit user requests");
+		assert.match(budgetGuideline, /never invent|never.*infer/i, "guideline must forbid inventing a budget");
+
+		// A large-sounding objective with no budget request must stay budgetless.
+		const objective = "Rewrite the entire scheduling subsystem.\nSuccess criteria: behavior is preserved.";
+		const pending = runProposal(h, proposalParams(objective));
+		h.dialogResult({ questions: [], answers: [{ id: "confirm", question: "Confirm Goal Draft", answer: CONFIRM_ANSWER, wasCustom: false }], cancelled: false });
+		await pending;
+
+		const goal = firstGoal(cwd);
+		assert.equal(goal.tokenBudget, undefined, "no budget is persisted when the user did not request one");
+		const warnings = ledgerEvents(cwd).filter((e) => e.type === "goal_budget_warning" || e.type === "goal_budget_limited");
+		assert.deepEqual(warnings, [], "no budget lifecycle events for an unbudgeted goal");
+		assert.notEqual(goal.status, "budget_limited", "an unbudgeted goal is never budget_limited");
+	} finally {
+		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
+});
+
 // ── Sisyphus fidelity and validation ──────────────────────────────────────
 
 test("sisyphus mode mismatch and structural sufficiency are validated before confirmation", async () => {

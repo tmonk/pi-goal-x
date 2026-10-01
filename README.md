@@ -19,6 +19,8 @@ The extension saves goal objectives, tasks, and progress across sessions. You ca
 
 ## Install
 
+Supports pi 0.83 through 1.x (`@earendil-works/pi-ai`, `pi-coding-agent`, and `pi-tui` `>=0.83.0 <2.0.0`), developed and verified against 1.0.0.
+
 ```bash
 pi install npm:pi-goal-x
 ```

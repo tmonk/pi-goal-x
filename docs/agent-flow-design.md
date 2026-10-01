@@ -302,4 +302,4 @@ per-draft auditor selection), a fully operable settings menu, `/goal-clear`
 confirmation, neutral task-confirmation labels, failure-checked completion
 commits, per-goal revision/lock serialization with typed conflicts, the
 agent-pause outcome, untrusted `completion_summary` claims, the enforced
-experiment matrix, the runner self-check, and the Pi SDK 0.83 family upgrade.
+experiment matrix, the runner self-check, and the Pi SDK 1.0 family upgrade.
