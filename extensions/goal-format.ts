@@ -239,6 +239,7 @@ const TRANSIENT_PROVIDER_ERROR_RE = new RegExp(
 		"\\bnetwork[_\\s-]?error\\b",
 		"\\bprotocol[_\\s-]?error\\b",
 		"\\bserver[_\\s]?error\\b",
+		"\\bfinish[_\\s-]?reason:\\s*error\\b",
 		"\\b(?:429|502|503|504|529)\\b",
 		"\\brate[_\\s-]?limited\\b",
 		"\\brate[_\\s-]?limit\\b",

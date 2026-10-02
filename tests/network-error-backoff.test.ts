@@ -51,9 +51,17 @@ test("network-error detection accepts provider error text and raw finish reason 
 		false,
 	);
 	assert.equal(
+		isNetworkErrorAssistantMessage({ role: "assistant", stopReason: "error", errorMessage: "Provider finish_reason: error" }),
+		true,
+	);
+	assert.equal(
+		isNetworkErrorAssistantMessage({ role: "assistant", stopReason: "error", errorMessage: "Provider finish_reason:  error" }),
+		true,
+	);
+	assert.equal(
 		hasNetworkErrorAssistantMessage([
-			{ role: "assistant", stopReason: "error", errorMessage: "other provider error" },
-			{ role: "assistant", stopReason: "error", rawStopReason: "network_error" },
+			{ role: "assistant", stopReason: "error", errorMessage: "Provider finish_reason: error" },
+			{ role: "assistant", stopReason: "error", errorMessage: "Provider finish_reason: content_filter" },
 		]),
 		true,
 	);

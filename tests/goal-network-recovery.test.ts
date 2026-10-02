@@ -266,6 +266,18 @@ test("classification: non-transient errors stay non-recoverable", () => {
 	}
 });
 
+test("classification: generic provider finish_reason: error is transient", () => {
+	assert.equal(
+		isNetworkErrorAssistantMessage({
+			role: "assistant",
+			stopReason: "error",
+			errorMessage: "Provider finish_reason: error",
+		}),
+		true,
+		"the generic provider finish_reason: error must engage goal-level recovery",
+	);
+});
+
 // ── Regression through the real agent_end → agent_settled lifecycle ─────────
 
 test("regression: reported 503 payload schedules goal-level recovery after settle", async () => {
@@ -290,6 +302,35 @@ test("regression: reported 503 payload schedules goal-level recovery after settl
 			h.notifications.at(-1)?.message ?? "",
 			/Retrying the goal in 5s/,
 			"the reported 503 outage must engage the bounded goal-level recovery",
+		);
+		assert.equal(await countCheckpoints(h), 0, "the first recovery is delayed by the backoff policy");
+	} finally {
+		// The delayed timer is unref'd and needs no test teardown.
+	}
+});
+
+test("regression: generic Provider finish_reason: error schedules goal-level recovery after settle", async () => {
+	const { cwd, goal } = fixtureCwd();
+	saveGoalSettingsFileConfig(cwd, { maxAutonomousRuns: 100 });
+	const h = createHarness(cwd);
+	try {
+		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+		await h.handlers["before_agent_start"]!({
+			systemPrompt: "base",
+			prompt: "user typed: continue",
+			systemPromptOptions: {},
+		}, h.ctx);
+
+		await h.handlers["agent_end"]!({
+			messages: [{ role: "assistant", stopReason: "error", errorMessage: "Provider finish_reason: error" }],
+		}, idleCtx(h.ctx));
+		assert.equal(await countCheckpoints(h), 0, "agent_end must not race Pi's built-in retries");
+
+		await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
+		assert.match(
+			h.notifications.at(-1)?.message ?? "",
+			/Retrying the goal in 5s/,
+			"the generic finish_reason: error must engage the bounded goal-level recovery",
 		);
 		assert.equal(await countCheckpoints(h), 0, "the first recovery is delayed by the backoff policy");
 	} finally {
