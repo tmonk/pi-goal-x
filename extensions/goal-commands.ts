@@ -329,7 +329,22 @@ export function registerGoalCommands(core: GoalCore): void {
 		core.pauseActiveGoal(ctx);
 	}
 
-	async function handleGoalResume(ctx: ExtensionContext): Promise<void> {
+	async function handleGoalResume(ctx: ExtensionContext, rawArgs?: string): Promise<void> {
+		const text = (rawArgs ?? "").trim();
+		if (text) {
+			// Deliver the user's text before resuming. Busy path: the steered
+			// message enters pi's pending queue, so sendQueuedContinuation
+			// (goal-runtime.ts) waits for it. Idle path: the message starts a user
+			// turn, and agent_start -> GoalScheduler.begin() (goal-scheduler.ts)
+			// cancels the armed kickoff timer; ordering is best-effort, and if a
+			// 0 ms kickoff dispatch still wins the race, the user text is queued as
+			// a followUp inside that run (no message loss).
+			try {
+				core.pi.sendUserMessage(text, { deliverAs: ctx.isIdle() ? "followUp" : "steer" });
+			} catch (err) {
+				ctx.ui.notify("Could not deliver message to the agent: " + (err instanceof Error ? err.message : String(err)), "error");
+			}
+		}
 		core.reconcileFocusedGoalFromDisk(ctx);
 		if (!core.state.goal && otherOpenGoalCount(core.goalsById, null) > 0) {
 			const selected = await chooseOpenGoal(ctx, "Resume or focus open goal");
@@ -809,9 +824,9 @@ export function registerGoalCommands(core: GoalCore): void {
 		},
 	});
 	pi.registerCommand("goal-resume", {
-		description: "Continue now and renew the configured autonomous-run allowance.",
-		handler: async (_rawArgs, ctx) => {
-			await handleGoalResume(ctx);
+		description: "Continue now and renew the configured autonomous-run allowance. Optional trailing text is passed to the agent verbatim as a user message.",
+		handler: async (rawArgs, ctx) => {
+			await handleGoalResume(ctx, rawArgs);
 		},
 	});
 }

@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `/goal-resume <text>` passes the trailing text to the agent verbatim as a plain user message (followUp when idle, steer when busy). Delivery precedes the resume logic, so the text is never dropped even when the resume path fails; no-arg and whitespace-only behavior is unchanged.
+
 ## [0.32.3] — 2026-10-02
 
 ### Fixed

@@ -102,7 +102,7 @@ A project can have several open goals, with one focused goal per session. Switch
 | `/goal-unfocus` | Leave the current goal open without focusing on it. |
 | `/goal-tweak <change>` | Revise the current goal with the agent. |
 | `/goal-pause` | Pause work on the focused goal. |
-| `/goal-resume` | Resume a paused or blocked goal. |
+| `/goal-resume <text>` | Resume a paused or blocked goal; optional trailing text is passed to the agent verbatim. |
 | `/goal-clear` | Archive the focused goal after confirmation. |
 | `/goal-cancel` | Cancel an unconfirmed draft. |
 | `/goal-settings` | Configure goal behaviour and the auditor. |

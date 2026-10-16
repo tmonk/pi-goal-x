@@ -48,6 +48,7 @@
     ".tests/goal-record.test.ts",
     ".tests/goal-recovery.test.ts",
     ".tests/goal-refresh.test.ts",
+    ".tests/goal-resume-text.test.ts",
     ".tests/goal-rpc-dialogs.test.ts",
     ".tests/goal-scheduler.test.ts",
     ".tests/goal-service.test.ts",

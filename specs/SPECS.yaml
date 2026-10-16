@@ -65,3 +65,10 @@ specs:
     focused: false
     last_audit: null
     updated: 2026-10-02
+  - id: 2026-10-16-goal-resume-text
+    path: specs/2026-10-16-goal-resume-text
+    title: Pass /goal-resume trailing text to the agent verbatim
+    status: completed
+    focused: false
+    last_audit: null
+    updated: 2026-10-16
