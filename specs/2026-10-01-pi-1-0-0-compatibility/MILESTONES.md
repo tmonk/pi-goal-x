@@ -312,7 +312,7 @@ spec's behavioral-parity constraint forbids absent a demonstrated failure. The l
 in the previous section showed no stranding between `agent_end` and `agent_settled`. Revisit
 only if a 1.0.x regression appears that strands work between before-settle and settled.
 
-#### REJECTED — `context_with_system`
+#### REJECTED — `context_with_system` (superseded: adopted, see below)
 
 The extension's `context` handler *rewrites* the message array: it injects the live
 `[CURRENT EXECUTION STATE]` message and applies checkpoint compaction
@@ -322,6 +322,13 @@ message contract for no gain. The hoped-for gain — more accurate token budgets
 exist: budget accounting charges `completedTurnTokens` sourced from `turn_end`
 (`goal-events.ts:181`), never from the context event, so system-prompt tokens would not reach
 the budget at all.
+
+Later finding: the rejection missed a cache cost. Pi keeps mid-session prompt changes as
+separate system messages only while every `context` handler returns the conversation
+unchanged; any edit makes Pi fold them into the leading system message
+(`restoreSystemMessages`), so each prompt change rewrote the cached prefix while a goal
+was active. The transform now runs in `context_with_system` on Pi 0.87+, with `context`
+as the fallback (`registerContextTransform` in `extensions/goal-session-safety.ts`).
 
 #### REJECTED — `getSettings()`
 

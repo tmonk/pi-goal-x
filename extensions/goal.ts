@@ -12,7 +12,7 @@ import {
 import type { GoalEventDetails } from "./goal-record.ts";
 import { createGoalCore } from "./goal-state.ts";
 import { registerGoalTools } from "./goal-tools.ts";
-import { filterGoalSessionContext, isDelegatedGoalSession } from "./goal-session-safety.ts";
+import { filterGoalSessionContext, isDelegatedGoalSession, registerContextTransform } from "./goal-session-safety.ts";
 
 /**
  * pi-goal thin installer. All state lives in the GoalCore (goal-state.ts);
@@ -26,10 +26,7 @@ export default function goalExtension(
 ): void {
 	if (isDelegatedGoalSession()) {
 		// Inherit conversation without inheriting ownership of the parent's goal.
-		pi.on("context", async event => {
-			const messages = filterGoalSessionContext(event.messages, true);
-			return messages === null ? undefined : { messages };
-		});
+		registerContextTransform(pi, messages => filterGoalSessionContext(messages, true));
 		return;
 	}
 	pi.registerMessageRenderer<GoalEventDetails>(GOAL_EVENT_ENTRY, renderGoalEvent);

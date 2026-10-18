@@ -84,6 +84,7 @@
     ".tests/integration/extension.test.ts"
   ],
   "e2eFiles": [
+    ".tests/e2e/goal-context-system-sdk.test.ts",
     ".tests/e2e/goal-lifecycle-dashboard.test.ts",
     ".tests/e2e/goal-prompt-cache-sdk.test.ts",
     ".tests/e2e/goal-scheduler-sdk.test.ts",

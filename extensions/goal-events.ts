@@ -33,7 +33,7 @@ import {
 import { hasActiveDraft, rehydrateDraft } from "./goal-drafting.ts";
 import { syncTerminalInputPause } from "./goal-widget.ts";
 import type { GoalCore } from "./goal-state.ts";
-import { filterGoalSessionContext } from "./goal-session-safety.ts";
+import { filterGoalSessionContext, registerContextTransform } from "./goal-session-safety.ts";
 import type { GoalMutationOutcome } from "./goal-service.ts";
 
 /** Normalize checkpoints independently: deleting old markers shifts the cached prefix. */
@@ -71,10 +71,10 @@ export function registerGoalEvents(core: GoalCore): void {
 	let continuationAfterSettleFor: string | null = null;
 	let networkErrorRecoveryAfterSettleFor: string | null = null;
 
-	pi.on("context", async (event, ctx) => {
-		const filtered = filterGoalSessionContext(event.messages);
-		const messages = compactGoalCheckpointContext(filtered ?? event.messages, core.state.goal) ?? filtered;
-		const base = messages ?? event.messages;
+	registerContextTransform(pi, (messages, ctx) => {
+		const filtered = filterGoalSessionContext(messages);
+		const compacted = compactGoalCheckpointContext(filtered ?? messages, core.state.goal) ?? filtered;
+		const base = compacted ?? messages;
 		const sessionKey = sessionKeyFor(ctx);
 		if (sessionKey === "unidentified") liveRetention.clear(sessionKey);
 		const parts = currentGoalContextParts(ctx);
@@ -82,11 +82,10 @@ export function registerGoalEvents(core: GoalCore): void {
 			// Retain previously sent tails verbatim at their anchors so this
 			// request extends the previous one instead of displacing its tail.
 			// Only genuinely new state/counters content is appended.
-			const { messages: retained } = liveRetention.apply(sessionKey, base, { state: parts.state, counters: parts.counters });
-			return { messages: retained as typeof event.messages };
+			return liveRetention.apply(sessionKey, base, { state: parts.state, counters: parts.counters }).messages;
 		}
 		liveRetention.clear(sessionKey);
-		return messages === null ? undefined : { messages: messages as typeof event.messages };
+		return compacted;
 	});
 
 	pi.on("agent_start", async (_event, ctx) => { core.scheduler.begin(ctx); });

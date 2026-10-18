@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import goalExtension from "../extensions/goal.ts";
-import { GoalAuditMessages, filterGoalSessionContext, isDelegatedGoalSession } from "../extensions/goal-session-safety.ts";
+import { GoalAuditMessages, filterGoalSessionContext, isDelegatedGoalSession, registerContextTransform } from "../extensions/goal-session-safety.ts";
 
 const audit = { role: "custom", customType: "pi-goal-audit-event", content: "Audit starting", display: true };
 const checkpoint = { role: "custom", customType: "pi-goal-event", content: '<pi_goal_continuation goal_id="goal" kind="checkpoint" v="2"/>', display: false, details: { kind: "checkpoint", goalId: "goal" } };
@@ -52,20 +52,33 @@ test("child detection uses launch markers, not unrelated subagent settings", () 
 test("child installer registers only context filtering, without constructing goal state", async () => {
 	const saved = process.env.PI_SUBAGENT_CHILD;
 	const registrations: string[] = [];
-	let context: any;
+	const handlers: Record<string, any> = {};
 	try {
 		process.env.PI_SUBAGENT_CHILD = "1";
 		const pi = new Proxy({}, { get: (_target, key) => (...args: any[]) => {
-			registrations.push(String(key));
-			assert.equal(key, "on");
-			assert.equal(args[0], "context");
-			context = args[1];
+			registrations.push(String(key) + ":" + args[0]);
+			handlers[args[0]] = args[1];
 		} });
 		goalExtension(pi as ExtensionAPI);
-		assert.deepEqual(registrations, ["on"]);
-		assert.deepEqual(await context({ messages: [audit, checkpoint, { role: "user", content: "assignment" }] }), { messages: [{ role: "user", content: "assignment" }] });
+		assert.deepEqual(registrations, ["on:context", "on:context_with_system"]);
+		assert.deepEqual(await handlers.context({ messages: [audit, checkpoint, { role: "user", content: "assignment" }] }), { messages: [{ role: "user", content: "assignment" }] });
 	} finally {
 		if (saved === undefined) delete process.env.PI_SUBAGENT_CHILD;
 		else process.env.PI_SUBAGENT_CHILD = saved;
 	}
+});
+
+test("context transforms run once per request, in context_with_system once Pi dispatches it", async () => {
+	const handlers: Record<string, any> = {};
+	const pi = { on: (name: string, handler: any) => { handlers[name] = handler; } };
+	const tail = { role: "custom", content: "state" };
+	registerContextTransform(pi as unknown as ExtensionAPI, messages => [...messages, tail]);
+	const system = { role: "system", content: "" };
+	const user = { role: "user", content: "one" };
+	// Pi runs context, then context_with_system. Support is unknown until the first dispatch.
+	assert.deepEqual(await handlers.context({ messages: [user] }), { messages: [user, tail] });
+	assert.equal(await handlers.context_with_system({ messages: [system, user, tail] }), undefined);
+	// Once known, an unchanged context keeps Pi's system messages where they are.
+	assert.equal(await handlers.context({ messages: [user] }), undefined);
+	assert.deepEqual(await handlers.context_with_system({ messages: [system, user] }), { messages: [system, user, tail] });
 });

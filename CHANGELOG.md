@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- An active goal no longer rewrites the provider's cached prompt prefix whenever Pi's system prompt changes mid-session (for example when a tool or prompt section is added). Pi sends such changes as separate system messages, but any edit returned from a `context` handler makes Pi fold them into the leading system message. On Pi 0.87+ the goal context transform now runs in `context_with_system` and leaves those messages in place; older Pi keeps the `context` handler. Delegated child sessions use the same path.
+
 ## [0.32.3] — 2026-10-02
 
 ### Fixed
