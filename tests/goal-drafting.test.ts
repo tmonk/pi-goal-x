@@ -496,6 +496,33 @@ test("contracts-disabled settings strip the verification contract from a confirm
 
 // ── /goal-tweak guided refinement ─────────────────────────────────────────
 
+test("/goal edit aliases the confirmed tweak flow and resumes a paused goal", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-edit-alias-"));
+	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
+	try {
+		const h = createHarness(cwd, { hasUI: true });
+		await h.sessionStart();
+		await h.commands.get("goal-direct")!.handler("Initial objective", h.ctx);
+		await h.commands.get("goal-pause")!.handler("", h.ctx);
+		assert.equal(firstGoal(cwd).status, "paused", "goal paused before edit");
+
+		await h.commands.get("goal")!.handler("edit", h.ctx);
+		assert.match(h.notifications.at(-1) ?? "", /\/goal edit <change>/, "bare edit shows alias-specific usage");
+		await h.commands.get("goal")!.handler("edit Restrict the wiki to GTNH 2.8.4", h.ctx);
+		const pending = runProposal(h, proposalParams("Revised objective for GTNH 2.8.4 only", { sisyphus: false }));
+		h.dialogResult({ questions: [], answers: [{ id: "confirm", question: "Confirm Goal Draft", answer: CONFIRM_ANSWER, wasCustom: false }], cancelled: false });
+		const result = await pending;
+		assert.match(result.content[0].text, /tweak confirmed/);
+		const after = firstGoal(cwd);
+		assert.equal(after.status, "active", "confirmed edit resumes the paused goal");
+		assert.ok(after.objective.includes("GTNH 2.8.4 only"), "objective revised through the alias");
+		assert.ok(ledgerEvents(cwd).some((e) => e.type === "goal_tweaked"), "goal_tweaked event recorded");
+		assert.ok(ledgerEvents(cwd).some((e) => e.type === "goal_resumed"), "goal_resumed event recorded");
+	} finally {
+		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
+});
+
 test("/goal-tweak confirms a revision under focus validation", async () => {
 	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-tweak-"));
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });

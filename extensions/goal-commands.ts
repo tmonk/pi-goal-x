@@ -681,7 +681,7 @@ export function registerGoalCommands(core: GoalCore): void {
 		ctx.ui.notify(msg, didArchive ? "info" : "warning");
 	}
 
-	async function runGoalTweak(replacement: string, ctx: ExtensionContext): Promise<void> {
+	async function runGoalTweak(replacement: string, ctx: ExtensionContext, command = "/goal-tweak"): Promise<void> {
 		core.reconcileFocusedGoalFromDisk(ctx);
 		if (!core.state.goal) {
 			if (otherOpenGoalCount(core.goalsById, null) > 0) {
@@ -700,7 +700,7 @@ export function registerGoalCommands(core: GoalCore): void {
 		}
 		const trimmed = replacement.trim();
 		if (!trimmed) {
-			ctx.ui.notify("Describe the requested change: /goal-tweak <change>, for example remove the token budget", "info");
+			ctx.ui.notify(`Describe the requested change: ${command} <change>, for example remove the token budget`, "info");
 			return;
 		}
 		const max = loadGoalSettings(ctx.cwd).objectiveMaxChars;
@@ -715,8 +715,13 @@ export function registerGoalCommands(core: GoalCore): void {
 
 	// /goal and /sisyphus are the guided default. -direct commands are the explicit bypass.
 	pi.registerCommand("goal", {
-		description: "Draft a regular goal with clarification, task planning, and confirmation.",
+		description: "Draft a regular goal, or use /goal edit <change> to revise the focused goal and resume it after confirmation.",
 		handler: async (rawArgs, ctx) => {
+			const edit = rawArgs.match(/^\s*edit(?:\s+([\s\S]*))?\s*$/i);
+			if (edit) {
+				await runGoalTweak(edit[1] ?? "", ctx, "/goal edit");
+				return;
+			}
 			await startGoalDrafting(core, ctx, "goal", rawArgs);
 		},
 	});

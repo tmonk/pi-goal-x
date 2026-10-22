@@ -55,7 +55,7 @@ Goal state is refreshed at the request tail while the system prompt and conversa
 
 ## Changing a token budget
 
-Use the existing tweak flow: `/goal-tweak remove the token budget` or `/goal-tweak set the token budget to 50000`. The proposal shows the current and proposed limits before confirmation. A budget is a total lifetime limit, not an additional allocation; consumed tokens and completed work are preserved. Omitting a budget change retains the current limit.
+Use the existing tweak flow: `/goal edit remove the token budget` or `/goal edit set the token budget to 50000` (`/goal-tweak` remains available as a standalone spelling). The proposal shows the current and proposed limits before confirmation. A budget is a total lifetime limit, not an additional allocation; consumed tokens and completed work are preserved. Omitting a budget change retains the current limit.
 
 After confirmation, a goal stopped only by its budget can continue if the revised limit allows it and scheduling permits. A still-exhausted budget keeps it stopped. Other-session ownership, interrupted execution and exhausted autonomous-run allowances still require their existing recovery steps. Creation and tweak results always show the effective budget.
 

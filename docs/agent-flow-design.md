@@ -103,7 +103,7 @@ The curated fourteen-command palette:
 | `/goal-focus` | Choose this session's focused goal |
 | `/goal-unfocus` | Detach the session without modifying the shared goal |
 | `/goal-settings` | Fully operable settings editor for all eight persisted fields |
-| `/goal-tweak <change>` | Guided, user-confirmed refinement of the focused objective and task plan |
+| `/goal edit <change>` / `/goal-tweak <change>` | Guided, user-confirmed refinement of the focused objective and task plan; confirmed edits resume paused or blocked goals when scheduling permits |
 | `/goal-clear` | Archive the focused goal after confirmation (cancel is a durable no-op) |
 | `/goal-cancel` | Cancel the in-progress guided draft without creating a goal |
 | `/goal-pause` | Pause the focused active goal (Esc also pauses) |
@@ -125,7 +125,7 @@ temporarily replaces it with three draft tools:
 - exactly five goal tools are installed when tasks are enabled — `create_goal`,
   `get_goal`, `update_goal`, `set_goal_tasks`, `update_goal_task`;
 - exactly the three core tools when tasks are disabled;
-- during a user-started `/goal`, `/sisyphus`, or `/goal-tweak` draft, only
+- during a user-started `/goal`, `/sisyphus`, `/goal edit`, or `/goal-tweak` draft, only
   `goal_question`, `goal_questionnaire`, and `propose_goal_draft` are
   advertised until confirm or cancellation;
 - the profile is installed once at session start and after a settings change

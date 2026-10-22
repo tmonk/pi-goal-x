@@ -74,7 +74,7 @@ As work progresses, the agent marks the current task, records completed work, an
 
 Tasks can also have their own completion requirements—for example, “The download contains only rows matching the active filters.” The agent records evidence against those requirements, and the completion auditor uses that evidence when reviewing the overall result.
 
-Use `/goal-tweak <change>` to discuss revisions to the goal and its plan. Task tracking, completion requirements, and subtask depth are configurable in `/goal-settings`.
+Use `/goal edit <change>` (or the standalone `/goal-tweak <change>` command) to discuss revisions to the goal and its plan. After you confirm a revision, a paused or blocked goal resumes automatically when its scheduler permits. Task tracking, completion requirements, and subtask depth are configurable in `/goal-settings`.
 
 ## Completion auditor
 
@@ -86,13 +86,13 @@ If the auditor approves, the goal is archived as complete. If it identifies unme
 
 The dashboard above the editor shows the goal's status, task progress, current task, elapsed time, and token usage. Press `Ctrl+Shift+T` to expand it for the full task tree, completion requirements, evidence, and recent activity. Audit progress and results appear there too.
 
-A project can have several open goals, with one focused goal per session. Switch with `/goal-focus`, pause with `/goal-pause`, or use `/goal-tweak` to discuss changes to the current goal. Pressing `Esc` during active work also pauses the goal; in the expanded dashboard, it collapses the view.
+A project can have several open goals, with one focused goal per session. Switch with `/goal-focus`, pause with `/goal-pause`, or use `/goal edit <change>` to discuss changes to the current goal. Pressing `Esc` during active work also pauses the goal; in the expanded dashboard, it collapses the view.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `/goal [idea]` | Discuss, plan, and confirm a regular goal. |
+| `/goal [idea]` | Discuss, plan, and confirm a regular goal. Use `/goal edit <change>` to revise the focused goal. |
 | `/sisyphus [idea]` | Discuss, plan, and confirm an ordered goal. |
 | `/goal-direct <objective>` | Create and start a regular goal immediately. |
 | `/sisyphus-direct <objective>` | Create and start an ordered goal immediately. |
@@ -100,7 +100,8 @@ A project can have several open goals, with one focused goal per session. Switch
 | `/goal-status` | Show the focused goal and its progress. |
 | `/goal-focus` | Choose an open goal to work on. |
 | `/goal-unfocus` | Leave the current goal open without focusing on it. |
-| `/goal-tweak <change>` | Revise the current goal with the agent. |
+| `/goal edit <change>` | Revise the current goal with the agent; a confirmed revision resumes a paused or blocked goal when permitted. |
+| `/goal-tweak <change>` | Standalone compatibility spelling for `/goal edit <change>`. |
 | `/goal-pause` | Pause work on the focused goal. |
 | `/goal-resume` | Resume a paused or blocked goal. |
 | `/goal-clear` | Archive the focused goal after confirmation. |

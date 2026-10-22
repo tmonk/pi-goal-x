@@ -174,7 +174,7 @@ clarifies intent, proposes the full objective and an optional task tree, and
 the user explicitly confirms or continues refining. `/goal-direct` and
 `/sisyphus-direct` bypass this only when the objective is already final.
 
-`/goal-tweak <change>` starts the same guided-confirmation process for the
+`/goal edit <change>` (and its standalone compatibility spelling `/goal-tweak <change>`) starts the same guided-confirmation process for the
 focused goal. It preserves the task list when no replacement is proposed and
 records `goal_tweaked` (plus `task_list_set` if applicable) only after the
 user confirms.
