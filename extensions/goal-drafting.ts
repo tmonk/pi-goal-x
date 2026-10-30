@@ -307,7 +307,7 @@ export function registerDraftingTools(core: GoalCore): void {
 			"Confirmation creates or revises the goal atomically. Continue Chatting leaves drafting active for refinement.",
 		],
 		parameters: Type.Object({
-			objective: Type.String({ description: "Complete proposed objective; preserve it exactly for budget-only tweaks." }),
+			objective: Type.String({ description: "Complete proposed objective; include the Success criteria / Boundaries / Constraints / Verification contract sections inline, since they are sections of this string rather than separate parameters. Preserve it exactly for budget-only tweaks." }),
 			token_budget: Type.Optional(Type.Union([Type.Integer({minimum: 1}), Type.Null()], {description: "Only on user request: positive whole-token lifetime limit; null removes it. Omit to retain the current tweak budget or create without one."})),
 			auto_continue: Type.Optional(Type.Boolean({ description: "Defaults to true." })),
 			sisyphus: Type.Optional(Type.Boolean({ description: "Must match the user-selected goal mode." })),

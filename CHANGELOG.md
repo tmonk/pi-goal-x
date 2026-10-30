@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Say in the drafting prompt, and in the `propose_goal_draft` objective description, that the Success criteria / Boundaries / Constraints / Verification contract sections belong inside the `objective` string. A model that mapped those labels to tool arguments was rejected by `additionalProperties: false`, so the first proposal of a guided draft failed until it retried with the sections folded into the objective.
+
 ## [0.34.1] — 2026-10-27
 
 Includes #118.
