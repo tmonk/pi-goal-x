@@ -164,6 +164,7 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 		"Constraints: <hard rules>",
 		"Verification contract: <optional — what verification evidence is required before marking complete, e.g. 'Run npm test (0 failures), grep for remaining references, re-read requirements and confirm every item is addressed'>",
 		"If blocked: <default = stop and ask the user>",
+		"Write that whole block into the propose_goal_draft `objective` string: Success criteria, Boundaries, Constraints and Verification contract are sections of the objective, not separate arguments. The tool accepts only objective, tasks, token_budget, auto_continue, sisyphus and block_completion; any other argument is rejected.",
 		"Call propose_goal_draft with sisyphus=false and autoContinue=true unless the user asked otherwise.",
 	];
 
@@ -178,6 +179,7 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 		"Verification contract: <optional — what verification evidence is required before marking complete>",
 		"Ordered steps: <preserve the user's requested steps and ordering; do not add preflight or reconnaissance steps they did not ask for>",
 		"If blocked / unclear / failing: <default = stop and ask the user>",
+		"Write that whole block into the propose_goal_draft `objective` string: Success criteria, Boundaries, Constraints, Verification contract and Ordered steps are sections of the objective, not separate arguments. The tool accepts only objective, tasks, token_budget, auto_continue, sisyphus and block_completion; any other argument is rejected.",
 		"Sisyphus reminder: Work patiently and sequentially. No rushing, no unrequested preflight steps, no improvising around blockers.",
 		"Call propose_goal_draft with sisyphus=true and autoContinue=true unless the user asked otherwise.",
 	];
