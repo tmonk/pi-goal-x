@@ -13,6 +13,8 @@
 
 # pi-goal-x
 
+[![omp status](https://omppackages.com/badge/pi-goal-x.svg)](https://omppackages.com/packages/pi-goal-x)
+
 Adds `/goal` functionality to [pi](https://pi.dev). The agent helps you define a goal and plan, continues working on it automatically, and submits the result to an optional independent completion auditor.
 
 The extension saves goal objectives, tasks, and progress across sessions. You can pause, resume, revise, or switch goals as your work changes.
