@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
+	applicableGoalTools,
 	CORE_GOAL_TOOL_NAMES,
 	CORE_GOAL_TOOLS,
 	CREATE_GOAL_TOOL_NAME,
@@ -23,8 +24,7 @@ import {
 
 const CORE = ["create_goal", "get_goal", "update_goal"];
 
-// Drafting tools belong to the separate transient user-started draft profile,
-// never to the steady three/five execution surface.
+// Drafting tools stay advertised; executors require a user-started draft.
 const DRAFTING = ["goal_question", "goal_questionnaire", "propose_goal_draft"];
 
 // Removed steady-state lifecycle tools — none may exist in the module.
@@ -47,13 +47,16 @@ test("fixed profiles: core three, task two, all five registered", () => {
 	assert.deepEqual(FIVE_GOAL_TOOLS, [...CORE, ...TASK_TOOL_NAMES]);
 	assert.deepEqual(CORE_GOAL_TOOLS, CORE);
 	assert.deepEqual(DRAFTING_GOAL_TOOLS, DRAFTING);
-	// The registry is the fixed five plus the transient drafting profile; the
-	// INSTALLED profile (installGoalToolProfile) still only ever installs the
-	// three/five execution set.
+	// Both profiles include drafting tools without changing execution classification.
 	assert.deepEqual(ALL_REGISTERED_GOAL_TOOLS, [...FIVE_GOAL_TOOLS, ...DRAFTING_GOAL_TOOLS]);
 });
 
-test("the module declares drafting names only in the transient profile", () => {
+test("installed profiles depend only on the explicit task setting", () => {
+	assert.deepEqual(applicableGoalTools(true), [...FIVE_GOAL_TOOLS, ...DRAFTING]);
+	assert.deepEqual(applicableGoalTools(false), [...CORE, ...DRAFTING]);
+});
+
+test("drafting names are distinct from execution and progress tools", () => {
 	assert.equal(QUESTION_TOOL_NAME, "goal_question");
 	assert.equal(QUESTIONNAIRE_TOOL_NAME, "goal_questionnaire");
 	assert.equal(PROPOSE_DRAFT_TOOL_NAME, "propose_goal_draft");
