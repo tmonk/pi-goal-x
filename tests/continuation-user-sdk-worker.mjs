@@ -9,6 +9,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {createAgentSession,DefaultResourceLoader,ModelRuntime,SessionManager,SettingsManager,defineTool} from '@earendil-works/pi-coding-agent';
 import {Type} from '@earendil-works/pi-ai';
 import goalExtension from '../extensions/goal.ts';
+import {hasActiveDraft} from '../extensions/goal-drafting.ts';
 
 const mode=process.argv[2]??'draft';
 const startupAbort=mode==='abort';
@@ -27,7 +28,7 @@ const server=http.createServer(async(req,res)=>{
  let body='';for await(const chunk of req)body+=chunk;const payload=JSON.parse(body);
  const names=(payload.tools??[]).map(t=>t.function?.name);
  const audit=/read-only completion auditor/i.test(JSON.stringify(payload.messages?.[0]));
- const draft=names.includes('propose_goal_draft');
+ const draft=!audit&&hasActiveDraft(core);
  let action;
  if(audit)action=auditStep++===0?tool('read',{path:'result.txt'}):{text:'The requested artifact contains the exact result and was independently read.\n<approved/>'};
  else if(draft)action=tool('propose_goal_draft',{objective:'Create result.txt containing exactly verified result followed by a newline, verify it and finish.',sisyphus:false});
@@ -95,10 +96,13 @@ try{
  if(!lifecycle)assert.equal(fs.readFileSync(path.join(cwd,'report.txt'),'utf8'),'section 1\n');
  assert.deepEqual(errors,[]);
  const execution=requests.filter(r=>r.phase==='execution');
- for(const request of execution){assert.ok(request.system.includes('expert coding assistant'));assert.ok(request.system.includes('create_goal'));assert.ok(!request.system.includes('propose_goal_draft'));assert.ok(request.tools.includes('update_goal'));}
+ for(const request of execution){assert.ok(request.system.includes('expert coding assistant'));assert.ok(request.system.includes('create_goal'));assert.ok(request.system.includes('propose_goal_draft'));assert.ok(request.tools.includes('update_goal'));}
  assert.equal(nativePromptPreparation,true);
  for(const request of execution)assert.ok(request.system.includes(externalGuard),'native prompt preparation preserves another extension instruction');
  assert.equal(new Set(execution.map(r=>r.hash)).size,1,'initial and subsequent executor system prefixes match');
+ const foreground=requests.filter(r=>r.phase!=='audit');
+ assert.equal(new Set(foreground.map(r=>r.hash)).size,1,'drafting and execution system prefixes match');
+ for(const request of foreground)assert.deepEqual(request.tools,foreground[0].tools,'ordered tool declarations stay fixed across drafting and lifecycle changes');
  assert.equal(requests.filter(r=>r.phase==='audit'&&r.action==='read').length,1,'actual auditor reads the artifact');
  const result={passed:true,mode,command,choices,requests:requests.map(({system:_system,...r})=>r),initialExecutionPromptCorrect:true,executorPrefixStable:true,nativePromptPreparation,externalPromptInstructionPreserved:nativePromptPreparation?true:undefined,artifact:'verified result\n',report:!lifecycle?'section 1\n':undefined,paused,pausedBeforeAnyRequest,heldBeforeResume:turnFirst?heldBeforeResume:undefined,reloadedWhilePaused:mode==='reload',errors};
  if(process.env.PI_GOAL_USER_EVIDENCE)fs.writeFileSync(process.env.PI_GOAL_USER_EVIDENCE,JSON.stringify(result,null,2)+'\n');

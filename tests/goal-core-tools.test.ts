@@ -129,7 +129,7 @@ async function start(h: ReturnType<typeof createHarness>): Promise<void> {
 
 // ── Tool surface ─────────────────────────────────────────────────────────────
 
-test("exactly three goal tools are advertised when tasks are disabled", async () => {
+test("three core and three drafting tools are advertised when tasks are disabled", async () => {
 	const cwd = mkdtempSync(path.join(tmpdir(), "goal-core-notasks-"));
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	writeFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ disableTasks: true }));
@@ -141,13 +141,13 @@ test("exactly three goal tools are advertised when tasks are disabled", async ()
 			sessionEntries: [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") }],
 		});
 		await start(h);
-		for (const present of ["create_goal", "get_goal", "update_goal"]) {
+		for (const present of ["create_goal", "get_goal", "update_goal", "goal_question", "goal_questionnaire", "propose_goal_draft"]) {
 			assert.ok(h.activeTools.includes(present), `${present} must be advertised`);
 		}
 		for (const absent of [
 			"propose_task_list", "complete_task", "skip_task",
 			"complete_goal", "pause_goal", "abort_goal",
-			"propose_goal_draft", "propose_goal_tweak", "step_complete",
+			"set_goal_tasks", "update_goal_task", "propose_goal_tweak", "step_complete",
 		]) {
 			assert.equal(h.activeTools.includes(absent), false, `${absent} must NOT be advertised`);
 		}

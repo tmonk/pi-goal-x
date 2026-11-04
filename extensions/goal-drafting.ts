@@ -72,7 +72,7 @@ export function clearGoalDrafting(core: GoalCore, ctx: ExtensionContext): void {
 
 /**
  * Rehydrate a durable draft on session_start / session_tree. Restores the
- * transient drafting profile only for a valid, un-cleared draft whose tweak
+ * draft state only for a valid, un-cleared draft whose tweak
  * target still matches the focused goal; stale tweak drafts are tombstoned.
  */
 export function rehydrateDraft(core: GoalCore, ctx: ExtensionContext): void {
@@ -92,8 +92,7 @@ export function rehydrateDraft(core: GoalCore, ctx: ExtensionContext): void {
 		session = null;
 	}
 	if (!session || session.version !== DRAFT_ENTRY_VERSION || session.clearedAt) {
-		// No durable draft: make sure a previous drafting profile is not left
-		// installed (e.g. after a stale entry or an interrupted session).
+		// Reconcile settings without changing tools for branch-local draft state.
 		core.installGoalToolProfile(core.tasksEnabled);
 		return;
 	}
@@ -110,7 +109,7 @@ export function rehydrateDraft(core: GoalCore, ctx: ExtensionContext): void {
 	activeDrafts.set(core, { mode: session.mode, originalTopic: session.seed, targetGoalId: session.targetGoalId, startedAt: session.startedAt, auditorEnabled: session.auditorEnabled,
 		...(live?.startedAt === session.startedAt && live.originalTopic === session.seed && live.mode === session.mode && live.targetGoalId === session.targetGoalId ? {questionnaireEcho: live.questionnaireEcho} : {}),
 	});
-	core.installDraftingToolProfile();
+	core.installGoalToolProfile(core.tasksEnabled);
 }
 
 async function awaitDraftChoice(core: GoalCore, ctx: ExtensionContext, label: string): Promise<"resume" | "replace" | "cancel"> {
@@ -159,7 +158,7 @@ export async function startGoalDrafting(core: GoalCore, ctx: ExtensionContext, m
 	draftSessionEntry(core, { version: 1, mode, seed: trimmed, targetGoalId: targetGoal?.id, startedAt, auditorEnabled });
 	core.clearContinuationState();
 	core.clearActiveAccounting();
-	core.installDraftingToolProfile();
+	core.installGoalToolProfile(core.tasksEnabled);
 	ctx.ui.notify(label + " started" + (trimmed ? ": " + trimmed.slice(0, 60) : "") + ". The agent will clarify, propose a goal and tasks where useful, then ask you to confirm.", "info");
 	const prompt = mode === "tweak" ? [
 		"[GOAL TWEAK DRAFT]",

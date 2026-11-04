@@ -7,7 +7,6 @@ import { FOCUS_ENTRY, STATE_ENTRY, GOAL_EVENT_ENTRY, goalDetails } from "./goal-
 import { loadGoalSettings, loadGoalSettingsFileConfig } from "./goal-settings.ts";
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
-	DRAFTING_GOAL_TOOLS,
 	applicableGoalTools,
 } from "./goal-tool-names.ts";
 import { budgetReached } from "./goal-accounting.ts";
@@ -105,7 +104,6 @@ export interface GoalCore {
 	isFocusedOperationCurrent(token: { goalId: string; revision: number }): boolean;
 	focusedOperationCancelledResult(action: string, token: { goalId: string; revision: number }): AgentToolResult<unknown>;
 	installGoalToolProfile(tasksEnabled: boolean): void;
-	installDraftingToolProfile(): void;
 	stopAuditAnimation(): void;
 	abortAudit(ctx: ExtensionContext): void;
 	clearContinuationTimer(): void;
@@ -166,7 +164,6 @@ export function createGoalCore(
    activeAudit?.cancel("Goal focus changed during completion audit.");
   }
 		focusedGoalId = next;
-  if (profileInitialized && !draftingProfile) installGoalToolProfile(tasksEnabled);
 	}
 
 	function focusedOperationToken(goalId: string): { goalId: string; revision: number } {
@@ -313,8 +310,6 @@ export function createGoalCore(
 	// Whether the task tools are advertised, decided once at session start from
 	// settings (disableTasks). Stage 4 replaces them with the two task tools.
 	let tasksEnabled = true;
- let profileInitialized = false;
- let draftingProfile = false;
 
 	// Transient runtime state: set when the user aborts a running audit via
 	// Escape. No ledger event is appended from the low-level abort callback;
@@ -322,8 +317,7 @@ export function createGoalCore(
 	// user's dialog choice (follow-up Stage 2).
 
 	/**
-	 * Install the fixed three/five goal-tool profile. Called only after session
-	 * initialization and after a settings change that toggles disableTasks.
+	 * Install the fixed execution + drafting profile, changed only by disableTasks.
 	 * Lifecycle transitions, focus changes, status changes, and compaction never
 	 * add/remove/restore goal tools, and this never mutates the host's ordinary
 	 * work-tool selection. On success the module-level tasksEnabled tracker is
@@ -332,12 +326,10 @@ export function createGoalCore(
 	 * menu to detect repeated disableTasks toggles across one menu session).
 	 */
 	function installGoalToolProfile(tasksEnabledArg: boolean): void {
-  profileInitialized = true;
-  draftingProfile = false;
 		try {
 			const current = new Set(pi.getActiveTools());
 			for (const knownGoalTool of ALL_REGISTERED_GOAL_TOOLS) current.delete(knownGoalTool);
-			for (const goalTool of applicableGoalTools(state.goal, tasksEnabledArg)) current.add(goalTool);
+			for (const goalTool of applicableGoalTools(tasksEnabledArg)) current.add(goalTool);
 			const next = [...current].sort();
 			const before = [...pi.getActiveTools()].sort();
 			// Idempotent: never rebuild (or re-report) a profile that is already
@@ -348,27 +340,6 @@ export function createGoalCore(
 			tasksEnabled = tasksEnabledArg;
 		} catch (err) {
 			console.error("[pi-goal] installGoalToolProfile error:", err instanceof Error ? err.message : String(err));
-		}
-	}
-
-	/**
-	 * Install the transient drafting profile. This is the sole permitted
-	 * exception to the fixed execution three/five profile: it is entered only
-	 * by an explicit user drafting command and is removed on confirm/cancel.
-	 */
-	function installDraftingToolProfile(): void {
-  draftingProfile = true;
-		try {
-			const current = new Set(pi.getActiveTools());
-			for (const knownGoalTool of ALL_REGISTERED_GOAL_TOOLS) current.delete(knownGoalTool);
-			for (const goalTool of DRAFTING_GOAL_TOOLS) current.add(goalTool);
-			const next = [...current].sort();
-			const before = [...pi.getActiveTools()].sort();
-			if (next.length !== before.length || next.some((name, index) => name !== before[index])) {
-				pi.setActiveTools([...current]);
-			}
-		} catch (err) {
-			console.error("[pi-goal] installDraftingToolProfile error:", err instanceof Error ? err.message : String(err));
 		}
 	}
 
@@ -1053,7 +1024,6 @@ export function createGoalCore(
 		isFocusedOperationCurrent,
 		focusedOperationCancelledResult,
 		installGoalToolProfile,
-		installDraftingToolProfile,
 		stopAuditAnimation,
 		abortAudit,
 		clearContinuationTimer,
