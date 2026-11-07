@@ -185,6 +185,21 @@ test("set_goal_tasks sets a structural task tree (headless auto-confirm)", async
 	}
 });
 
+test("update_goal_task exposes optional statuses without empty enum values", () => {
+	const f = fixtureWithTasks([]);
+	try {
+		const h = createHarness(f.cwd, f.sessionEntries);
+		const schema = JSON.parse(JSON.stringify(h.tools.get("update_goal_task")!.parameters));
+		const statuses = ["start", "complete", "skipped", "pending"];
+		assert.deepEqual(schema.properties.status.enum, statuses, "Google rejects empty enum entries before executing any tool");
+		assert.ok(!schema.required?.includes("status"), "batch calls can omit the top-level status");
+		assert.deepEqual(schema.properties.updates.items.properties.status.enum, statuses);
+		assert.ok(schema.properties.updates.items.required.includes("status"), "each batch entry still needs a status");
+	} finally {
+		f.cleanup();
+	}
+});
+
 test("update_goal_task(complete) marks a task complete with evidence and ledger", async () => {
 	const f = fixtureWithTasks([{ id: "t1", title: "Task one", status: "pending" }]);
 	try {

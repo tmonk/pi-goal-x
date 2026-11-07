@@ -40,13 +40,16 @@ await fixture(async({invoke,disk,text})=>{
 	assert.match(text(await invoke('update_goal_task',{...update,reason:'',updates:[update]})),/a complete/);
 	assert.equal(disk().taskList.tasks[0].status,'complete');
 });
+await fixture(async({invoke,disk,text})=>{
+	assert.match(text(await invoke('update_goal_task',{updates:[update]})),/a complete/);
+	assert.equal(disk().taskList.tasks[0].status,'complete');
+});
 await fixture(async({invoke,disk})=>{
 	await invoke('update_goal_task',{task_id:'-',status:'start',updates:[]});
 	assert.equal(disk().currentTaskId,'-');
 });
-await fixture(async({invoke,disk})=>{
-	await invoke('update_goal_task',{task_id:'',status:'',reason:'',updates:[update]});
-	assert.equal(disk().taskList.tasks[0].status,'complete');
+await fixture(async({invoke})=>{
+	await assert.rejects(()=>invoke('update_goal_task',{task_id:'',status:'',reason:'',updates:[update]}),/status: must be equal to one of the allowed values/);
 });
 for(const input of [
 	{task_id:'other',status:'start',updates:[update]},

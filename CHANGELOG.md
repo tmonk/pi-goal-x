@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep empty strings out of the `update_goal_task` status enum so Google/Antigravity accepts requests carrying the tool. Batch calls can omit top-level `status`; an explicit empty status is rejected by Pi's tool validation.
+
 ## [0.34.1] — 2026-10-27
 
 Includes #118.
