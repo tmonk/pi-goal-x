@@ -211,6 +211,7 @@ test("a retired resume selector cannot open a dialog for the replacement's pause
  let confirms = 0, resuming: Promise<any> | undefined;
  try {
   h.ctx.hasUI = true;
+  h.ctx.mode = "tui";
   h.ctx.sessionManager.getBranch = () => [];
   h.ctx.ui.select = async () => {shown.resolve(null); return selected.promise;};
   h.ctx.ui.confirm = async () => {confirms++; return true;};

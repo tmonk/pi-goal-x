@@ -345,7 +345,10 @@ export function registerGoalEvents(core: GoalCore): void {
    if (core.controlWarnings?.length) ctx.ui.notify(`Goal command settings were not applied: ${core.controlWarnings.join(" ")} Open /goal-settings controls to correct them.`, "warning");
    rehydrateDraft(core, ctx);
    syncTerminalInputPause(core, ctx);
-		if (event.reason === "resume" && !core.state.goal && !core.hasExplicitSessionFocus && otherOpenGoalCount(core.goalsById, null) > 1 && ctx.hasUI) {
+		// Resume dialogs only in a terminal. In RPC mode the host receives a UI
+		// request it may never show, and session_start waits on it meanwhile.
+		const resumeDialogs = event.reason === "resume" && ctx.hasUI && ctx.mode === "tui";
+		if (resumeDialogs && !core.state.goal && !core.hasExplicitSessionFocus && otherOpenGoalCount(core.goalsById, null) > 1) {
 			// Prompt the user to pick which open goal to focus (mirrors /goal-focus).
 			const open = core.openGoals();
 			const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
@@ -364,7 +367,7 @@ export function registerGoalEvents(core: GoalCore): void {
 		}
 		if (session !== owner) return;
 		// Codex behavior: prompt before reactivating a paused goal on resume.
-		if (event.reason === "resume" && core.state.goal?.status === "paused" && ctx.hasUI) {
+		if (resumeDialogs && core.state.goal?.status === "paused") {
 			const current = core.state.goal;
 			const shouldResume = await ctx.ui.confirm("Resume paused goal?", `Goal: ${current.objective}`);
 			if (shouldResume && session === owner) {

@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Ask which open goal to focus, and whether to resume a paused goal, only in the terminal UI. `ctx.hasUI` is also true in RPC mode, where `session_start` waited on these dialogs, so a host that did not show them never got the session going. Over RPC a resumed session now starts unfocused, and a paused goal stays paused.
+
 ## [0.34.1] — 2026-10-27
 
 Includes #118.
