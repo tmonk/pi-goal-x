@@ -10,6 +10,7 @@ import { createGoal, goalFocusDetails, cloneGoal, normalizeGoalRecord } from "..
 import { writeActiveGoalFile, parseGoalFile } from "../extensions/storage/goal-files.ts";
 import { invalidateGoalSettingsCache, parseGoalSettings, saveGoalSettingsFileConfig, loadGoalSettings } from "../extensions/goal-settings.ts";
 import { newGoalScheduler, normalizeGoalScheduler, schedulerSummary } from "../extensions/goal-scheduler-state.ts";
+import { clearGoalDrafting, startGoalDrafting } from "../extensions/goal-drafting.ts";
 
 async function fixture(t: TestContext, limit?: number, owner = "owner", existing?: string, strict = true, idleBackoff = false) {
 	const cwd = existing ?? mkdtempSync(path.join(tmpdir(), "goal-scheduler-"));
@@ -29,7 +30,7 @@ async function fixture(t: TestContext, limit?: number, owner = "owner", existing
 	const notifications: string[] = [];
 	const listeners = new Map<string, Function>();
 	let aborts = 0;
-	const pi = { registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: (event: string, handler: Function) => { handlers[event] = handler; }, getActiveTools: () => ["read", "write", "bash"], setActiveTools: () => {}, appendEntry: () => {}, registerMessageRenderer: () => {}, sendMessage: (message: unknown) => { sent.push(message); }, events: { on: (name: string, fn: Function) => { listeners.set(name, fn); return () => listeners.delete(name); }, emit: (name: string, event: unknown) => listeners.get(name)?.(event) } };
+	const pi = { registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: (event: string, handler: Function) => { handlers[event] = handler; }, getActiveTools: () => ["read", "write", "bash"], setActiveTools: () => {}, appendEntry: () => {}, registerMessageRenderer: () => {}, sendMessage: (message: unknown) => { sent.push(message); }, sendUserMessage: () => {}, events: { on: (name: string, fn: Function) => { listeners.set(name, fn); return () => listeners.delete(name); }, emit: (name: string, event: unknown) => listeners.get(name)?.(event) } };
 	const ctx = { cwd, hasUI: false, isIdle: () => true, hasPendingMessages: () => false, abort: () => { aborts++; }, getSystemPrompt: () => "base", sessionManager: { getSessionId: () => owner, getCwd: () => cwd, getRoot: () => cwd, getBranch: () => [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") }] }, ui: { notify: (message: string) => notifications.push(message), setStatus: () => {}, setWidget: () => {} } } as unknown as ExtensionContext;
 	goalExtension(pi as any);
 	const core = (pi as any)._goalCore as GoalCore;
@@ -978,4 +979,17 @@ test('native retries retain the original run while a replacement waits for its o
  h.admit();
  assert.equal(h.core.runningGoalId,replacement);
  assert.equal(h.core.state.goal?.scheduler?.used,1);
+});
+
+test("an active guided draft suspends automatic continuations", async t => {
+ const h=await fixture(t);
+ t.mock.timers.enable({apis:['setTimeout','Date']});
+ h.core.replaceGoal({objective:'Work automatically',autoContinue:true,sisyphus:false},h.ctx);
+ await startGoalDrafting(h.core,h.ctx,'tweak','Add a constraint',h.core.state.goal!);
+ assert.equal(h.core.isDrafting(),true,'tweaking an active goal installs the drafting profile');
+ h.core.scheduler.settled(h.ctx);
+ t.mock.timers.tick(10000);
+ assert.equal(h.sent.length,0,'no continuation may be dispatched while drafting');
+ clearGoalDrafting(h.core,h.ctx);
+ assert.equal(h.core.isDrafting(),false,'cancel restores the execution profile');
 });

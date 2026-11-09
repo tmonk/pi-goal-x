@@ -35,6 +35,7 @@ interface Harness {
 	sessionStart(): Promise<void>;
 	sessionTree(): Promise<void>;
 	entries(): unknown[];
+	handler(name: string): Function | undefined;
 }
 
 function createHarness(cwd: string, opts: { hasUI?: boolean } = {}): Harness {
@@ -100,6 +101,7 @@ function createHarness(cwd: string, opts: { hasUI?: boolean } = {}): Harness {
 		sessionStart: async () => { await handlers.get("session_start")?.({ reason: "start" }, ctx); },
 		sessionTree: async () => { await handlers.get("session_tree")?.({}, ctx); },
 		entries: () => [...entries],
+		handler: (name: string) => handlers.get(name),
 	};
 }
 
@@ -1432,3 +1434,51 @@ for (const unavailable of [false, true]) {
 		} finally { rmSync(cwd, { recursive: true, force: true }); }
 	});
 }
+
+async function injectedContext(h: Harness): Promise<string> {
+	const handler = h.handler("context_with_system");
+	assert.ok(handler, "context_with_system handler must be registered");
+	const result = await handler({ messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }] }, h.ctx);
+	return JSON.stringify(result ?? "");
+}
+
+test("a guided new-goal draft suppresses the active-goal update_goal prompt", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-active-guard-"));
+	try {
+		const h = createHarness(cwd, { hasUI: true });
+		await h.sessionStart();
+		await h.commands.get("goal-direct")!.handler("Existing active objective", h.ctx);
+		assert.equal(activeGoalFiles(cwd).length, 1, "fixture has one active goal");
+		assert.ok(h.activeTools().includes("update_goal"), "execution profile is installed");
+		assert.match(await injectedContext(h), /update_goal|\[PI GOAL ACTIVE/, "the active goal normally injects its completion instruction");
+
+		await h.commands.get("goal")!.handler("A replacement objective", h.ctx);
+
+		assert.equal(h.activeTools().includes("update_goal"), false, "drafting profile removes update_goal");
+		const during = await injectedContext(h);
+		assert.equal(/\[PI GOAL|update_goal/.test(during), false, "drafting must not inject a goal state that references the absent update_goal");
+	} finally {
+		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
+});
+
+test("a guided tweak draft suppresses the active-goal update_goal prompt", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-context-guard-"));
+	try {
+		const h = createHarness(cwd, { hasUI: true });
+		await h.sessionStart();
+		await h.commands.get("goal-direct")!.handler("Existing active objective", h.ctx);
+		assert.match(await injectedContext(h), /update_goal|\[PI GOAL ACTIVE/, "the active goal normally injects its completion instruction");
+
+		await h.commands.get("goal-tweak")!.handler("Add a constraint", h.ctx);
+		assert.equal(h.activeTools().includes("update_goal"), false, "drafting profile removes update_goal");
+		const during = await injectedContext(h);
+		assert.equal(/\[PI GOAL|update_goal/.test(during), false, "drafting must not inject a goal state that references the absent update_goal");
+
+		await h.commands.get("goal-cancel")!.handler("", h.ctx);
+		assert.ok(h.activeTools().includes("update_goal"), "execution profile is restored");
+		assert.match(await injectedContext(h), /update_goal|\[PI GOAL ACTIVE/, "the active goal prompt returns after cancellation");
+	} finally {
+		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+	}
+});

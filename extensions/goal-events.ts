@@ -454,6 +454,9 @@ export function registerGoalEvents(core: GoalCore): void {
 	/** Request-only state: no live counters, focus, or reminders enter the system prefix. */
 	/** Request-only goal state split into a rarely-changing policy block and per-turn counters. Other branches are stable-only. */
 	function currentGoalContextParts(ctx: ExtensionContext): { state: string; counters?: string } | undefined {
+		// A guided draft owns the turn. Injecting the existing goal's state would
+		// tell the model to call update_goal, which the drafting profile removes.
+		if (hasActiveDraft(core)) return;
 		const checkpoint = core.runtime.getCheckpointGoalId();
 		if (checkpoint !== null && (core.scheduler.isDenied() || !core.isActionableContinuationGoal(checkpoint))) {
 			return { state: staleContinuationPrompt(checkpoint, core.state.goal) };
