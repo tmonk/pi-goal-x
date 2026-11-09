@@ -15,6 +15,7 @@ interface HarnessOptions {
 	cwd: string;
 	sessionEntries: unknown[];
 	hasUI?: boolean;
+	mode?: "tui" | "rpc" | "json" | "print";
 	idle?: boolean;
 	custom?: () => Promise<unknown>;
 	runCompletionAuditor?: (...args: any[]) => Promise<any>;
@@ -29,6 +30,7 @@ function createHarness(options: HarnessOptions) {
 	let activeTools = ["read", "bash", "edit", "write"];
 	let abortCount = 0;
 	let selectCount = 0;
+	let confirmCount = 0;
 
 	const pi = {
 		registerTool: (definition: any) => { tools.set(definition.name, definition); },
@@ -47,6 +49,7 @@ function createHarness(options: HarnessOptions) {
 	const ctx = {
 		cwd: options.cwd,
 		hasUI: options.hasUI ?? false,
+		mode: options.mode ?? (options.hasUI ? "tui" : "print"),
 		sessionManager: {
 			getBranch: () => options.sessionEntries,
 			getCwd: () => options.cwd,
@@ -59,7 +62,7 @@ function createHarness(options: HarnessOptions) {
 			setWidget: () => {},
 			onTerminalInput: () => () => {},
 			select: async () => { selectCount += 1; return undefined; },
-			confirm: async () => false,
+			confirm: async () => { confirmCount += 1; return false; },
 			custom: async () => options.custom ? options.custom() : undefined,
 		},
 		getSystemPrompt: () => "base prompt",
@@ -78,6 +81,7 @@ function createHarness(options: HarnessOptions) {
 		notifications,
 		get abortCount() { return abortCount; },
 		get selectCount() { return selectCount; },
+		get confirmCount() { return confirmCount; },
 	};
 }
 
@@ -425,6 +429,43 @@ test("the null entry produced by unfocus survives resume/tree and suppresses opt
 		const multiGoalResume = createHarness({ cwd: fixture.cwd, hasUI: true, sessionEntries });
 		await multiGoalResume.handlers.get("session_start")?.({ reason: "resume" }, multiGoalResume.ctx);
 		assert.equal(multiGoalResume.selectCount, 0, "resume must not prompt to replace an explicit null focus");
+	} finally {
+		fixture.cleanup();
+	}
+});
+
+test("resume asks which open goal to focus only in the terminal UI, not over RPC", async () => {
+	const fixture = createFixture();
+	writeActiveGoalFile({ cwd: fixture.cwd } as ExtensionContext, createGoal({ objective: "Second shared goal", autoContinue: true, sisyphus: false }));
+	try {
+		const tui = createHarness({ cwd: fixture.cwd, hasUI: true, mode: "tui", sessionEntries: [] });
+		await tui.handlers.get("session_start")?.({ reason: "resume" }, tui.ctx);
+		assert.equal(tui.selectCount, 1, "a terminal session with two open goals and no focus is asked to pick one");
+
+		const rpc = createHarness({ cwd: fixture.cwd, hasUI: true, mode: "rpc", sessionEntries: [] });
+		await rpc.handlers.get("session_start")?.({ reason: "resume" }, rpc.ctx);
+		assert.equal(rpc.selectCount, 0, "an RPC session must not wait on a focus dialog during session_start");
+		assert.equal(latestFocusEntry(rpc.appendedEntries), undefined, "skipping the dialog records no focus");
+		await rpc.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "hello" }, rpc.ctx);
+		const prompt = await rpc.handlers.get("context_with_system")?.({ messages: [] }, rpc.ctx);
+		assert.doesNotMatch(JSON.stringify(prompt), /PI GOAL ACTIVE/, "the RPC session stays unfocused");
+	} finally {
+		fixture.cleanup();
+	}
+});
+
+test("resume asks to resume a paused goal only in the terminal UI, not over RPC", async () => {
+	const fixture = createFixture({ status: "paused", pauseReason: "waiting on access" });
+	const sessionEntries = [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(fixture.goal.id, "created") }];
+	try {
+		const tui = createHarness({ cwd: fixture.cwd, hasUI: true, mode: "tui", sessionEntries });
+		await tui.handlers.get("session_start")?.({ reason: "resume" }, tui.ctx);
+		assert.equal(tui.confirmCount, 1, "a terminal session is asked whether to resume its paused goal");
+
+		const rpc = createHarness({ cwd: fixture.cwd, hasUI: true, mode: "rpc", sessionEntries });
+		await rpc.handlers.get("session_start")?.({ reason: "resume" }, rpc.ctx);
+		assert.equal(rpc.confirmCount, 0, "an RPC session must not wait on a resume dialog during session_start");
+		assert.match(readFileSync(fixture.activePath, "utf8"), /"status": "paused"/, "the goal stays paused");
 	} finally {
 		fixture.cleanup();
 	}
