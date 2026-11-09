@@ -353,6 +353,9 @@ export class GoalScheduler {
 	}
 	schedule(ctx: ExtensionContext): void {
 		if (this.inRun || this.denied || this.core.interruption.isHeld()) return;
+		// A guided draft owns the turn: its profile has no goal tools and its
+		// prompt forbids substantive work. Resume scheduling after confirm/cancel.
+		if (this.core.isDrafting()) return;
 		invalidateGoalSettingsCache();
 		this.safe(ctx, () => {
 			this.core.reconcileFocusedGoalFromDisk(ctx);

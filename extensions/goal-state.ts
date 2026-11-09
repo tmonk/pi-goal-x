@@ -106,6 +106,7 @@ export interface GoalCore {
 	focusedOperationCancelledResult(action: string, token: { goalId: string; revision: number }): AgentToolResult<unknown>;
 	installGoalToolProfile(tasksEnabled: boolean): void;
 	installDraftingToolProfile(): void;
+	isDrafting(): boolean;
 	stopAuditAnimation(): void;
 	abortAudit(ctx: ExtensionContext): void;
 	clearContinuationTimer(): void;
@@ -371,6 +372,9 @@ export function createGoalCore(
 			console.error("[pi-goal] installDraftingToolProfile error:", err instanceof Error ? err.message : String(err));
 		}
 	}
+
+	/** True while the transient drafting profile owns the tool surface. */
+	function isDrafting(): boolean { return draftingProfile; }
 
 	function stopAuditAnimation(): void {
 		if (auditAnimationTimer) {
@@ -1054,6 +1058,7 @@ export function createGoalCore(
 		focusedOperationCancelledResult,
 		installGoalToolProfile,
 		installDraftingToolProfile,
+		isDrafting,
 		stopAuditAnimation,
 		abortAudit,
 		clearContinuationTimer,
