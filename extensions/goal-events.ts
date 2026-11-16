@@ -33,6 +33,7 @@ import {
 	untrustedObjectiveBlock,
 } from "./prompts/goal-prompts.ts";
 import { hasActiveDraft, rehydrateDraft } from "./goal-drafting.ts";
+import { FIVE_GOAL_TOOLS } from "./goal-tool-names.ts";
 import { syncTerminalInputPause } from "./goal-widget.ts";
 import type { GoalCore } from "./goal-state.ts";
 import { filterGoalSessionContext, isStaleExtensionContextError } from "./goal-session-safety.ts";
@@ -153,6 +154,13 @@ export function registerGoalEvents(core: GoalCore): void {
 				reason: `Cannot call ${event.toolName}: the goal checkpoint that triggered this turn is no longer active. ` +
 					`Goal ${checkpointGoalId} has been paused, cleared, or replaced. ` +
 					`End the turn with a brief summary and yield to the user.`,
+			};
+		}
+		// Keep declarations cached; block unconfirmed goal operations at execution.
+		if (hasActiveDraft(core) && (FIVE_GOAL_TOOLS as readonly string[]).includes(event.toolName)) {
+			return {
+				block: true,
+				reason: commandInstructions("A goal draft is active. Finish it with propose_goal_draft or ask the user to run /goal-cancel.", core.loadedCommands),
 			};
 		}
 		// Track Oracle work attempts; this does not authorize scheduling.
@@ -413,7 +421,7 @@ export function registerGoalEvents(core: GoalCore): void {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		core.advanceTurnSeq();
-  if (!hasActiveDraft(core)) core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
+  core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
 		const incomingGoalId = event.messageType === "custom"
 			? goalEventMessageId(event.message) : extractGoalIdFromInjectedMessage(event.prompt ?? "");
 		if (event.messageType !== "custom" && !incomingGoalId) core.interruption.continueWithUser(ctx);

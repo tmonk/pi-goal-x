@@ -33,9 +33,9 @@ handlers from their dedicated modules:
 | `goal-auditor.ts` | Independent pi auditor agent prompt/config/decision parsing and completion audit execution |
 | `goal-ledger.ts` | Single-file goal ledger append/read/reconstruction (18 event types incl. `task_reopened`) |
 | `goal-draft.ts` | Drafting prompt/confirmation text helpers (goalDraftingPrompt, buildDraftConfirmationText, renderConfirmationTasks, GoalDraftingFocus) |
-| `goal-drafting.ts` | Guided drafting orchestration: durable `pi-goal-draft` session entries (survive compaction/tree navigation), resume/replace/cancel protection, transient drafting profile, `goal_question`/`goal_questionnaire`/`propose_goal_draft` tools, per-draft auditor selection |
+| `goal-drafting.ts` | Guided drafting orchestration: durable `pi-goal-draft` session entries (survive compaction/tree navigation), resume/replace/cancel protection, fixed advertised drafting tools with execution-time gates, `goal_question`/`goal_questionnaire`/`propose_goal_draft` tools, per-draft auditor selection |
 | `goal-questionnaire.ts` | Structured question/answer UI (`runGoalQuestionnaire`, `showProposalDialog`) used by the drafting tools and confirmations |
-| `goal-tool-names.ts` | The five published tool-name constants, lifecycle-dependent profiles, work/progress classification, post-stop allowlist |
+| `goal-tool-names.ts` | Execution/drafting tool-name constants, fixed task-enabled/disabled profiles, work/progress classification, post-stop allowlist |
 | `goal-detail.ts` | Lossless objective/task/history paging with content-bound cursors |
 | `goal-ledger-index.ts` | Incremental per-goal activity, audit, lifecycle, and Oracle projections |
 | `goal-task-index.ts` | Content-keyed task snapshots shared by prompts, tools, and dashboard models |

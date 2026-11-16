@@ -13,3 +13,11 @@ Explicit caches need a reusable write point, not just a stable prefix. Add a nar
 The "leave implicit caches untouched" line above covered explicit markers only, and it stays true: implicit payloads gain no marker. What it missed is the message sequence itself: the request-only tail disappeared exactly where the next completed assistant turn appeared, so request N was never a prefix of request N+1 and implicit caches froze at the first injection point (live evidence: cache reads pinned at 28,160 tokens while uncached input grew past 62,000).
 
 The fix retains previously sent tails verbatim at their anchors (extensions/goal-live-retention.ts) and splits the live state into a stable policy tail and a volatile counters tail, so each request literally extends the previous one with bounded growth. The marker-relocation design above is unchanged in scope but now skips every transient tail, current and retained. The advancing-history SDK regression (tests/prompt-cache-sdk-worker.ts) fails on the pre-fix sequence and passes with retention.
+
+## 2026-11-04: issue #126 fixed tool surface
+
+Replace status-dependent applicableGoalTools with a tasksEnabled-only profile: three core tools plus three drafting tools, or all five execution tools plus three drafting tools. Reuse the idempotent installer for draft start/clear/rehydration. Remove the separate drafting installer and focus-driven profile synchronization. Preserve host selection and avoid setActiveTools when membership is unchanged.
+
+Add a tool_call guard for the five execution tools while hasActiveDraft is true, before work tracking. Existing drafting executors still reject calls without an active draft; lifecycle/task executors remain authoritative for invalid states. Keep per-turn settings reconciliation independent of draft state.
+
+Update profile expectations and add regressions for stable ordered declarations, pause/resume, focus changes, task-list changes, draft confirm/cancel/rehydration, disabled tasks, and runtime guards. Run targeted tests, typecheck, then the full unit/integration suites. Live provider cache-hit rates remain unverified without a patched runtime trial.

@@ -111,7 +111,7 @@ The curated fourteen-command palette:
 
 ## 6. Goal creation flow
 
-`/goal [seed]` and `/sisyphus [seed]` enter a temporary draft profile.
+`/goal [seed]` and `/sisyphus [seed]` start a guided draft without changing advertised tools.
 The agent can ask questions, select a questionnaire when it adds value, and
 propose both a full objective and a task tree in a single confirmation dialog.
 Confirm creates and focuses the goal atomically; Continue Chatting retains the
@@ -119,18 +119,16 @@ draft. `/goal-direct` and `/sisyphus-direct` are the explicit immediate paths.
 
 ## 7. Tool surface and runtime gates
 
-The normal execution surface is a FIXED three/five profile; guided drafting
-temporarily replaces it with three draft tools:
+The tool surface is fixed across execution and guided drafting:
 
-- exactly five goal tools are installed when tasks are enabled — `create_goal`,
+- five execution tools are advertised when tasks are enabled — `create_goal`,
   `get_goal`, `update_goal`, `set_goal_tasks`, `update_goal_task`;
-- exactly the three core tools when tasks are disabled;
-- during a user-started `/goal`, `/sisyphus`, or `/goal-tweak` draft, only
-  `goal_question`, `goal_questionnaire`, and `propose_goal_draft` are
-  advertised until confirm or cancellation;
-- the profile is installed once at session start and after a settings change
-  that toggles `disableTasks`; focus, status, budget, completion, audit, and
-  compaction transitions never add/remove/restore goal tools;
+- only the three core execution tools when tasks are disabled;
+- `goal_question`, `goal_questionnaire`, and `propose_goal_draft` stay advertised
+  in both profiles, but reject calls without an active user-started draft;
+- profile installation is idempotent; only an explicit `disableTasks` change
+  alters the tool set. Focus, status, budget, completion, audit, drafting, and
+  compaction transitions never change it;
 - ordinary pi work tools (`read`, `write`, `edit`, `bash`, ...) are never
   touched by the extension;
 - invalid lifecycle calls are rejected by the executor with a concise
@@ -139,6 +137,8 @@ temporarily replaces it with three draft tools:
 
 The `tool_call` interceptor:
 
+- blocks all five execution goal tools during an active draft, preserving the
+  confirmation boundary without changing tool declarations;
 - blocks work tools after a stop tool has fired in the same turn (post-stop
   guard);
 - blocks work tools when the checkpoint that triggered the turn is no longer

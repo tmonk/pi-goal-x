@@ -1,4 +1,3 @@
-import type { GoalRecord } from "./goal-record.ts";
 export const CREATE_GOAL_TOOL_NAME = "create_goal";
 export const GET_GOAL_TOOL_NAME = "get_goal";
 export const UPDATE_GOAL_TOOL_NAME = "update_goal";
@@ -20,7 +19,7 @@ export const FIVE_GOAL_TOOLS = [...CORE_GOAL_TOOL_NAMES, ...TASK_TOOL_NAMES] as 
 /** Fixed task-disabled profile: the three core tools. */
 export const CORE_GOAL_TOOLS = CORE_GOAL_TOOL_NAMES;
 
-/** User-started drafting uses a separate transient model profile. */
+/** Always advertised; executors require an active user-started draft. */
 export const DRAFTING_GOAL_TOOLS = [
 	QUESTION_TOOL_NAME,
 	QUESTIONNAIRE_TOOL_NAME,
@@ -68,12 +67,7 @@ export const GOAL_PROGRESS_TOOL_NAMES = [
 /** Tools the model may still call on a stopped turn (state reads only). */
 export const POST_STOP_ALLOWED_TOOLS = ["get_goal"] as const;
 
-/** Advertise valid operations, leaving executor guards authoritative. */
-export function applicableGoalTools(goal: GoalRecord | null, tasksEnabled: boolean): string[] {
- const names: string[] = [CREATE_GOAL_TOOL_NAME, GET_GOAL_TOOL_NAME];
- if (!goal) return names;
- if (["active", "paused", "budget_limited"].includes(goal.status)) names.push(UPDATE_GOAL_TOOL_NAME);
- if (tasksEnabled && ["active", "paused"].includes(goal.status)) names.push(SET_GOAL_TASKS_TOOL_NAME);
- if (tasksEnabled && goal.status === "active" && goal.taskList?.tasks.length) names.push(UPDATE_GOAL_TASK_TOOL_NAME);
- return names;
+/** Keep the cached tool/rules prefix independent of goal and draft state. */
+export function applicableGoalTools(tasksEnabled: boolean): string[] {
+	return [...(tasksEnabled ? FIVE_GOAL_TOOLS : CORE_GOAL_TOOLS), ...DRAFTING_GOAL_TOOLS];
 }
