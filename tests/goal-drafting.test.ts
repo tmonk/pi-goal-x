@@ -34,6 +34,8 @@ interface Harness {
 	selectResult(result: string | undefined): void;
 	sessionStart(): Promise<void>;
 	sessionTree(): Promise<void>;
+	toolCall(name: string): Promise<any>;
+	beforeAgentStart(): Promise<void>;
 	entries(): unknown[];
 }
 
@@ -99,6 +101,8 @@ function createHarness(cwd: string, opts: { hasUI?: boolean } = {}): Harness {
 		selectResult: (result: string | undefined) => { selectAnswer = result; },
 		sessionStart: async () => { await handlers.get("session_start")?.({ reason: "start" }, ctx); },
 		sessionTree: async () => { await handlers.get("session_tree")?.({}, ctx); },
+		toolCall: async (toolName: string) => handlers.get("tool_call")!({ toolName, input: {} }, ctx),
+		beforeAgentStart: async () => { await handlers.get("before_agent_start")!({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, ctx); },
 		entries: () => [...entries],
 	};
 }
@@ -140,6 +144,78 @@ async function runProposal(h: Harness, params: Record<string, unknown>): Promise
 	return proposal.execute("draft-1", params, new AbortController().signal, undefined, h.ctx);
 }
 
+async function assertNoDraft(h: Harness): Promise<void> {
+	assert.equal(h.toolHistory().length, 1, "draft transitions never reinstall tools");
+	assert.deepEqual(h.activeTools(), h.toolHistory()[0], "ordered tool profile stays fixed");
+	for (const [name, params] of [
+		["goal_question", { question: "Draft state?" }],
+		["goal_questionnaire", { questions: [] }],
+		["propose_goal_draft", proposalParams("No draft")],
+	] as const) {
+		assert.ok(h.activeTools().includes(name), name + " remains advertised");
+		const result = await h.tools.get(name).execute("no-draft", params, new AbortController().signal, undefined, h.ctx);
+		assert.match(result.content[0].text, /No guided goal draft is active/i);
+	}
+}
+
+for (const disableTasks of [false, true]) {
+	test(`drafting guards preserve the fixed profile (disableTasks=${disableTasks})`, async () => {
+		const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-fixed-"));
+		try {
+			writeSettings(cwd, { disableTasks });
+			const h = createHarness(cwd);
+			await h.sessionStart();
+			const initial = h.activeTools();
+			await h.commands.get("goal")!.handler("Draft without creating", h.ctx);
+			await h.beforeAgentStart();
+			await h.sessionTree();
+			for (const name of ["create_goal", "get_goal", "update_goal", "set_goal_tasks", "update_goal_task"]) {
+				const gate = await h.toolCall(name);
+				assert.equal(gate?.block, true, name + " blocked before confirmation");
+				assert.match(gate.reason, /goal draft is active/);
+			}
+			for (const name of ["read", "bash", "goal_question", "goal_questionnaire", "propose_goal_draft"]) {
+				assert.equal(await h.toolCall(name), undefined, name + " remains usable");
+			}
+			assert.equal(activeGoalFiles(cwd).length, 0);
+			assert.deepEqual(h.activeTools(), initial);
+			await h.commands.get("goal-cancel")!.handler("", h.ctx);
+			await assertNoDraft(h);
+			assert.equal(await h.toolCall("create_goal"), undefined, "guard released after cancel");
+		} finally { rmSync(cwd, { recursive: true, force: true }); }
+	});
+}
+
+test("pause, resume, task-list and focus changes preserve ordered tool declarations", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-profile-transitions-"));
+	try {
+		const h = createHarness(cwd);
+		await h.sessionStart();
+		const initial = h.activeTools();
+		await h.commands.get("goal-direct")!.handler("Track this work", h.ctx);
+		const id = firstGoal(cwd).id;
+		await h.beforeAgentStart();
+		await h.tools.get("set_goal_tasks").execute("plan", { tasks: [{ id: "t1", title: "Do work" }] }, new AbortController().signal, undefined, h.ctx);
+		assert.equal(firstGoal(cwd).taskList?.tasks[0]?.id, "t1");
+		const paused = await h.tools.get("update_goal").execute("pause", { status: "paused", reason: "Wait for user" }, new AbortController().signal, undefined, h.ctx);
+		assert.equal(paused.terminate, true);
+		assert.equal(firstGoal(cwd).status, "paused");
+		await h.beforeAgentStart();
+		await h.commands.get("goal-resume")!.handler("", h.ctx);
+		assert.equal(firstGoal(cwd).status, "active");
+		await h.commands.get("goal-unfocus")!.handler("", h.ctx);
+		await h.beforeAgentStart();
+		await h.commands.get("goal-focus")!.handler(id, h.ctx);
+		await h.beforeAgentStart();
+		await h.commands.get("goal-tweak")!.handler("Refine this goal", h.ctx);
+		assert.equal((await h.toolCall("update_goal"))?.block, true);
+		await runProposal(h, proposalParams("Refined tracked work"));
+		assert.equal(firstGoal(cwd).objective, "Refined tracked work");
+		assert.deepEqual(h.activeTools(), initial);
+		await assertNoDraft(h);
+	} finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 // ── Confirmation decisions ────────────────────────────────────────────────
 
 test("dialog cancel is a durable no-op and clears the draft", async () => {
@@ -156,10 +232,7 @@ test("dialog cancel is a durable no-op and clears the draft", async () => {
 		assert.match(result.content[0].text, /Draft cancelled/);
 		assert.equal(activeGoalFiles(cwd).length, 0, "cancel must not create a goal");
 		assert.deepEqual(ledgerEvents(cwd).filter((e) => e.type === "goal_created"), [], "cancel must not write a goal_created event");
-		// Drafting tools removed; execution profile restored.
-		const tools = h.activeTools();
-		assert.ok(tools.includes("create_goal") && tools.includes("get_goal") && !tools.includes("update_goal"), "unfocused execution profile restored");
-		assert.equal(tools.includes("goal_questionnaire"), false, "drafting tools removed");
+		await assertNoDraft(h);
 	} finally {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
 	}
@@ -364,10 +437,10 @@ test("confirmed proposal persists verification contract and nested tasks, then r
 		assert.deepEqual(ids, ["index"], "parent task is the root");
 		const index = goal.taskList?.tasks.find((t) => t.id === "index");
 		assert.deepEqual(index?.subtasks?.map((t) => t.id), ["rank", "surface"], "children become subtasks");
-		// Execution profile restored: drafting tools gone, five-tool profile back.
+		// Confirmation clears draft state without changing the profile.
 		const tools = h.activeTools();
 		for (const name of ["update_goal", "set_goal_tasks", "update_goal_task"]) assert.ok(tools.includes(name), name);
-		assert.equal(tools.includes("propose_goal_draft"), false, "drafting tools removed after confirmation");
+		await assertNoDraft(h);
 	} finally {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
 	}
@@ -513,7 +586,7 @@ test("/goal-tweak confirms a revision under focus validation", async () => {
 		assert.equal(goalAfter.id, goalBefore.id, "same goal revised");
 		assert.ok(goalAfter.objective.includes("Revised objective"), "objective updated");
 		assert.ok(ledgerEvents(cwd).some((e) => e.type === "goal_tweaked"), "goal_tweaked event recorded");
-		assert.equal(h.activeTools().includes("goal_questionnaire"), false, "tweak draft cleared after confirmation");
+		await assertNoDraft(h);
 	} finally {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
 	}
@@ -658,9 +731,7 @@ test("/goal-cancel clears the draft as a durable no-op", async () => {
 		await h.commands.get("goal-cancel")!.handler("", h.ctx);
 		assert.equal(activeGoalFiles(cwd).length, 0, "cancel writes no goal file");
 		assert.deepEqual(ledgerEvents(cwd).filter((e) => e.type === "goal_created"), [], "cancel writes no ledger event");
-		const tools = h.activeTools();
-		assert.ok(tools.includes("create_goal") && tools.includes("get_goal") && !tools.includes("update_goal"), "unfocused execution profile restored");
-		assert.equal(tools.includes("goal_questionnaire"), false, "drafting tools removed");
+		await assertNoDraft(h);
 		assert.ok(h.notifications.some((n) => n.includes("Draft cancelled")), "cancel notification");
 		// The durable entry is tombstoned, not removed.
 		const draftEntries = h.entries().filter((e: any) => e.customType === "pi-goal-draft");
@@ -693,7 +764,7 @@ test("an unconfirmed draft survives session_tree rehydration", async () => {
 		await h.sessionTree();
 		const tools = h.activeTools();
 		assert.ok(tools.includes("update_goal"), "execution profile after confirm");
-		assert.equal(tools.includes("goal_questionnaire"), false, "no draft restored after confirm");
+		await assertNoDraft(h);
 	} finally {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
 	}
@@ -708,7 +779,7 @@ test("tree navigation restores only the incoming branch's durable draft", async 
 		const originalBranch = h.ctx.sessionManager.getBranch;
 		h.ctx.sessionManager.getBranch = () => [];
 		await h.sessionTree();
-		assert.equal(h.activeTools().includes("propose_goal_draft"), false);
+		await assertNoDraft(h);
 		assert.ok(h.activeTools().includes("read"), "ordinary work tools remain available");
 		const rejected = await runProposal(h, proposalParams("Wrong branch"));
 		assert.match(rejected.content[0].text, /No guided goal draft is active/i);
@@ -778,8 +849,8 @@ test("a stale tweak draft is invalidated on rehydration when its target is unfoc
 		await h.commands.get("goal-unfocus")!.handler("", h.ctx);
 		await h.sessionTree();
 		const tools = h.activeTools();
-		assert.ok(tools.includes("create_goal") && tools.includes("get_goal") && !tools.includes("update_goal"), "unfocused execution profile after stale tweak invalidation");
-		assert.equal(tools.includes("goal_questionnaire"), false, "stale tweak draft not restored");
+		assert.deepEqual(tools, h.toolHistory()[0], "fixed profile retained");
+		await assertNoDraft(h);
 		assert.ok(h.notifications.some((n) => n.includes("stale")), "stale draft warning");
 		// The stale tweak draft cannot confirm anything.
 		const result = await runProposal(h, proposalParams("Changed objective", { sisyphus: false }));
@@ -802,10 +873,10 @@ test("direct goal creation interrupts and clears an active draft", async () => {
 		assert.equal(files.length, 1, "direct creation proceeds");
 		const tools = h.activeTools();
 		assert.ok(tools.includes("update_goal"), "active execution profile restored after direct creation");
-		assert.equal(tools.includes("goal_questionnaire"), false, "draft cleared by direct creation");
+		await assertNoDraft(h);
 		// The tombstoned draft must not resurrect across rehydration.
 		await h.sessionTree();
-		assert.equal(h.activeTools().includes("goal_questionnaire"), false, "draft stays cleared after rehydration");
+		await assertNoDraft(h);
 	} finally {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
 	}
@@ -824,7 +895,7 @@ test("/goal-status reports state without initiating drafting", async () => {
 		await h.commands.get("goal-status")!.handler("", h.ctx);
 		assert.equal(h.messages.length, messagesBefore, "status must not initiate a draft or agent turn");
 		assert.ok(h.notifications.some((n) => n.includes("Status target")), "focused goal reported");
-		assert.equal(h.activeTools().includes("goal_questionnaire"), false, "no drafting profile");
+		await assertNoDraft(h);
 		// Unfocused with open goals: reports the pool without mutating.
 		await h.commands.get("goal-unfocus")!.handler("", h.ctx);
 		await h.commands.get("goal-status")!.handler("", h.ctx);
@@ -952,7 +1023,7 @@ test("a tweak confirmation resumes a paused goal (active, pause metadata cleared
 		const resumed = events.filter((e) => e.type === "goal_resumed");
 		assert.equal(resumed.length, 1, "exactly one goal_resumed event");
 		assert.equal((resumed[0] as any).reason, "tweak", "resume reason is the tweak");
-		assert.equal(h.activeTools().includes("goal_questionnaire"), false, "tweak draft cleared after confirmation");
+		await assertNoDraft(h);
 	} finally {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
 	}
@@ -1133,7 +1204,7 @@ test("/goal-tweak command rejects an oversized replacement per the configured li
 		await h.sessionStart();
 		await h.commands.get("goal-direct")!.handler("Initial objective", h.ctx);
 		await h.commands.get("goal-tweak")!.handler("x".repeat(31), h.ctx);
-		assert.equal(h.activeTools().includes("goal_questionnaire"), false, "no draft starts for an oversized replacement");
+		await assertNoDraft(h);
 		assert.equal(firstGoal(cwd).objective, "Initial objective", "goal unchanged");
 	} finally {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}

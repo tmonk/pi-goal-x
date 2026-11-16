@@ -37,12 +37,12 @@ test("rewritten history resets once and never loses the live state", () => {
 	assert.deepEqual(contents(next.messages), ["compacted summary", "S", "V1"]);
 });
 
-test("a changed policy block drops stale tails and starts a fresh prefix", () => {
+test("a changed policy block appends a superseding state while preserving the prefix", () => {
 	const retention = new LiveTailRetention();
 	const base = [msg("user", "h", 1)];
 	retention.apply("s", base, { state: "S1", counters: "V1" });
 	const next = retention.apply("s", base, { state: "S2", counters: "V2" });
-	assert.deepEqual(contents(next.messages), ["h", "S2", "V2"]);
+	assert.deepEqual(contents(next.messages), ["h", "S1", "V1", "[PI GOAL STATE UPDATE: supersedes every earlier PI GOAL block]\nS2", "V2"]);
 });
 
 test("retained growth is bounded with one amortized reset per window", () => {
