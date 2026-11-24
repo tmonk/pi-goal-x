@@ -52,7 +52,7 @@ function resolveLeaf<T>(args: {
  * Resolve both layers + env into one snapshot with per-leaf provenance.
  * Nested keybindings resolve leaf-by-leaf from the SPARSE layers.
  */
-const resolutionEnvKeys = ["PI_GOAL_ROOT", "PI_GOAL_DISABLE_TASKS", "PI_GOAL_DISABLE_CONTRACTS", "PI_GOAL_OBJECTIVE_MAX_CHARS", "PI_GOAL_NETWORK_RECOVERY_MAX_ATTEMPTS", "PI_GOAL_NETWORK_RECOVERY_MAX_DELAY_MS"] as const;
+const resolutionEnvKeys = ["PI_GOAL_ROOT", "PI_GOAL_LOCALE", "PI_GOAL_DISABLE_TASKS", "PI_GOAL_DISABLE_CONTRACTS", "PI_GOAL_OBJECTIVE_MAX_CHARS", "PI_GOAL_NETWORK_RECOVERY_MAX_ATTEMPTS", "PI_GOAL_NETWORK_RECOVERY_MAX_DELAY_MS"] as const;
 const resolvedSettingsCache: Array<{global: SettingsLayerRead; project: SettingsLayerRead; environment: Array<string | undefined>; snapshot: SettingsSnapshot}> = [];
 
 function resolvedSettingsSnapshot(cwd: string, env: NodeJS.ProcessEnv): SettingsSnapshot {
@@ -117,6 +117,7 @@ function resolvedSettingsSnapshot(cwd: string, env: NodeJS.ProcessEnv): Settings
 		showContextUsage: top("showContextUsage", false),
 		hideUnfocusedPrompt: top("hideUnfocusedPrompt", false),
 		goalsRoot: top("goalsRoot", undefined, "PI_GOAL_ROOT", env.PI_GOAL_ROOT),
+		locale: top("locale", undefined, "PI_GOAL_LOCALE", env.PI_GOAL_LOCALE),
 		stallTimeoutMinutes: top("stallTimeoutMinutes", 0),
 		maxAutonomousRuns: top("maxAutonomousRuns", undefined),
 		idleContinuationBackoff: top("idleContinuationBackoff", false),
@@ -182,6 +183,7 @@ export function loadGoalSettings(cwd: string, env: NodeJS.ProcessEnv = process.e
  */
 export function envOverrideFor(key: keyof GoalSettings | "settingsFile", env: NodeJS.ProcessEnv = process.env): string | null {
 	if (key === "goalsRoot" && env.PI_GOAL_ROOT !== undefined) return "PI_GOAL_ROOT";
+	if (key === "locale" && env.PI_GOAL_LOCALE !== undefined) return "PI_GOAL_LOCALE";
 	if (key === "disableTasks" && env.PI_GOAL_DISABLE_TASKS !== undefined) return "PI_GOAL_DISABLE_TASKS";
 	if (key === "disableContracts" && env.PI_GOAL_DISABLE_CONTRACTS !== undefined) return "PI_GOAL_DISABLE_CONTRACTS";
 	if (key === "objectiveMaxChars" && env.PI_GOAL_OBJECTIVE_MAX_CHARS !== undefined) return "PI_GOAL_OBJECTIVE_MAX_CHARS";
@@ -214,6 +216,7 @@ export function effectiveSettingsReport(cwd: string, env: NodeJS.ProcessEnv = pr
 		{ key: "showAutonomousRuns", label: "show autonomous runs line", format: () => String(snapshot.value.showAutonomousRuns) },
 		{ key: "showContextUsage", label: "show context usage line", format: () => String(snapshot.value.showContextUsage) },
 		{ key: "goalsRoot", label: "goals root (reload to change)", format: () => snapshot.value.goalsRoot ?? ".pi/goals" },
+		{ key: "locale", label: "language", format: () => snapshot.value.locale ?? "en (default)" },
 		{ key: "hideUnfocusedPrompt", label: "hide unfocused prompt", format: () => String(snapshot.value.hideUnfocusedPrompt) },
 		{ key: "idleContinuationBackoff", label: "slow repeated idle replies (opt-in)", format: () => String(snapshot.value.idleContinuationBackoff) },
 		{ key: "strictExecutionContract", label: "explicit execution contracts (opt-in)", format: () => String(snapshot.value.strictExecutionContract) },
