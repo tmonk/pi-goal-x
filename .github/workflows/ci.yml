@@ -83,7 +83,7 @@ jobs:
           retention-days: 5
           if-no-files-found: ignore
 
-  # The walkthrough cases are independent, so they run in four groups.
+  # The walkthrough cases are independent, so they run in three groups.
   # scripts/test-ci.mjs checks that every case is in exactly one group.
   controls:
     runs-on: ubuntu-latest
