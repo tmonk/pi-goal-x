@@ -11,6 +11,9 @@ const manifestPath = join(testsRoot, ".test-manifest.json");
 const suite = process.argv[2] ?? "unit";
 const wantSelfCheck = process.argv.includes("--selfcheck");
 const wantWriteManifest = process.argv.includes("--write-manifest");
+// `--shard=1/2` runs half of the files; CI uses it to spread the suite over jobs.
+const shard = process.argv.find((arg) => arg.startsWith("--shard="))?.slice("--shard=".length);
+if (shard && !/^[1-9]\d*\/[1-9]\d*$/.test(shard)) throw new Error("Bad --shard value: " + shard);
 
 function discover(directory) {
 	return readdirSync(directory, { withFileTypes: true })
@@ -86,6 +89,7 @@ const result = spawnSync(
 		"--import", pathToFileURL(join(projectRoot, "scripts", "test-adapter-hooks.mjs")).href,
 		"--experimental-strip-types",
 		"--test",
+		...(shard ? ["--test-shard=" + shard] : []),
 		...testFiles,
 	],
 	{ cwd: projectRoot, stdio: "inherit" },

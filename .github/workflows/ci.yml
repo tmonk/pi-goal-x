@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       runtime: ${{ steps.changes.outputs.runtime }}
+      bench: ${{ steps.changes.outputs.bench }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -45,7 +46,32 @@ jobs:
       - run: npm run lint
       - run: npm audit --omit=dev
 
+  # The unit, integration and end-to-end suite, split in two to finish sooner.
   tests:
+    needs: scope
+    if: needs.scope.outputs.runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - name: Tests (shard ${{ matrix.shard }})
+        env:
+          PI_GOAL_CI_LOG_DIR: ${{ runner.temp }}/pi-goal-validation
+        run: node scripts/ci-checks.mjs --only tests --shard ${{ matrix.shard }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: tests-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/pi-goal-validation/
+          retention-days: 5
+          if-no-files-found: ignore
+
+  package:
     needs: scope
     if: needs.scope.outputs.runtime == 'true'
     runs-on: ubuntu-latest
@@ -53,14 +79,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
-      - name: Tests, installed package and cache regressions
+      - name: Installed package, context and cache regressions
         env:
           PI_GOAL_CI_LOG_DIR: ${{ runner.temp }}/pi-goal-validation
-        run: node scripts/ci-checks.mjs --skip controls-cli
+        run: node scripts/ci-checks.mjs --skip tests --skip controls-cli
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
-          name: validation
+          name: package
           path: ${{ runner.temp }}/pi-goal-validation/
           retention-days: 5
           if-no-files-found: ignore
@@ -76,7 +102,7 @@ jobs:
       - name: Controls walkthrough in the Pi CLI
         run: node experiments/controls/cli-walkthrough.mjs
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure()
         with:
           name: controls
           path: experiments/runs/goal-controls/
@@ -85,7 +111,7 @@ jobs:
 
   bench:
     needs: scope
-    if: needs.scope.outputs.runtime == 'true'
+    if: needs.scope.outputs.bench == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -107,7 +133,7 @@ jobs:
   # The one check branch protection needs. It passes when every job above
   # passed or was skipped for a prose-only change.
   validate:
-    needs: [scope, static, tests, controls, bench]
+    needs: [scope, static, tests, package, controls, bench]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

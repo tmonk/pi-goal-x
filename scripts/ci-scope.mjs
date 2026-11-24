@@ -7,6 +7,11 @@ export function needsRuntimeChecks(files) {
  return files.length === 0 || files.some(file => !/^(README\.md|CHANGELOG\.md|LICENSE|(?:docs|specs|assets)\/.*|pi-goal-x\.png)$/.test(file));
 }
 
+// The benchmark measures the extension. Test files cannot move it, but it does load tests/support and tests/stubs.
+export function needsBench(files) {
+ return files.length === 0 || files.some(file => !/^(README\.md|CHANGELOG\.md|LICENSE|(?:docs|specs|assets)\/.*|tests\/(?:.*\/)?[^/]+\.test\.ts|pi-goal-x\.png)$/.test(file));
+}
+
 export function changedFiles(base, cwd=process.cwd()) {
  if(!/^[a-f0-9]{40}$/.test(base??'') || /^0+$/.test(base)) return undefined;
  try {
@@ -19,6 +24,8 @@ export function changedFiles(base, cwd=process.cwd()) {
 if(process.argv[1]===fileURLToPath(import.meta.url)) {
  const files=changedFiles(process.env.CI_BASE_SHA);
  const runtime=files===undefined || needsRuntimeChecks(files);
- if(process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,`runtime=${runtime}\n`);
+ const bench=files===undefined || needsBench(files);
+ if(process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,`runtime=${runtime}\nbench=${bench}\n`);
  console.log(runtime?'Runtime checks required.':'Prose/assets only; runtime checks are unchanged.');
+ if(runtime&&!bench) console.log('Tests and prose only; the benchmark gate is skipped.');
 }

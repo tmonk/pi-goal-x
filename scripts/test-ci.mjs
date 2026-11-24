@@ -4,7 +4,7 @@ import {mkdtempSync,readFileSync,rmSync,mkdirSync,writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {needsRuntimeChecks,changedFiles} from './ci-scope.mjs';
+import {needsRuntimeChecks,needsBench,changedFiles} from './ci-scope.mjs';
 import {runChecks} from './ci-checks.mjs';
 
 test('only known prose/assets skip runtime checks; uncertainty and mixed changes run them',()=>{
@@ -15,6 +15,12 @@ test('only known prose/assets skip runtime checks; uncertainty and mixed changes
  assert.equal(needsRuntimeChecks([]),true);
  assert.equal(changedFiles('0'.repeat(40)),undefined);
  assert.equal(changedFiles('not-a-sha'),undefined);
+});
+
+test('the benchmark gate is skipped only for tests and prose',()=>{
+ assert.equal(needsBench(['tests/goal-controls.test.ts','docs/controls.md']),false);
+ for(const file of ['extensions/goal.ts','experiments/bench/run-bench.mjs','tests/support/tui-test-utils.ts','tests/stubs/x.mjs','package-lock.json','.github/workflows/ci.yml','unknown.file']) assert.equal(needsBench(['tests/a.test.ts',file]),true,file);
+ assert.equal(needsBench([]),true);
 });
 
 test('change detection includes deleted runtime files and compares actual commit trees',()=>{
