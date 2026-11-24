@@ -16,25 +16,17 @@ import {
 	isErrorAssistantMessage,
 	isMeaningfulProgressToolCall,
 } from "./goal-format.ts";
-import { buildPostCompactionGoalDelta } from "./goal-compaction.ts";
-import { latestAuditorResultForGoal, readGoalLedger, goalRuntimeEvents, invalidateGoalLedgerCache } from "./goal-ledger.ts";
-import { shouldArmPostCompactReminder, shouldInjectPostCompactReminder } from "./goal-policy.ts";
-import { formatTokenValue } from "./goal-display.ts";
+import { invalidateGoalLedgerCache, type GoalLedgerEvent } from "./goal-ledger.ts";
+import { shouldArmPostCompactReminder } from "./goal-policy.ts";
 import { invalidateGoalSettingsCache } from "./settings/files.ts";
 import { loadGoalSettings } from "./settings/resolve.ts";
-import { modelBudgetLine, budgetRemaining } from "./goal-accounting.ts";
 import { asRecord, nowIso, type AssistantMessageLike, type GoalRecord } from "./goal-record.ts";
 import { goalSelectorLabel, otherOpenGoalCount } from "./goal-pool.ts";
 import { invalidateGoalPoolCache } from "./storage/goal-files.ts";
 import { checkpointTriggerPrompt } from "./prompts/goal-prompts.ts";
 import { consumeOracleFollowupMarker, hasPendingOracleAdviceForFocusedGoal } from "./goal-oracle.ts";
 import { LiveTailRetention } from "./goal-live-retention.ts";
-import {
-	goalPromptParts,
-	staleContinuationPrompt,
-	unfocusedOpenGoalsPrompt,
-	untrustedObjectiveBlock,
-} from "./prompts/goal-prompts.ts";
+import { goalContextParts } from "./goal-context-parts.ts";
 import { hasActiveDraft, rehydrateDraft } from "./goal-drafting.ts";
 import { syncTerminalInputPause } from "./goal-terminal-input.ts";
 import type { GoalCore } from "./goal-state.ts";
@@ -59,6 +51,54 @@ export function compactGoalCheckpointContext(
 	return output;
 }
 
+/** Archive a goal marked complete whose archival was deferred, reporting success or failure to the user and ledger. */
+function archiveCompletedGoal(core: GoalCore, ctx: ExtensionContext, completedGoal: GoalRecord): void {
+	let archiveResult: GoalMutationOutcome;
+	try {
+		archiveResult = core.goalService.apply(ctx, {
+			reconcile: false,
+			archive: true,
+			commitFocused: false,
+			mutate: () => completedGoal,
+			ledger: (written) => [{
+				type: "goal_completed",
+				goalId: completedGoal.id,
+				archivePath: written.archivedPath,
+				at: nowIso(),
+			}],
+		});
+	} catch (err) {
+		// The archive write throws on failure (e.g. unwritable archived
+		// directory); surface it as a typed outcome (follow-up Stage 3).
+		archiveResult = { ok: false, message: err instanceof Error ? err.message : String(err) };
+	}
+	if (archiveResult.ok) {
+		core.goalsById.delete(completedGoal.id);
+		core.assignFocusedGoalId(null);
+		core.appendFocusEntry(null, "completed");
+		const path = archiveResult.goal?.archivedPath ?? "";
+		// Log goal_archived with the real archive path; the completion
+		// transaction still writes goal_completed. Best-effort: the archive
+		// itself already succeeded.
+		appendBestEffort(core, ctx, { type: "goal_archived", goalId: completedGoal.id, archivePath: path, at: nowIso() });
+		ctx.ui.notify(path ? `Goal archived.\nFile: ${path}` : "Goal archived.", "info");
+		return;
+	}
+	// Never claim success: the complete record stays at its active path,
+	// and we log a diagnostic event when we can.
+	const remainingPath = completedGoal.activePath ?? "(unknown)";
+	ctx.ui.notify(`Failed to archive completed goal: ${archiveResult.message}. The complete record remains at ${remainingPath}.`, "warning");
+	appendBestEffort(core, ctx, { type: "goal_archive_failed", goalId: completedGoal.id, message: archiveResult.message ?? "archive write failed", at: nowIso() });
+}
+
+function appendBestEffort(core: GoalCore, ctx: ExtensionContext, event: GoalLedgerEvent): void {
+	try {
+		core.goalService.appendEvents(ctx, [event]);
+	} catch {
+		// Diagnostic ledger writes are best-effort.
+	}
+}
+
 /**
  * The goal extension's lifecycle event handlers (context, turn_start,
  * tool_call, tool_execution_end, turn_end, message_end, session_start,
@@ -77,8 +117,10 @@ export function registerGoalEvents(core: GoalCore): void {
 	let session: SessionOwner | undefined;
 	const contexts = new WeakMap<object, SessionOwner>();
 	const leases = new Map<string, SessionOwner>();
+	/** A context already seen under an earlier session owner must not touch its successor. */
+	const isSupersededContext = (ctx: object): boolean => contexts.has(ctx) && contexts.get(ctx) !== session;
 	pi.on("before_provider_request", (event, ctx) => {
-		if (ctx && contexts.has(ctx) && contexts.get(ctx) !== session) return;
+		if (ctx && isSupersededContext(ctx)) return;
 		try {
 			if (session && ctx && ctx.sessionManager !== session.manager) return;
 			return cacheGoalHistory(event.payload, liveRetention.contents(sessionKeyFor(ctx)));
@@ -93,7 +135,7 @@ export function registerGoalEvents(core: GoalCore): void {
 		const filtered = filterGoalSessionContext(input);
 		const messages = compactGoalCheckpointContext(filtered ?? input, core.state.goal) ?? filtered;
 		const base = messages ?? input;
-		if (contexts.has(ctx) && contexts.get(ctx) !== session) return messages;
+		if (isSupersededContext(ctx)) return messages;
 		try {if (session && ctx.sessionManager !== session.manager) return messages;}
 		catch (error) {if (isStaleExtensionContextError(error)) return messages; throw error;}
 		// Reassert startup rejection only for the current host's provider boundary.
@@ -107,7 +149,7 @@ export function registerGoalEvents(core: GoalCore): void {
 			if (session.keys.size > 16) session.keys.delete(session.keys.values().next().value!);
 		}
 		if (sessionKey === "unidentified") liveRetention.clear(sessionKey);
-		const parts = currentGoalContextParts(ctx);
+		const parts = goalContextParts(core, ctx);
 		if (parts) {
 			// Retain previously sent tails verbatim at their anchors so this
 			// request extends the previous one instead of displacing its tail.
@@ -233,60 +275,7 @@ export function registerGoalEvents(core: GoalCore): void {
 		// so the agent could see/recognize the audit result first.
 		// This runs after the agent's turn ends — the agent has now seen the result.
 		if (core.state.goal?.status === "complete" && !core.state.goal?.archivedPath) {
-			const completedGoal = core.state.goal;
-			let archiveResult: GoalMutationOutcome;
-			try {
-				archiveResult = core.goalService.apply(ctx, {
-					reconcile: false,
-					archive: true,
-					commitFocused: false,
-					mutate: () => completedGoal,
-					ledger: (written) => [{
-						type: "goal_completed",
-						goalId: completedGoal.id,
-						archivePath: written.archivedPath,
-						at: nowIso(),
-					}],
-				});
-			} catch (err) {
-				// The archive write throws on failure (e.g. unwritable archived
-				// directory); surface it as a typed outcome (follow-up Stage 3).
-				archiveResult = { ok: false, message: err instanceof Error ? err.message : String(err) };
-			}
-			if (archiveResult.ok) {
-				core.goalsById.delete(completedGoal.id);
-				core.assignFocusedGoalId(null);
-				core.appendFocusEntry(null, "completed");
-				// Log goal_archived with the real archive path; the completion
-				// transaction still writes goal_completed.
-				try {
-					core.goalService.appendEvents(ctx, [{
-						type: "goal_archived",
-						goalId: completedGoal.id,
-						archivePath: archiveResult.goal?.archivedPath ?? "",
-						at: nowIso(),
-					}]);
-				} catch {
-					// Best-effort; the archive itself already succeeded.
-				}
-				const path = archiveResult.goal?.archivedPath ?? "";
-				ctx.ui.notify(path ? `Goal archived.\nFile: ${path}` : "Goal archived.", "info");
-			} else {
-				// Never claim success: the complete record stays at its active path,
-				// and we log a diagnostic event when we can.
-				const remainingPath = completedGoal.activePath ?? "(unknown)";
-				ctx.ui.notify(`Failed to archive completed goal: ${archiveResult.message}. The complete record remains at ${remainingPath}.`, "warning");
-				try {
-					core.goalService.appendEvents(ctx, [{
-						type: "goal_archive_failed",
-						goalId: completedGoal.id,
-						message: archiveResult.message ?? "archive write failed",
-						at: nowIso(),
-					}]);
-				} catch {
-					// Diagnostic write is best-effort.
-				}
-			}
+			archiveCompletedGoal(core, ctx, core.state.goal);
 			core.updateUI(ctx);
 		}
 
@@ -361,31 +350,29 @@ export function registerGoalEvents(core: GoalCore): void {
 			// but the host may never show the dialog and session_start would wait forever.
 			const askOnResume = event.reason === "resume" && ctx.hasUI && ctx.mode === "tui";
 			if (askOnResume && !core.state.goal && !core.hasExplicitSessionFocus && otherOpenGoalCount(core.goalsById, null) > 1) {
-			// Prompt the user to pick which open goal to focus (mirrors /goal-focus).
-			const open = core.openGoals();
-			const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
-			const byLabel = new Map(labels.map((label, index) => [label, open[index]?.id]));
-			core.enterGoalModal();
-			try {
-				const selected = await ctx.ui.select("Focus open goal", labels);
-				const selectedId = selected ? byLabel.get(selected) : undefined;
-				if (selectedId && session === owner) {
-					core.setFocusedGoalId(selectedId, ctx, "selected");
-					core.armFocusedContinuation(ctx);
+				// Prompt the user to pick which open goal to focus (mirrors /goal-focus).
+				const open = core.openGoals();
+				const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
+				const byLabel = new Map(labels.map((label, index) => [label, open[index]?.id]));
+				core.enterGoalModal();
+				try {
+					const selected = await ctx.ui.select("Focus open goal", labels);
+					const selectedId = selected ? byLabel.get(selected) : undefined;
+					if (selectedId && session === owner) {
+						core.setFocusedGoalId(selectedId, ctx, "selected");
+						core.armFocusedContinuation(ctx);
+					}
+				} finally {
+					if (session === owner) core.exitGoalModal();
 				}
-			} finally {
-				if (session === owner) core.exitGoalModal();
 			}
-		}
-		if (session !== owner) return;
-		// Codex behavior: prompt before reactivating a paused goal on resume.
-		if (askOnResume && core.state.goal?.status === "paused") {
-			const current = core.state.goal;
-			const shouldResume = await ctx.ui.confirm("Resume paused goal?", `Goal: ${current.objective}`);
-			if (shouldResume && session === owner) {
-				core.scheduler.resume(ctx);
+			if (session !== owner) return;
+			// Codex behavior: prompt before reactivating a paused goal on resume.
+			if (askOnResume && core.state.goal?.status === "paused") {
+				const current = core.state.goal;
+				const shouldResume = await ctx.ui.confirm("Resume paused goal?", `Goal: ${current.objective}`);
+				if (shouldResume && session === owner) core.scheduler.resume(ctx);
 			}
-		}
 			if (session !== owner) return;
 			core.beginAccounting();
 			core.scheduler.restore(ctx);
@@ -465,113 +452,6 @@ export function registerGoalEvents(core: GoalCore): void {
 		core.reconcileFocusedGoalFromDisk(ctx);
 		core.runningGoalId = core.state.goal?.status === "active" ? core.state.goal.id : null;
 	});
-
-	/** Request-only state: no live counters, focus, or reminders enter the system prefix. */
-	/** Request-only goal state split into a rarely-changing policy block and per-turn counters. Other branches are stable-only. */
-	function currentGoalContextParts(ctx: ExtensionContext): { state: string; counters?: string } | undefined {
-		// During a draft the drafting prompt is in charge. The goal block would
-		// ask for update_goal, which is blocked until the draft ends, and the
-		// unfocused reminder would tell the agent to stop.
-		if (hasActiveDraft(core)) return;
-		const checkpoint = core.runtime.getCheckpointGoalId();
-		if (checkpoint !== null && (core.scheduler.isDenied() || !core.isActionableContinuationGoal(checkpoint))) {
-			return { state: staleContinuationPrompt(checkpoint, core.state.goal) };
-		}
-		// Several prompt enrichments may need the same ledger snapshot. Keep one
-		// local read for this hook instead of repeatedly traversing the cached
-		// ledger when rejection and post-compaction steering overlap.
-		let promptLedger: ReturnType<typeof readGoalLedger> | undefined;
-		const getPromptLedger = () => promptLedger ??= { events: core.state.goal ? goalRuntimeEvents(ctx, core.state.goal.id) : [], malformed: 0 };
-
-		if (!core.state.goal) {
-			// Issue #72: hideUnfocusedPrompt opts out of the model-facing
-			// unfocused reminder only. The stale-checkpoint guard above and
-			// all focused-goal context below are unaffected.
-			if (loadGoalSettings(ctx.cwd).hideUnfocusedPrompt === true) return;
-			const openCount = otherOpenGoalCount(core.goalsById, null);
-			if (openCount > 0) {
-				return { state: commandInstructions(unfocusedOpenGoalsPrompt(openCount), core.loadedCommands) };
-			}
-			return;
-		}
-		if (core.state.goal.status === "complete") return;
-		if (core.state.goal.status === "paused") {
-			const current = core.state.goal;
-			const pauseExtras: string[] = [];
-			if (current.stopReason === "agent") {
-				pauseExtras.push("");
-				pauseExtras.push(`Pause reason: ${current.pauseReason ?? "(unknown)"}`);
-				if (current.pauseSuggestedAction) pauseExtras.push(`Suggested action: ${current.pauseSuggestedAction}`);
-			}
-				// Inject durable auditor feedback if available
-				let auditorExtra = "";
-				try {
-					const ledger = getPromptLedger();
-				const auditorResult = latestAuditorResultForGoal(ledger.events, current.id);
-				if (auditorResult && auditorResult.verdict === "disapproved") {
-					auditorExtra = `\n\n[AUDITOR REJECTION] An independent auditor previously rejected a completion request for this goal. Reason: ${auditorResult.report.slice(0, 300)}\nAddress the auditor's objections before requesting completion again.`;
-				}
-			} catch {
-				// Ledger read failure should not break the prompt
-			}
-		return { state: `[PI GOAL PAUSED goalId=${current.id}]\n${untrustedObjectiveBlock(current)}${pauseExtras.join("\n")}${auditorExtra}\n\nThe goal is paused. Do not autonomously continue substantive work unless the user resumes it with ${commandHint("goal-resume", core.loadedCommands)}. If the user explicitly asks to finish the paused goal and the objective is already satisfied based on available evidence, you may call update_goal({status: "complete"}). To abandon a goal, the user runs ${commandHint("goal-clear", core.loadedCommands)}. Do not report the goal blocked in response to a pause.` };
-		}
-		// Token-budget-limited goals get one-time wrap-up steering: summarize,
-		// do not start new substantive work, never claim completion unless real.
-		if (core.state.goal?.status === "budget_limited") {
-			const limitedGoal = core.state.goal;
-			const budgetText = modelBudgetLine(limitedGoal);
-			// E4: surface the remaining-vs-overshoot fact in the wrap-up steering.
-			const remaining = budgetRemaining(limitedGoal);
-			const balanceText = typeof remaining === "number"
-				? remaining < 0
-					? ` — ${formatTokenValue(-remaining)} over the budget`
-					: ` — ${formatTokenValue(remaining)} remaining`
-				: "";
-			const reminder = core.runtime.consumePostBudgetReminder()
-				? `\n\n[TOKEN BUDGET REACHED goalId=${limitedGoal.id}]\nThe goal's lifetime token-spending cap (not context capacity) has been reached${budgetText ? ` (${budgetText}${balanceText})` : ""}. Wrap up the current work in one final response: summarize what was accomplished and what remains, do not start new substantive work, and do not claim the goal is complete unless it actually is. To continue, the user can use ${commandHint("goal-tweak", core.loadedCommands)} to raise or remove the token budget.`
-				: "";
-		return { state: `[PI GOAL BUDGET LIMITED goalId=${limitedGoal.id}]\n${untrustedObjectiveBlock(limitedGoal)}${budgetText ? `\n${budgetText}` : ""}${reminder}` };
-		}
-		if (core.state.goal.status === "blocked") {
-			const blocked = core.state.goal;
-			return { state: `[PI GOAL BLOCKED goalId=${blocked.id}]\n${untrustedObjectiveBlock(blocked)}\nBlocker: ${blocked.pauseReason ?? "unspecified"}\nThe goal is blocked; the user must run ${commandHint("goal-resume", core.loadedCommands)} before goal work continues.` };
-		}
-		const activeGoal = core.state.goal;
-		const settings = loadGoalSettings(ctx.cwd);
-		const { state: policy, counters } = goalPromptParts(activeGoal, { ...settings, commands: core.loadedCommands }, ctx.getContextUsage?.());
-		// Rare transitional steering rides in the stable block; per-turn usage and
-		// scheduling counters stay in the volatile block so retention grows slowly.
-		let state = policy;
-		// F5: [GOAL STALLED] steering note when the detector fired.
-		const stalledNote = core.checkStall(ctx);
-		if (stalledNote) state += stalledNote;
-		// Inject durable auditor feedback if the latest result was a rejection
-		try {
-			const ledger = getPromptLedger();
-			const auditorResult = latestAuditorResultForGoal(ledger.events, activeGoal.id);
-			if (auditorResult && auditorResult.verdict === "disapproved" && ledger.events.some((e) => e.type === "completion_requested" && e.goalId === activeGoal.id)) {
-				state = `${state}\n\n[AUDITOR REJECTION goalId=${activeGoal.id}]\nAn independent auditor previously rejected a completion request for this goal. Reason: ${auditorResult.report.slice(0, 300)}\nAddress the auditor's objections before requesting completion again.`;
-			}
-		} catch {
-			// Ledger read failure should not break the prompt
-		}
-		if (core.runtime.isPostCompactReminderPending() && shouldInjectPostCompactReminder({ pending: true, goal: activeGoal })) {
-			core.runtime.clearPostCompactReminder();
-			// After compaction the goal block already carries the objective, policy
-			// and task contract, so inject only what compaction may have lost.
-			// Falls back to a generic note if the ledger can't be read.
-			try {
-				const ledger = getPromptLedger();
-				const otherOpenCount = core.openGoals().filter((g) => g.id !== activeGoal.id).length;
-				const delta = buildPostCompactionGoalDelta({ goal: activeGoal, ledgerEvents: ledger.events, otherOpenCount });
-				state = `${state}\n\n${delta}`;
-			} catch {
-				state = `${state}\n\n[POST-COMPACTION RESYNC goalId=${core.state.goal.id}]\nThe conversation was just compacted. Re-read the objective and continue from the actual artifacts/state; do not rely on memory of the prior chat.`;
-			}
-		}
-		return { state, counters };
-	}
 
 	pi.on("agent_end", async (event, ctx) => {
 		const endedGoalId = core.runningGoalId;
@@ -688,7 +568,7 @@ export function registerGoalEvents(core: GoalCore): void {
 
 	pi.on("session_shutdown", async (_event, ctx) => {
 		// A delayed shutdown of a previously observed owner cannot touch its successor.
-		if (contexts.has(ctx) && contexts.get(ctx) !== session) return;
+		if (isSupersededContext(ctx)) return;
 		try {if (session && ctx.sessionManager !== session.manager) return;}
 		catch (error) {
 			if (!isStaleExtensionContextError(error)) throw error;
