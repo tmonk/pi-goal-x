@@ -24,7 +24,8 @@ export async function runChecks(checks, {directory, cwd=process.cwd(), concurren
    const code=await new Promise(resolve=>child.once('close',resolve));
    await new Promise(resolve=>stream.end(resolve));
    const content=readFileSync(log,'utf8').trimEnd();
-   if(check.noSkippedTests && code===0) {
+   // A part with no test files has no summary to read; the runner says so itself.
+   if(check.noSkippedTests && code===0 && !content.includes('[runner] No test files to run in this part.')) {
     const summary=/^(?:ℹ|#)\s+skipped\s+(\d+)\s*$/m.exec(stripVTControlCharacters(content));
     if(!summary || Number(summary[1])!==0) error=summary?`Full suite skipped ${summary[1]} tests.`:'Full suite did not report its skip count.';
    }
