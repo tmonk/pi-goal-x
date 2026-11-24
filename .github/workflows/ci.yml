@@ -75,6 +75,13 @@ jobs:
       - uses: actions/checkout@v5
       - id: setup
         uses: ./.github/actions/setup
+      # The package check installs the packed tarball into a clean folder. npm's own download
+      # cache makes that install quicker; anything missing from it is fetched as before.
+      - if: steps.setup.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-downloads-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - if: steps.setup.outputs.run == 'true'
         name: Installed package, context and cache regressions
         env:
