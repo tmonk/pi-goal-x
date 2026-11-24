@@ -1,7 +1,7 @@
 import { goalStoragePath, goalPoolSnapshotPath, isExternalGoalStorage, ensureGoalStorageDirectory, type GoalStorageContext } from "./goal-root.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { renameAtomic, renameAtomicSync } from "./atomic-rename.ts";
+import { writeFileAtomic, writeFileAtomicSync } from "./atomic-rename.ts";
 
 import {
 	formatDuration,
@@ -155,10 +155,7 @@ function writePoolSnapshotSync(ctx: GoalFileContext, root: string, goals: GoalRe
 		const snapshot: PoolSnapshot = { version: 1, dirMtimeMs: rootStat.mtimeMs, goals };
 		if (isExternalGoalStorage(ctx)) ensureGoalStorageDirectory(ctx, ".pi/goals/.metadata");
 		const target = goalPoolSnapshotPath(ctx);
-		const tempPath = `${target}.${process.pid}.${Date.now()}.tmp`;
-		fs.writeFileSync(tempPath, JSON.stringify(snapshot), "utf8");
-		try { renameAtomicSync(tempPath, target); }
-		catch (error) { try { fs.unlinkSync(tempPath); } catch { /* best effort */ } throw error; }
+		writeFileAtomicSync(target, JSON.stringify(snapshot));
 		removeLegacyPoolSnapshot(root);
 	} catch {
 		// best-effort: a missing/stale snapshot just costs a full scan next cold read
@@ -171,10 +168,7 @@ async function writePoolSnapshotAsync(ctx: GoalFileContext, root: string, goals:
 		const snapshot: PoolSnapshot = { version: 1, dirMtimeMs: rootStat.mtimeMs, goals };
 		if (isExternalGoalStorage(ctx)) ensureGoalStorageDirectory(ctx, ".pi/goals/.metadata");
 		const target = goalPoolSnapshotPath(ctx);
-		const tempPath = `${target}.${process.pid}.${Date.now()}.tmp`;
-		await fs.promises.writeFile(tempPath, JSON.stringify(snapshot), "utf8");
-		try { await renameAtomic(tempPath, target); }
-		catch (error) { try { await fs.promises.unlink(tempPath); } catch { /* best effort */ } throw error; }
+		await writeFileAtomic(target, JSON.stringify(snapshot));
 		removeLegacyPoolSnapshot(root);
 	} catch {
 		// best-effort
@@ -191,10 +185,7 @@ function updatePoolSnapshotSync(ctx: GoalFileContext, root: string, mutate: (goa
 		snapshot.dirMtimeMs = rootStat.mtimeMs;
 		if (isExternalGoalStorage(ctx)) ensureGoalStorageDirectory(ctx, ".pi/goals/.metadata");
 		const target = goalPoolSnapshotPath(ctx);
-		const tempPath = `${target}.${process.pid}.${Date.now()}.tmp`;
-		fs.writeFileSync(tempPath, JSON.stringify(snapshot), "utf8");
-		try { renameAtomicSync(tempPath, target); }
-		catch (error) { try { fs.unlinkSync(tempPath); } catch { /* best effort */ } throw error; }
+		writeFileAtomicSync(target, JSON.stringify(snapshot));
 		removeLegacyPoolSnapshot(root);
 	} catch {
 		// best-effort
@@ -274,27 +265,8 @@ export function resolveGoalPath(ctx: GoalFileContext, rootRel: string, relPath: 
 export function atomicWriteGoalFile(ctx: GoalFileContext, rootRel: string, relPath: string, content: string): void {
 	ensureDirectory(ctx, rootRel);
 	const filePath = resolveGoalPath(ctx, rootRel, relPath);
-	const prior = statIfPresent(filePath);
-	if (prior?.isSymbolicLink()) {
-		throw new Error(`Refusing to write symlinked goal file: ${relPath}`);
-	}
-	const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-	let fd: number | undefined;
-	let created = false;
-	try {
-		fd = fs.openSync(tempPath, "wx", prior ? prior.mode & 0o777 : 0o666);
-		created = true;
-		// open() applies the process umask even when replacing an existing file.
-		if (prior && process.platform !== "win32" && (prior.mode & 0o777 & process.umask())) fs.fchmodSync(fd, prior.mode & 0o777);
-		fs.writeFileSync(fd, content, "utf8");
-		fs.closeSync(fd);
-		fd = undefined;
-		renameAtomicSync(tempPath, filePath);
-	} catch (error) {
-		if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* best effort */ } }
-		if (created) { try { fs.unlinkSync(tempPath); } catch { /* best effort */ } }
-		throw error;
-	}
+	if (statIfPresent(filePath)?.isSymbolicLink()) throw new Error(`Refusing to write symlinked goal file: ${relPath}`);
+	writeFileAtomicSync(filePath, content);
 	invalidateGoalPathCaches(filePath);
 	invalidateGoalDirCache(goalStoragePath(ctx, rootRel));
 }

@@ -27,7 +27,8 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { renameAtomicSync } from "./storage/atomic-rename.ts";
+import { writeFileAtomicSync } from "./storage/atomic-rename.ts";
+import { acquireFileLock, type FileLock } from "./storage/file-lock.ts";
 import { GOAL_COMMANDS, GOAL_KEY_ACTIONS, PAUSE_ORDERS, parseCommandPaths, parseGoalKeybinding, type GoalCommands, type GoalKeybinding, type PauseOrder } from "./goal-controls.ts";
 
 export const GOAL_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -997,84 +998,14 @@ export class SettingsMutationError extends Error {
 	}
 }
 
-function sleepMs(ms: number): void {
-	const buffer = new Int32Array(new SharedArrayBuffer(4));
-	Atomics.wait(buffer, 0, 0, ms);
-}
-
-function pidAlive(pid: number): boolean {
-	if (!Number.isInteger(pid) || pid <= 0) return false;
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (err) {
-		return (err as NodeJS.ErrnoException).code === "EPERM";
-	}
-}
-
-interface PathLock {
-	release(): void;
-}
-
-/**
- * Generic filesystem path lock (same discipline as the goal lock): atomic
- * create, bounded retries, stale-TTL/dead-pid recovery. Multiple Pi processes
- * may edit the same global file concurrently.
- */
-export function acquirePathLock(
-	lockPath: string,
-	opts: { attempts?: number; retryMs?: number; staleTtlMs?: number } = {},
-): PathLock {
-	const attempts = opts.attempts ?? 200;
-	const retryMs = opts.retryMs ?? 5;
-	const ttlMs = opts.staleTtlMs ?? 30_000;
-	fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-	const payload = JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() });
-
-	for (let attempt = 0; attempt < attempts; attempt += 1) {
-		try {
-			fs.writeFileSync(lockPath, payload, { flag: "wx" });
-			let released = false;
-			return {
-				release(): void {
-					if (released) return;
-					released = true;
-					try {
-						fs.unlinkSync(lockPath);
-					} catch {
-						// Already removed by stale recovery elsewhere.
-					}
-				},
-			};
-		} catch (err) {
-			if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-			try {
-				const stat = fs.statSync(lockPath);
-				let pid: number | undefined;
-				try {
-					pid = (JSON.parse(fs.readFileSync(lockPath, "utf8")) as Record<string, unknown>).pid as number | undefined;
-				} catch {
-					pid = undefined;
-				}
-				const stale = Date.now() - stat.mtimeMs > ttlMs || (typeof pid === "number" && !pidAlive(pid));
-				if (stale) {
-					try {
-						fs.unlinkSync(lockPath);
-					} catch {
-						// Someone else recovered it first; retry.
-					}
-					continue;
-				}
-			} catch {
-				// Lock vanished between EEXIST and stat (holder released): brief
-				// backoff so we never busy-spin against the next holder.
-				sleepMs(retryMs);
-				continue;
-			}
-			sleepMs(retryMs);
-		}
-	}
-	throw new SettingsMutationError(`Timed out acquiring the settings lock at ${lockPath}. Another writer may hold it.`);
+function acquireSettingsLock(target: string): FileLock {
+	const lockPath = `${target}.lock`;
+	return acquireFileLock(lockPath, {
+		attempts: 200,
+		retryMs: 5,
+		staleTtlMs: 30_000,
+		timeoutError: () => new SettingsMutationError(`Timed out acquiring the settings lock at ${lockPath}. Another writer may hold it.`),
+	});
 }
 
 function refuseSymlinkTarget(target: string): void {
@@ -1088,41 +1019,10 @@ function refuseSymlinkTarget(target: string): void {
 	}
 }
 
-function atomicWriteJson(target: string, value: unknown, options: { defaultMode: number }): void {
-	const parent = path.dirname(target);
-	fs.mkdirSync(parent, { recursive: true });
+function writeSettingsJson(target: string, value: unknown): void {
+	fs.mkdirSync(path.dirname(target), { recursive: true });
 	refuseSymlinkTarget(target);
-
-	let mode = options.defaultMode;
-	try {
-		mode = fs.statSync(target).mode & 0o777;
-	} catch {
-		// New file: keep default mode.
-	}
-
-	const temp = path.join(parent, `.${path.basename(target)}.${process.pid}.${Date.now()}.tmp`);
-	let fd: number | undefined;
-	try {
-		fd = fs.openSync(temp, "wx", mode);
-		fs.writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-		fs.fsyncSync(fd);
-		fs.closeSync(fd);
-		fd = undefined;
-		renameAtomicSync(temp, target);
-	} catch (error) {
-		if (fd !== undefined) {
-			try {
-				fs.closeSync(fd);
-			} catch { /* best effort */ }
-		}
-		try {
-			fs.unlinkSync(temp);
-		} catch { /* best effort */ }
-		throw error;
-	}
-	try {
-		fs.fsyncSync(fs.openSync(parent, "r"));
-	} catch { /* directory fsync is platform-dependent; best effort */ }
+	writeFileAtomicSync(target, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, durable: true });
 }
 
 function applyPathMutation(layer: GoalSettingsLayer, mutation: SettingsMutation): void {
@@ -1180,7 +1080,7 @@ export function mutateSettingsLayer(input: MutateSettingsInput): SettingsSnapsho
 	const target = input.scope === "global"
 		? goalGlobalSettingsPath(env)
 		: goalSettingsPath(input.cwd, env);
-	const lock = acquirePathLock(`${target}.lock`);
+	const lock = acquireSettingsLock(target);
 
 	try {
 		const current = readSettingsLayerFresh(target, input.scope);
@@ -1202,7 +1102,7 @@ export function mutateSettingsLayer(input: MutateSettingsInput): SettingsSnapsho
 		}
 		input.validate?.(reparsed.layer, current.layer);
 
-		atomicWriteJson(target, next, { defaultMode: 0o600 });
+		writeSettingsJson(target, next);
 		invalidateSettingsCachePath(target);
 		return loadSettingsSnapshot(input.cwd, env);
 	} finally {
@@ -1220,7 +1120,7 @@ export function mutateSettingsLayer(input: MutateSettingsInput): SettingsSnapsho
  */
 export function saveGoalSettingsFileConfig(cwd: string, settings: GoalSettings): GoalSettings {
 	const target = goalSettingsPath(cwd);
-	const lock = acquirePathLock(`${target}.lock`);
+	const lock = acquireSettingsLock(target);
 	try {
 		// Fresh re-read under the lock: never persist a cached whole object.
 		const current = readSettingsLayerFresh(target, "project");
@@ -1228,7 +1128,7 @@ export function saveGoalSettingsFileConfig(cwd: string, settings: GoalSettings):
 			throw new SettingsMutationError(`Refusing to overwrite invalid project settings at ${target}`, current.diagnostics);
 		}
 		const clean = buildPersistedLayer(settings);
-		atomicWriteJson(target, clean, { defaultMode: 0o600 });
+		writeSettingsJson(target, clean);
 		invalidateSettingsCachePath(target);
 		// Return the normalized runtime shape (thinkingLevel), not the
 		// canonical persisted key (thinking_level).

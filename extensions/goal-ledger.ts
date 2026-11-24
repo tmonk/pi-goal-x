@@ -3,7 +3,7 @@ import { indexedActivityEvents } from "./goal-activity.ts";
 import { buildLedgerIndex, indexLedgerEvent, auditApplies, type GoalLedgerIndex } from "./goal-ledger-index.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { renameAtomicSync } from "./storage/atomic-rename.ts";
+import { writeFileAtomicSync } from "./storage/atomic-rename.ts";
 import { nowIso, safeIdPart, type GoalRecord } from "./goal-record.ts";
 
 export const GOAL_LEDGER_FILE = ".pi/goals/goal_events.jsonl";
@@ -456,15 +456,9 @@ function checkpointFromJson(value: unknown): LedgerCheckpoint | null {
 
 /** Atomic checkpoint write: temp file + rename in the ledger directory. Best-effort. */
 function writeLedgerCheckpointAtomic(filePath: string, cp: LedgerCheckpoint): void {
-  const tmp = `${checkpointPathFor(filePath)}.tmp-${process.pid}`;
-  let written = false;
   try {
-    const cpPath = checkpointPathFor(filePath);
-    fs.writeFileSync(tmp, JSON.stringify(checkpointToJson(cp)), "utf8");
-    written = true;
-    renameAtomicSync(tmp, cpPath);
+    writeFileAtomicSync(checkpointPathFor(filePath), JSON.stringify(checkpointToJson(cp)));
   } catch (err) {
-    if (written) { try { fs.unlinkSync(tmp); } catch { /* best effort */ } }
     // The checkpoint is an optimization; a failed write only costs a full
     // parse on the next cold read.
     console.error("[goal-ledger] checkpoint write failed:", err);
