@@ -381,24 +381,6 @@ pi.registerTool(defineTool({
 	}
 
 	if (!run.ok) {
-		if (run.errorCode === "aborted") {
-			try {
-				core.goalService.appendEvents(ctx, [{
-					type: "oracle_failed",
-					goalId: goalAtBlock.id,
-					fingerprint,
-					attempt: consult.failedAttempts + 1,
-					errorCode: "aborted",
-					message: run.message.slice(0, 300),
-					at: nowIso(),
-				}]);
-			} catch { /* best effort */ }
-			return {
-				content: [{ type: "text", text: "Oracle consultation was aborted; the goal remains active." }],
-				details: goalDetails(goalAtBlock),
-				terminate: false,
-			};
-		}
 		try {
 			core.goalService.appendEvents(ctx, [{
 				type: "oracle_failed",
@@ -410,6 +392,13 @@ pi.registerTool(defineTool({
 				at: nowIso(),
 			}]);
 		} catch { /* best effort */ }
+		if (run.errorCode === "aborted") {
+			return {
+				content: [{ type: "text", text: "Oracle consultation was aborted; the goal remains active." }],
+				details: goalDetails(goalAtBlock),
+				terminate: false,
+			};
+		}
 		const retryable = consult.failedAttempts + 1 < oracleSettings.maxFailedAttemptsPerBlocker;
 		return {
 			content: [{ type: "text", text: `Oracle consultation failed (${run.errorCode}): ${run.message.slice(0, 200)}${retryable ? " The goal remains active; try again or continue working." : ""}` }],

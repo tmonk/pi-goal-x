@@ -22,6 +22,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { readGoalLedger } from "./goal-ledger.ts";
 import { GOAL_LOCK_DIR } from "./storage/goal-lock.ts";
+import { pidAlive } from "./storage/file-lock.ts";
 import { invalidateGoalPoolCache, parseGoalFile, readActiveGoalPool, type GoalFileContext } from "./storage/goal-files.ts";
 
 export const GOALS_DIR = ".pi/goals";
@@ -63,16 +64,6 @@ const LOCK_STALE_TTL_MS = 30_000;
 
 function safeLockName(goalId: string): string {
 	return goalId.replace(/[^A-Za-z0-9._-]/g, "_");
-}
-
-function pidAlive(pid: number): boolean {
-	if (!Number.isInteger(pid) || pid <= 0) return false;
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (err) {
-		return (err as NodeJS.ErrnoException).code === "EPERM";
-	}
 }
 
 function goalsDir(ctx: GoalFileContext): string {

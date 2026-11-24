@@ -1,9 +1,7 @@
-import { goalDialogControls } from "./goal-dialog-controls.ts";
 import { truncateToWidth } from "./widgets/text-cache.ts";
-import type { Component, TUI } from "@earendil-works/pi-tui";
-import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { GoalTask } from "./goal-record.ts";
-import { borderedLine, dialogInnerWidth, horizontalRule } from "./widgets/dialog-scaffold.ts";
+import { showChoiceDialog } from "./widgets/choice-dialog.ts";
 
 /** Render a task tree for confirmation dialogs (structural view). */
 export function renderConfirmationTasks(tasks: readonly GoalTask[], indent: number): string[] {
@@ -45,130 +43,23 @@ export async function showTaskConfirmation(ctx: ExtensionContext, proposalText: 
 }
 
 async function showTaskListConfirmationDialog(ctx: ExtensionContext, proposalText: string): Promise<TaskConfirmationResult | undefined> {
-	const controls = goalDialogControls(typeof ctx.cwd === "string" ? ctx.cwd : process.cwd());
-	return await ctx.ui.custom<TaskConfirmationResult | undefined>(
-		(tui: TUI, theme: Theme, _keybindings: unknown, done: (result: TaskConfirmationResult | undefined) => void): Component => {
-			if (!tui || typeof tui.getShowHardwareCursor !== "function" || typeof tui.setShowHardwareCursor !== "function" || typeof tui.requestRender !== "function") {
-				done(undefined);
-				return { render: () => [], invalidate: () => {} };
-			}
-			const wasHardwareCursorShown = tui.getShowHardwareCursor();
-			tui.setShowHardwareCursor(false);
-			// Pause pi's working spinner for the dialog duration: its ~80ms re-renders
-			// write output that snaps a scrolled-up user back to the terminal bottom.
-			ctx.ui.setWorkingVisible(false);
-
-			// Default: "Confirm task list" (matches the pre-existing default).
-			let selectedIndex = 0;
-
-			const OPTIONS: Array<{ label: string; value: TaskConfirmationResult["decision"]; description: string }> = [
-				{
-					label: "Confirm task list",
-					value: "confirm",
-					description: "Replace the current task list with this structure.",
-				},
-				{
-					label: "Keep current tasks",
-					value: "cancel",
-					description: "Leave the existing task list unchanged.",
-				},
-			];
-
-			const BODY_LINES = proposalText.split("\n");
-			const MAX_BODY = 16;
-
-			const accent = (s: string) => theme.fg("accent", s);
-			const dim = (s: string) => theme.fg("dim", s);
-			const muted = (s: string) => theme.fg("muted", s);
-
-			// ── Component ────────────────────────────────────────────────────
-			const component: Component & { dispose?(): void } = {
-				dispose() {
-					tui.setShowHardwareCursor(wasHardwareCursorShown);
-					ctx.ui.setWorkingVisible(true);
-				},
-
-				invalidate(): void {
-					// No cached state to invalidate
-				},
-
-				render(width: number): string[] {
-					const termWidth = Math.min(width, 80);
-					const innerWidth = dialogInnerWidth(termWidth);
-
-					const line = (leftContent: string): string => borderedLine(accent, innerWidth, leftContent);
-
-					const horizLine = horizontalRule(innerWidth);
-					const lines: string[] = [];
-					const p = "  ";
-
-					// ── Header ────────────────────────────────────────────────
-					lines.push(accent(`┌${horizLine}┐`));
-					lines.push(line(p + theme.bold("Task list confirmation")));
-					lines.push(accent(`├${horizLine}┤`));
-
-					// ── Body: the proposed task tree ─────────────────────────
-					const body = BODY_LINES.slice(0, MAX_BODY);
-					for (const raw of body) {
-						const trimmed = raw;
-						lines.push(line(p + truncateToWidth(muted(trimmed || " "), innerWidth - p.length, "…")));
-					}
-					if (BODY_LINES.length > MAX_BODY) {
-						lines.push(line(p + dim(`+${BODY_LINES.length - MAX_BODY} more lines`)));
-					}
-					lines.push(accent(`├${horizLine}┤`));
-
-					// ── Options ─────────────────────────────────────────────
-					OPTIONS.forEach((opt, i) => {
-						const isSelected = i === selectedIndex;
-						const marker = isSelected ? "▸ " : "  ";
-						const label = isSelected ? theme.fg("accent", opt.label) : opt.label;
-						lines.push(line(p + marker + truncateToWidth(label, innerWidth - 6, "…")));
-						if (isSelected) {
-							lines.push(line(p + " ".repeat(4) + truncateToWidth(dim(opt.description), innerWidth - 10, "…")));
-						}
-					});
-
-					// ── Footer ───────────────────────────────────────────────
-					lines.push(accent(`├${horizLine}┤`));
-					lines.push(line(p + dim(`${controls.hint("confirm")} to select  ·  ${controls.navigationHint()} to navigate  ·  ${controls.hint("cancel")} = keep current tasks`)));
-					lines.push(accent(`└${horizLine}┘`));
-
-					return lines;
-				},
-
-				handleInput(data: string): void {
-					if (controls.matches(data, "up")) {
-						selectedIndex = (selectedIndex - 1 + OPTIONS.length) % OPTIONS.length;
-						tui.requestRender();
-						return;
-					}
-					if (controls.matches(data, "down")) {
-						selectedIndex = (selectedIndex + 1) % OPTIONS.length;
-						tui.requestRender();
-						return;
-					}
-					if (controls.matches(data, "confirm")) {
-						done({ decision: OPTIONS[selectedIndex]!.value });
-						return;
-					}
-					if (controls.matches(data, "cancel")) {
-						done({ decision: "cancel" });
-						return;
-					}
-				},
-			};
-
-			return component;
+	const bodyLines = proposalText.split("\n");
+	const maxBody = 16;
+	const decision = await showChoiceDialog<TaskConfirmationResult["decision"]>(ctx, {
+		sections: (theme, innerWidth) => {
+			const body = bodyLines.slice(0, maxBody).map(raw => "  " + truncateToWidth(theme.fg("muted", raw || " "), innerWidth - 2, "…"));
+			if (bodyLines.length > maxBody) body.push("  " + theme.fg("dim", `+${bodyLines.length - maxBody} more lines`));
+			return [["  " + theme.bold("Task list confirmation")], body];
 		},
-		{
-			overlay: true,
-			overlayOptions: {
-				anchor: "center",
-				width: "70%",
-				minWidth: 50,
-				maxHeight: "60%",
-			},
-		},
-	);
+		options: [
+			{ label: "Confirm task list", value: "confirm", description: "Replace the current task list with this structure." },
+			{ label: "Keep current tasks", value: "cancel", description: "Leave the existing task list unchanged." },
+		],
+		initialIndex: 0,
+		highlight: "accent",
+		cancelValue: "cancel",
+		cancelHint: "keep current tasks",
+		maxHeight: "60%",
+	});
+	return decision ? { decision } : undefined;
 }
