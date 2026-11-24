@@ -67,7 +67,6 @@ const EXPECTED_REGISTERED_TOOLS = [
 	"update_goal",
 	"set_goal_tasks",
 	"update_goal_task",
-	"goal_question",
 	"goal_questionnaire",
 	"propose_goal_draft",
 ] as const;
@@ -129,7 +128,7 @@ test("baseline: execution profiles remain three/five tools and drafting is separ
 		"create_goal", "get_goal", "update_goal",
 	]);
 	assert.deepEqual(DRAFTING_GOAL_TOOLS, [
-		"goal_question", "goal_questionnaire", "propose_goal_draft",
+		"goal_questionnaire", "propose_goal_draft",
 	]);
 });
 

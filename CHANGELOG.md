@@ -4,16 +4,33 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+## [0.34.2] — 2026-11-24
+
+Includes #136 and #137.
+
+### Added
+
+- `/goal-resume <text>` sends the text to the agent. Before, it was dropped silently. Thanks @TheNumberOne (#96).
+
 ### Removed
 
 - The undocumented `PI_GOAL_DEBUG` keybindings, debug panel and mock audit.
 
 ### Changed
 
+- The goal tool list no longer changes with goal status, focus or drafting, so these no longer throw away the provider's prompt cache. The drafting tools are always listed; the goal tools are blocked during a draft instead of hidden. Only `disableTasks` changes the list. Thanks @quantforge-br and @wuhaoyujerry (#126, #134).
+- The drafting tools are smaller, since every request now carries them. `goal_question` is merged into `goal_questionnaire`, which takes one or more questions. `propose_goal_draft` no longer takes `sisyphus`; the draft already knows its mode, and an old call that sends it still works. Drafting rules moved from tool guidance in the system prompt into the draft prompt.
+- Task updates no longer reset the cached prompt. The task list now sits in the goal snapshot next to usage and runs (#108). Thanks @xulongwu4.
+- With open goals but none focused, the reminder no longer tells the agent to stop work. It says goal tracking is off and the agent should do what the user asks (#135, #129).
+- A goal that a provider error has stopped is paused with the error as the reason, instead of showing as running with nothing scheduled. The same applies when a configured recovery limit runs out. HTTP 499 now gets the normal outage retry (#125).
 - Internal cleanup with no behavior change: remove unused code, share one file lock and one atomic writer across goal files, ledger checkpoints and settings, rename modules after what they hold, share one test host, enforce unused-symbol and tab-indentation checks, and move superseded design documents out of `docs/` and the npm package.
 
 ### Fixed
 
+- During a guided draft, the agent no longer sees the goal block that asks for `update_goal`, or the unfocused reminder, and no automatic continuations run. Thanks @LightYourJourney (#130, #129, #131).
+- On resume, the "which goal" and "resume paused goal" questions are asked only in the terminal. Over RPC they stalled `session_start`. Thanks @yilmazff (#132, #133).
+- `update_goal_task` works with Google models. Its schema no longer has an empty enum value; a blank `status` is still accepted. Thanks @Kyou12138 (#128).
+- The drafting prompt says the goal's sections go inside `objective`, so models stop passing them as separate arguments. Thanks @SamYue1 (#122, #121).
 - Settings writes no longer leak a file descriptor when syncing the settings directory, and keep the file's permissions under a stricter umask.
 - The test runner starts on Windows (`--import` is passed as a file URL).
 

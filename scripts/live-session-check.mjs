@@ -21,6 +21,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { piCLI, piVersion } from "./pi-host.mjs";
+import { draftInProgress } from "../experiments/draft-phase.mjs";
 
 const EXT_PATH = path.resolve(import.meta.dirname, "..", "extensions", "goal.ts");
 const TIMEOUT_MS = Number(process.env.LIFECYCLE_TIMEOUT_MS ?? 120_000);
@@ -48,18 +49,19 @@ const server = createServer((req, res) => {
 		const toolNames = (parsed.tools ?? []).map((t) => t.function?.name).filter(Boolean);
 		const systemText = JSON.stringify(parsed.messages?.[0] ?? {});
 		const isAuditor = /read-only completion auditor/i.test(systemText);
+		const drafting = !isAuditor && draftInProgress(parsed.messages);
+		const phase = isAuditor ? "audit" : drafting ? "drafting" : toolNames.includes("update_goal") ? "execution" : "idle";
 
 		let step;
 		if (isAuditor) {
 			seen.audit += 1;
 			step = { text: "The objective's success criterion is satisfied: one live goal lifecycle completed against this host.\n\n<approved/>" };
-		} else if (toolNames.includes("propose_goal_draft")) {
+		} else if (drafting) {
 			seen.drafting += 1;
 			step = {
 				tool: "propose_goal_draft",
 				args: {
 					objective: `Confirm Pi ${HOST_VERSION} compatibility.\nSuccess criteria: the live session completes one goal lifecycle.`,
-					sisyphus: false,
 				},
 			};
 		} else if (toolNames.includes("update_goal")) {
@@ -73,7 +75,7 @@ const server = createServer((req, res) => {
 		}
 
 		providerRequests.push({ isAuditor, toolNames });
-		console.log(`[live][provider] turn=${providerRequests.length} phase=${isAuditor ? "audit" : toolNames.includes("propose_goal_draft") ? "drafting" : toolNames.includes("update_goal") ? "execution" : "idle"} tools=[${toolNames.join(",")}]`);
+		console.log(`[live][provider] turn=${providerRequests.length} phase=${phase} tools=[${toolNames.join(",")}]`);
 
 		res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
 		const send = (delta, finish = null) => res.write(`data: ${JSON.stringify({

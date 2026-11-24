@@ -58,7 +58,7 @@ test("/goal <objective> starts guided drafting without creating a goal", async (
 		const files = activeGoalFiles(cwd);
 		assert.equal(files.length, 0, "drafting does not create before confirmation");
 		assert.ok(h.messages.some((message) => message.includes("GOAL CONFIRMATION")), "drafting prompt sent to agent");
-		assert.deepEqual(h.getActiveTools().filter((name) => name.startsWith("goal_") || name === "propose_goal_draft"), ["goal_question", "goal_questionnaire", "propose_goal_draft"]);
+		assert.deepEqual(h.getActiveTools().filter((name) => name.startsWith("goal_") || name === "propose_goal_draft"), ["goal_questionnaire", "propose_goal_draft"]);
 	} finally {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
 	}
@@ -325,4 +325,25 @@ for (const [key, label] of [["strictExecutionContract", "explicit execution cont
 			assert.equal(saved[key], action === "Use inherited value" ? undefined : action.endsWith("true"));
 		}
 	} finally { rmSync(cwd, {recursive: true, force: true}); }
+});
+
+test("/goal-resume sends any text after the command to the agent", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-resume-text-"));
+	try {
+		let idle = true;
+		const h = createExtensionHarness({ cwd, isIdle: () => idle });
+		await h.sessionStart();
+		await h.runCommand("goal-resume", "  focus on the failing test first  ");
+		assert.deepEqual(h.userMessages, ["focus on the failing test first"], "text is trimmed and sent even with no goal focused");
+		assert.deepEqual(h.userMessageModes, ["followUp"], "an idle agent gets it as a follow-up");
+
+		idle = false;
+		await h.runCommand("goal-resume", "check the logs");
+		assert.equal(h.userMessageModes.at(-1), "steer", "a busy agent gets it as a steer");
+
+		await h.runCommand("goal-resume", "   ");
+		assert.equal(h.userMessages.length, 2, "blank text sends nothing");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
 });

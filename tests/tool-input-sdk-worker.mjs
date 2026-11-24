@@ -21,7 +21,9 @@ async function fixture(run){
 	await handlers.get('before_agent_start')({prompt:'Inspect the goal',systemPrompt:'base',systemPromptOptions:{}},ctx);
 	const invoke=async(name,input)=>{
 		const tool=tools.get(name);
-		const call={type:'toolCall',id:'input-check',name,arguments:structuredClone(input)};
+		// Same order as Pi's agent loop: prepareArguments, then schema validation.
+		const raw=structuredClone(input);
+		const call={type:'toolCall',id:'input-check',name,arguments:tool.prepareArguments?tool.prepareArguments(raw):raw};
 		const params=validateToolArguments(tool,call);
 		return tool.execute(call.id,params,new AbortController().signal,undefined,ctx);
 	};
@@ -47,6 +49,9 @@ await fixture(async({invoke,disk})=>{
 await fixture(async({invoke,disk})=>{
 	await invoke('update_goal_task',{task_id:'',status:'',reason:'',updates:[update]});
 	assert.equal(disk().taskList.tasks[0].status,'complete');
+});
+await fixture(async({invoke})=>{
+	await assert.rejects(()=>invoke('update_goal_task',{task_id:'a',status:'done'}),/status/,'an unknown status is still rejected');
 });
 for(const input of [
 	{task_id:'other',status:'start',updates:[update]},

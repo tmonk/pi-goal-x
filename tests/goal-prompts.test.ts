@@ -7,6 +7,7 @@ import {
 	checkpointTriggerPrompt,
 	promptProfile,
 	goalPrompt,
+	goalPromptParts,
 	staleContinuationPrompt,
 	taskListBlock,
 	unfocusedOpenGoalsPrompt,
@@ -77,8 +78,14 @@ test("unfocused prompt keeps multi-goal focus human-owned", () => {
 	const prompt = unfocusedOpenGoalsPrompt(3);
 	assert.match(prompt, /^\[PI GOAL UNFOCUSED\]/);
 	assert.match(prompt, /3 open pi goals exist,/);
-	assert.match(prompt, /Do not choose or switch focus autonomously/);
+	assert.match(prompt, /Do not choose or switch focus yourself/);
 	assert.match(prompt, /\/goal-focus/);
+});
+
+test("unfocused prompt does not stop unrelated work (#135)", () => {
+	const prompt = unfocusedOpenGoalsPrompt(1);
+	assert.match(prompt, /Do what the user asks as ordinary work/);
+	assert.doesNotMatch(prompt, /before doing goal work/);
 });
 
 test("unfocused prompt uses singular grammar for exactly one open goal", () => {
@@ -444,4 +451,14 @@ test("allowance configuration refreshes cached guidance without bloating disable
 	const zero = goalPrompt(current, { maxAutonomousRuns: 0 });
 	assert.doesNotMatch(zero, /Saved decisions terminate/);
 	assert.match(zero, /0\/0 \(automatic continuation disabled\)/);
+});
+
+test("a task update changes only the snapshot block, not the policy block (#108)", () => {
+	const tasks = [{ id: "a", title: "First", status: "pending" as const }, { id: "b", title: "Second", status: "pending" as const }];
+	const before = goal({ taskList: { tasks, blockCompletion: true, proposedAt: "2026-01-01T00:00:00Z" } });
+	const after = { ...before, currentTaskId: "b", taskList: { ...before.taskList!, tasks: [{ ...tasks[0]!, status: "complete" as const }, tasks[1]!] } };
+	const a = goalPromptParts(before), b = goalPromptParts(after);
+	assert.equal(b.state, a.state, "the policy block is unchanged, so the cached prefix survives");
+	assert.notEqual(b.counters, a.counters);
+	assert.match(b.counters, /TASK LIST — 1\/2 tasks complete/);
 });

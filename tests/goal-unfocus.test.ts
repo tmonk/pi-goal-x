@@ -15,6 +15,7 @@ interface HarnessOptions {
 	cwd: string;
 	sessionEntries: unknown[];
 	hasUI?: boolean;
+	mode?: "tui" | "rpc";
 	idle?: boolean;
 	custom?: () => Promise<unknown>;
 	runCompletionAuditor?: (...args: any[]) => Promise<any>;
@@ -22,20 +23,28 @@ interface HarnessOptions {
 
 function createHarness(options: HarnessOptions) {
 	let selectCount = 0;
+	let confirmCount = 0;
 	const h = createExtensionHarness({
 		cwd: options.cwd,
 		sessionEntries: options.sessionEntries,
 		hasUI: options.hasUI,
+		mode: options.mode ?? (options.hasUI ? "tui" : undefined),
 		sessionId: "unfocus-test-session",
 		systemPrompt: "base prompt",
 		isIdle: () => options.idle ?? true,
 		runCompletionAuditor: options.runCompletionAuditor,
 		ui: {
 			select: async () => { selectCount += 1; return undefined; },
+			confirm: async () => { confirmCount += 1; return false; },
 			...(options.custom ? { custom: options.custom } : {}),
 		},
 	});
-	return Object.assign(h, { appendedEntries: h.entries, get selectCount() { return selectCount; } });
+	// Object.assign would copy the getters' current values, so define them instead.
+	return Object.defineProperties(h as typeof h & { appendedEntries: typeof h.entries; selectCount: number; confirmCount: number }, {
+		appendedEntries: { value: h.entries },
+		selectCount: { get: () => selectCount },
+		confirmCount: { get: () => confirmCount },
+	});
 }
 
 function createFixture(overrides: Partial<GoalRecord> = {}, settings: Record<string, unknown> = { autoSelectSingleGoal: false, disabled: true }) {
@@ -482,4 +491,38 @@ test("restoring default-pool focus cannot select a same-ID goal in an external p
 		assert.equal(hasUnfocusedReminder(result), true);
 		assert.doesNotMatch(JSON.stringify(result), /PI GOAL ACTIVE/);
 	} finally { fixture.cleanup(); invalidateGoalSettingsCache(); }
+});
+
+test("on resume, only the terminal asks which open goal to focus", async () => {
+	const fixture = createFixture();
+	writeActiveGoalFile({ cwd: fixture.cwd } as ExtensionContext, createGoal({ objective: "Second shared goal", autoContinue: true, sisyphus: false }));
+	try {
+		const tui = createHarness({ cwd: fixture.cwd, hasUI: true, mode: "tui", sessionEntries: [] });
+		await tui.emit("session_start", { reason: "resume" });
+		assert.equal(tui.selectCount, 1, "the terminal asks which goal to focus");
+
+		const rpc = createHarness({ cwd: fixture.cwd, hasUI: true, mode: "rpc", sessionEntries: [] });
+		await rpc.emit("session_start", { reason: "resume" });
+		assert.equal(rpc.selectCount, 0, "RPC does not wait on a dialog during session_start");
+		assert.equal(latestFocusEntry(rpc.appendedEntries), undefined, "no focus is recorded");
+	} finally {
+		fixture.cleanup();
+	}
+});
+
+test("on resume, only the terminal asks whether to resume a paused goal", async () => {
+	const fixture = createFixture({ status: "paused", pauseReason: "waiting on access" });
+	const sessionEntries = [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(fixture.goal.id, "created") }];
+	try {
+		const tui = createHarness({ cwd: fixture.cwd, hasUI: true, mode: "tui", sessionEntries });
+		await tui.emit("session_start", { reason: "resume" });
+		assert.equal(tui.confirmCount, 1, "the terminal asks whether to resume");
+
+		const rpc = createHarness({ cwd: fixture.cwd, hasUI: true, mode: "rpc", sessionEntries });
+		await rpc.emit("session_start", { reason: "resume" });
+		assert.equal(rpc.confirmCount, 0, "RPC does not wait on a dialog during session_start");
+		assert.match(readFileSync(fixture.activePath, "utf8"), /"status": "paused"/, "the goal stays paused");
+	} finally {
+		fixture.cleanup();
+	}
 });

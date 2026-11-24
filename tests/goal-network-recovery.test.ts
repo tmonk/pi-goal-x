@@ -186,6 +186,38 @@ test("classification: HTTP/2 stream PROTOCOL_ERROR is transient", () => {
 	);
 });
 
+test("classification: HTTP 499 from a gateway is transient (#125)", () => {
+	assert.equal(isNetworkErrorAssistantMessage({ role: "assistant", stopReason: "error", errorMessage: "HTTP 499" }), true);
+});
+
+test("lifecycle: an error that cannot be retried pauses the goal with the provider's message (#125)", async () => {
+	const { cwd, goal } = fixtureCwd();
+	saveGoalSettingsFileConfig(cwd, { maxAutonomousRuns: 100 });
+	const h = createHarness(cwd);
+	await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+	await h.handlers["before_agent_start"]!({ systemPrompt: "base", prompt: "user typed: continue", systemPromptOptions: {} }, h.ctx);
+	await h.handlers["agent_end"]!({
+		messages: [{ role: "assistant", stopReason: "error", errorMessage: "400 invalid_request_error: messages.3 is malformed" }],
+	}, idleCtx(h.ctx));
+	assert.equal(h.core.state.goal?.status, "active", "Pi may still retry, so nothing is paused before it settles");
+	await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
+	assert.equal(h.core.state.goal?.status, "paused");
+	assert.match(h.core.state.goal?.pauseReason ?? "", /messages\.3 is malformed/, "the pause reason carries the provider's message");
+	assert.match(lastNotification(h), /Goal paused\. Use \/goal-resume to try again/);
+});
+
+test("lifecycle: a later successful run cancels a pending error pause", async () => {
+	const { cwd, goal } = fixtureCwd();
+	saveGoalSettingsFileConfig(cwd, { maxAutonomousRuns: 100 });
+	const h = createHarness(cwd);
+	await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+	await h.handlers["before_agent_start"]!({ systemPrompt: "base", prompt: "user typed: continue", systemPromptOptions: {} }, h.ctx);
+	await h.handlers["agent_end"]!({ messages: [{ role: "assistant", stopReason: "error", errorMessage: "400 bad request" }] }, idleCtx(h.ctx));
+	await h.handlers["agent_end"]!({ messages: [{ role: "assistant", stopReason: "stop", content: [] }] }, idleCtx(h.ctx));
+	await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
+	assert.equal(h.core.state.goal?.status, "active", "Pi's own retry succeeded, so the goal keeps going");
+});
+
 test("classification: exact reported 503 server_error payload is a network error", () => {
 	assert.equal(
 		isNetworkErrorAssistantMessage({
@@ -487,7 +519,7 @@ test("lifecycle: unbounded recovery keeps retrying past the old 5-attempt cap", 
 	}
 });
 
-test("lifecycle: configured bounded cap exhausts with a resume hint instead of retrying", async () => {
+test("lifecycle: a configured bounded cap pauses the goal when recovery runs out", async () => {
 	process.env.PI_GOAL_NETWORK_RECOVERY_MAX_ATTEMPTS = "2";
 	process.env.PI_GOAL_NETWORK_RECOVERY_MAX_DELAY_MS = "25";
 	const { cwd, goal } = fixtureCwd();
@@ -517,9 +549,10 @@ test("lifecycle: configured bounded cap exhausts with a resume hint instead of r
 		await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
 		assert.match(
 			lastNotification(h),
-			/persisted after all recovery attempts\. The goal remains active/,
+			/persisted after all recovery attempts\. Goal paused\. Use \/goal-resume/,
 			"exhaustion must stop the loop with a resume hint",
 		);
+		assert.equal(h.core.state.goal?.status, "paused", "a goal that cannot continue must not stay active (#125)");
 		assert.equal(await countCheckpoints(h), checkpointsBeforeExhaustion, "exhausted recovery must not deliver a continuation");
 	} finally {
 		delete process.env.PI_GOAL_NETWORK_RECOVERY_MAX_ATTEMPTS;

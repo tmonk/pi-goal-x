@@ -1,5 +1,6 @@
 import { goalStorageContext, type GoalStorageContext } from "./storage/goal-root.ts";
 import { commandHint, commandInstructions } from "./goal-controls.ts";
+import { FIVE_GOAL_TOOLS } from "./goal-tool-names.ts";
 import { cacheGoalHistory } from "./goal-prompt-cache.ts";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -9,6 +10,7 @@ import {
 	goalEventMessageId,
 	hasAbortedAssistantMessage,
 	hasErrorAssistantMessage,
+	providerErrorText,
 	hasNetworkErrorAssistantMessage,
 	isAbortedAssistantMessage,
 	isErrorAssistantMessage,
@@ -84,6 +86,7 @@ export function registerGoalEvents(core: GoalCore): void {
 	});
 	let continuationAfterSettleFor: string | null = null;
 	let networkErrorRecoveryAfterSettleFor: string | null = null;
+	let errorPauseAfterSettle: { goalId: string; reason: string } | null = null;
 
 	registerGoalContext(pi, (input, ctx) => {
 		const filtered = filterGoalSessionContext(input);
@@ -153,6 +156,15 @@ export function registerGoalEvents(core: GoalCore): void {
 				reason: `Cannot call ${event.toolName}: the goal checkpoint that triggered this turn is no longer active. ` +
 					`Goal ${checkpointGoalId} has been paused, cleared, or replaced. ` +
 					`End the turn with a brief summary and yield to the user.`,
+			};
+		}
+		// The goal tools stay advertised during a draft so the cached prompt does
+		// not change. Block them here instead, so nothing touches a goal before
+		// the user confirms the draft.
+		if (hasActiveDraft(core) && (FIVE_GOAL_TOOLS as readonly string[]).includes(event.toolName)) {
+			return {
+				block: true,
+				reason: commandInstructions("A goal draft is in progress. Finish it with propose_goal_draft, or ask the user to run /goal-cancel.", core.loadedCommands),
 			};
 		}
 		// Track Oracle work attempts; this does not authorize scheduling.
@@ -344,8 +356,12 @@ export function registerGoalEvents(core: GoalCore): void {
 			if (ctx.hasUI) ctx.ui.setStatus("goal-interrupt", undefined);
 			if (core.controlWarnings?.length) ctx.ui.notify(`Goal command settings were not applied: ${core.controlWarnings.join(" ")} Open /goal-settings controls to correct them.`, "warning");
 			rehydrateDraft(core, ctx);
+			core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
 			syncTerminalInputPause(core, ctx);
-		if (event.reason === "resume" && !core.state.goal && !core.hasExplicitSessionFocus && otherOpenGoalCount(core.goalsById, null) > 1 && ctx.hasUI) {
+			// Ask resume questions only in the terminal. Over RPC, hasUI is also true,
+			// but the host may never show the dialog and session_start would wait forever.
+			const askOnResume = event.reason === "resume" && ctx.hasUI && ctx.mode === "tui";
+			if (askOnResume && !core.state.goal && !core.hasExplicitSessionFocus && otherOpenGoalCount(core.goalsById, null) > 1) {
 			// Prompt the user to pick which open goal to focus (mirrors /goal-focus).
 			const open = core.openGoals();
 			const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
@@ -364,7 +380,7 @@ export function registerGoalEvents(core: GoalCore): void {
 		}
 		if (session !== owner) return;
 		// Codex behavior: prompt before reactivating a paused goal on resume.
-		if (event.reason === "resume" && core.state.goal?.status === "paused" && ctx.hasUI) {
+		if (askOnResume && core.state.goal?.status === "paused") {
 			const current = core.state.goal;
 			const shouldResume = await ctx.ui.confirm("Resume paused goal?", `Goal: ${current.objective}`);
 			if (shouldResume && session === owner) {
@@ -413,7 +429,7 @@ export function registerGoalEvents(core: GoalCore): void {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		core.advanceTurnSeq();
-		if (!hasActiveDraft(core)) core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
+		core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
 		const incomingGoalId = event.messageType === "custom"
 			? goalEventMessageId(event.message) : extractGoalIdFromInjectedMessage(event.prompt ?? "");
 		if (event.messageType !== "custom" && !incomingGoalId) core.interruption.continueWithUser(ctx);
@@ -454,6 +470,10 @@ export function registerGoalEvents(core: GoalCore): void {
 	/** Request-only state: no live counters, focus, or reminders enter the system prefix. */
 	/** Request-only goal state split into a rarely-changing policy block and per-turn counters. Other branches are stable-only. */
 	function currentGoalContextParts(ctx: ExtensionContext): { state: string; counters?: string } | undefined {
+		// During a draft the drafting prompt is in charge. The goal block would
+		// ask for update_goal, which is blocked until the draft ends, and the
+		// unfocused reminder would tell the agent to stop.
+		if (hasActiveDraft(core)) return;
 		const checkpoint = core.runtime.getCheckpointGoalId();
 		if (checkpoint !== null && (core.scheduler.isDenied() || !core.isActionableContinuationGoal(checkpoint))) {
 			return { state: staleContinuationPrompt(checkpoint, core.state.goal) };
@@ -560,6 +580,7 @@ export function registerGoalEvents(core: GoalCore): void {
 		core.runningGoalId = null;
 		continuationAfterSettleFor = null;
 		networkErrorRecoveryAfterSettleFor = null;
+		errorPauseAfterSettle = null;
 		if (core.scheduler.isDenied()) return;
 
 		// Account for any tokens from aborted in-flight assistant messages so
@@ -596,9 +617,14 @@ export function registerGoalEvents(core: GoalCore): void {
 			networkErrorRecoveryAfterSettleFor = core.state.goal.id;
 			return;
 		}
+		// Any other provider error cannot be retried automatically. Pause once Pi
+		// settles (it may still retry by itself) so the goal does not sit there
+		// looking "running" with nothing scheduled.
 		if (hasErrorAssistantMessage(event.messages)) {
 			core.persist(ctx);
 			core.updateUI(ctx);
+			const detail = providerErrorText(event.messages);
+			errorPauseAfterSettle = { goalId: core.state.goal.id, reason: `The provider returned an error${detail ? `: ${detail}` : ""}.` };
 			return;
 		}
 		core.runtime.clearNetworkErrorBackoff();
@@ -617,6 +643,8 @@ export function registerGoalEvents(core: GoalCore): void {
 		continuationAfterSettleFor = null;
 		const networkErrorGoalId = networkErrorRecoveryAfterSettleFor;
 		networkErrorRecoveryAfterSettleFor = null;
+		const errorPause = errorPauseAfterSettle;
+		errorPauseAfterSettle = null;
 		if (core.scheduler.isDenied()) {
 			core.runningGoalId = null;
 			core.runtime.setCheckpoint(null);
@@ -638,6 +666,10 @@ export function registerGoalEvents(core: GoalCore): void {
 		core.scheduler.settled(ctx, !!goalId && core.isActionableContinuationGoal(goalId));
 		if (resumedInterruptedTurn) core.scheduler.schedule(ctx);
 		if (goalId && core.isActionableContinuationGoal(goalId)) return;
+		if (errorPause && core.isActionableContinuationGoal(errorPause.goalId)) {
+			core.scheduler.pauseForError(ctx, commandInstructions(`${errorPause.reason} Goal paused. Use /goal-resume to try again.`, core.loadedCommands));
+			return;
+		}
 		if (!networkErrorGoalId || !core.isActionableContinuationGoal(networkErrorGoalId)) return;
 		const recovery = loadGoalSettings(ctx.cwd).networkRecovery;
 		const policy = recovery
@@ -653,10 +685,7 @@ export function registerGoalEvents(core: GoalCore): void {
 			return;
 		}
 		// Only reachable under a configured bounded cap (maxAttempts > 0).
-		ctx.ui.notify(
-			"Provider network errors persisted after all recovery attempts. The goal remains active; resume it when the provider is healthy.",
-			"warning",
-		);
+		core.scheduler.pauseForError(ctx, commandInstructions("Provider network errors persisted after all recovery attempts. Goal paused. Use /goal-resume when the provider works again.", core.loadedCommands));
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {

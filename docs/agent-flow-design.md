@@ -111,7 +111,7 @@ The curated fourteen-command palette:
 
 ## 6. Goal creation flow
 
-`/goal [seed]` and `/sisyphus [seed]` enter a temporary draft profile.
+`/goal [seed]` and `/sisyphus [seed]` start a guided draft.
 The agent can ask questions, select a questionnaire when it adds value, and
 propose both a full objective and a task tree in a single confirmation dialog.
 Confirm creates and focuses the goal atomically; Continue Chatting retains the
@@ -119,18 +119,18 @@ draft. `/goal-direct` and `/sisyphus-direct` are the explicit immediate paths.
 
 ## 7. Tool surface and runtime gates
 
-The normal execution surface is a FIXED three/five profile; guided drafting
-temporarily replaces it with three draft tools:
+The goal tool list is fixed, because it sits at the start of the cached prompt
+and any change to it makes the provider re-read the whole prompt:
 
-- exactly five goal tools are installed when tasks are enabled — `create_goal`,
-  `get_goal`, `update_goal`, `set_goal_tasks`, `update_goal_task`;
-- exactly the three core tools when tasks are disabled;
-- during a user-started `/goal`, `/sisyphus`, or `/goal-tweak` draft, only
-  `goal_question`, `goal_questionnaire`, and `propose_goal_draft` are
-  advertised until confirm or cancellation;
-- the profile is installed once at session start and after a settings change
-  that toggles `disableTasks`; focus, status, budget, completion, audit, and
-  compaction transitions never add/remove/restore goal tools;
+- with tasks enabled: `create_goal`, `get_goal`, `update_goal`,
+  `set_goal_tasks`, `update_goal_task`, plus the drafting tools
+  `goal_questionnaire` and `propose_goal_draft`;
+- the drafting tools are kept small because every request carries them. How
+  to draft lives in the draft prompt, which is only sent during a draft, not
+  in tool guidance, which is in every system prompt;
+- with tasks disabled: the same list without the two task tools;
+- only a change to `disableTasks` changes the list. Goal status, focus,
+  drafting, completion, audits and compaction never do;
 - ordinary pi work tools (`read`, `write`, `edit`, `bash`, ...) are never
   touched by the extension;
 - invalid lifecycle calls are rejected by the executor with a concise
@@ -143,6 +143,9 @@ The `tool_call` interceptor:
   guard);
 - blocks work tools when the checkpoint that triggered the turn is no longer
   actionable (stale checkpoint guard);
+- blocks the five goal tools while a draft is in progress, so nothing changes
+  a goal before the user confirms. The drafting tools refuse calls when no
+  draft is in progress;
 - tracks whether the turn did meaningful goal work (the empty-turn gate for
   auto-continuation).
 

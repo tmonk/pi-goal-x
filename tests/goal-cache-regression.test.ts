@@ -24,9 +24,9 @@ test("cache comparison rejects missing scenarios, early text, schemas, options, 
 	assert.throws(() => summarize({messages: [{role: "user", content: [{type: "text", text: "live", cache_control: {type: "ephemeral"}}]}]}, ["live"]), /marker on a transient/);
 });
 
-test("state-change measurement reproduces #108 and rejects extra or unexplained resets", () => {
+test("task progress from #108 no longer resets the prefix, and the gate rejects any reset", () => {
 	const investigation = investigateCache();
-	assert.equal(investigation.stateChanges.filter((step: any) => step.prefixBreak).length, 4);
+	assert.equal(investigation.stateChanges.filter((step: any) => step.prefixBreak).length, 0);
 	assert.equal(investigation.occupancy[1].appendedCounters, 0);
 	assert.equal(investigation.occupancy[1].breaks, 0);
 	assert.ok(investigation.occupancy[1].totalRequestBytes < investigation.occupancy[0].totalRequestBytes);

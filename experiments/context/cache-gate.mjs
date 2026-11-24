@@ -8,7 +8,11 @@ import {buildReport} from './cache-report.mjs';
 import {compareReports} from './cache-compare.mjs';
 
 const root=fileURLToPath(new URL('../../',import.meta.url));
-const ref='fe0e38f8cd03bfacc9baca730e9a902d3cff116e';
+// The payload every later change is compared against. Move it only when a
+// change to the cached prompt is intended and reviewed. Last moved for the
+// fixed tool list (#126), task snapshots (#108) and the smaller drafting
+// tools; before that, 0.34.0.
+const ref='4883b97c03dac81316206af7e7c567af4ba9e3ff';
 const output=process.env.PI_GOAL_CACHE_REPORT_DIR??mkdtempSync(path.join(tmpdir(),'goal-cache-evidence-'));
 mkdirSync(output,{recursive:true});
 const baselineRoot=mkdtempSync(path.join(tmpdir(),'goal-cache-baseline-'));

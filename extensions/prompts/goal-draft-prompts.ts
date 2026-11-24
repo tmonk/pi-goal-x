@@ -78,19 +78,15 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 		: "[GOAL CONFIRMATION focus=goal]\nThe user invoked guided goal drafting (/goal). Help turn their request into a confirmed goal contract. Do NOT start substantive work yet.";
 
 	const commonProtocol = [
-		"Confirmation protocol:",
-		"- Treat this as a lightweight conversation with the user, not a separate long-running runtime phase.",
-		"- If the topic is vague, ask one focused question with a recommended default. Use goal_question or goal_questionnaire when a structured answer would help, but plain conversation is acceptable.",
-		"- Targeted read-only research is allowed when it helps define a better goal contract; do not start implementation before confirmation.",
-		"- If the topic is already concrete, you may proceed directly to propose_goal_draft.",
-		"- The goal contract should make the objective, success criteria, boundaries, constraints, and blocker rule explicit.",
-		"- Keep grilling assumptions until the objective, success criteria, boundaries, constraints, and blocker rule are clear enough to confirm.",
-		"- If the objective naturally decomposes into trackable milestones, you MUST include the task list in the `tasks` parameter of `propose_goal_draft` so the user can accept both goal and tasks in a single confirmation dialog. Do NOT propose the goal without tasks and then call `propose_task_list` separately.",
-		"- For simple single-step goals, no task list is required. The `tasks` parameter can be omitted.",
-		"- After goal creation, `propose_task_list` is still available for user-requested task additions or structural changes.",
-		"- propose_goal_draft opens the user's Confirm / Continue Chatting dialog. Confirm creates and focuses the goal; Continue Chatting means keep refining through normal proposal cycles.",
-		"- Call propose_goal_draft with the complete structured proposal. The tool call renderer is the scrollable, complete human presentation of the objective and task tree — do NOT duplicate the full proposal in a preceding prose message. A brief orientation sentence is fine.",
-		"- create_goal is not a shortcut. Direct create_goal calls are rejected so the user keeps explicit say in goal creation.",
+		"How to draft:",
+		"- Keep this a short conversation. Do not start the work until the user confirms.",
+		"- If the request is vague, ask a focused question with a suggested answer. goal_questionnaire shows questions in a dialog; plain chat is fine too.",
+		"- Read-only research is fine if it helps define the goal.",
+		"- Make the objective, success criteria, boundaries, constraints and blocker rule clear. Keep asking until they are. If the request already covers them, propose right away.",
+		"- If the work splits into milestones you can track, you MUST pass them in the tasks argument of propose_goal_draft, so the user confirms the goal and tasks together. Simple goals need no tasks. Once the goal exists, set_goal_tasks changes the task list.",
+		"- Set token_budget only if the user asked for a budget or spend limit. Never estimate one.",
+		"- propose_goal_draft opens a dialog that shows the full proposal, so do not repeat it in chat first. Confirm creates and focuses the goal; Continue Chatting keeps the draft open.",
+		"- create_goal and the other goal tools are blocked during a draft. Use propose_goal_draft.",
 	];
 
 	const goalFocusItems = [
@@ -102,7 +98,7 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 		"Constraints: <hard rules>",
 		"Verification contract: <optional — what verification evidence is required before marking complete, e.g. 'Run npm test (0 failures), grep for remaining references, re-read requirements and confirm every item is addressed'>",
 		"If blocked: <default = stop and ask the user>",
-		"Call propose_goal_draft with sisyphus=false and autoContinue=true unless the user asked otherwise.",
+		"Put this whole block, headings included, in the objective argument of propose_goal_draft. The headings are not separate arguments.",
 	];
 
 	const sisyphusFocusItems = [
@@ -117,7 +113,7 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 		"Ordered steps: <preserve the user's requested steps and ordering; do not add preflight or reconnaissance steps they did not ask for>",
 		"If blocked / unclear / failing: <default = stop and ask the user>",
 		"Sisyphus reminder: Work patiently and sequentially. No rushing, no unrequested preflight steps, no improvising around blockers.",
-		"Call propose_goal_draft with sisyphus=true and autoContinue=true unless the user asked otherwise.",
+		"Put this whole block, headings included, in the objective argument of propose_goal_draft. The headings are not separate arguments.",
 	];
 
 	return [

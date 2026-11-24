@@ -45,8 +45,13 @@ test("goalDraftingPrompt routes the complete presentation through the tool rende
 	// Duplicating the full proposal in prose is explicitly forbidden.
 	for (const focus of ["goal" as const, "sisyphus" as const]) {
 		const prompt = goalDraftingPrompt("some topic", focus);
-		assert.ok(prompt.includes("do NOT duplicate the full proposal in a preceding prose message"), `${focus} prompt must forbid the prose duplication`);
-		assert.ok(prompt.includes("The tool call renderer is the scrollable, complete human presentation"), `${focus} prompt must name the renderer as the complete presentation`);
-		assert.ok(prompt.includes("tasks` parameter of `propose_goal_draft"), `${focus} prompt must still require the full task list via the tool`);
+		assert.ok(prompt.includes("so do not repeat it in chat first"), `${focus} prompt must forbid repeating the proposal in chat`);
+		assert.ok(prompt.includes("you MUST pass them in the tasks argument of propose_goal_draft"), `${focus} prompt must require the task list in the tool call`);
+		assert.ok(prompt.includes("Set token_budget only if the user asked"), `${focus} prompt must keep the budget rule`);
+		assert.ok(!prompt.includes("propose_task_list"), `${focus} prompt must not name a removed tool`);
+		// Models otherwise pass the section headings as extra arguments, which
+		// the tool's schema rejects (#122).
+		assert.ok(prompt.includes("Put this whole block, headings included, in the objective argument"), `${focus} prompt must say where the block goes`);
+		assert.ok(!prompt.includes("sisyphus="), `${focus} prompt must not ask for the removed sisyphus argument`);
 	}
 });

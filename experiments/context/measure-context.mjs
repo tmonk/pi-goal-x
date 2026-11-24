@@ -62,7 +62,7 @@ export function measureContext(captured) {
 
 	const childRequestChars = (captured.childRequests ?? []).reduce((sum, request) => sum + request.system.length + JSON.stringify(request.messages).length + JSON.stringify(request.tools).length, 0);
  const extensionMessageChars = (captured.messages ?? []).filter(message =>
-  (message.role === "toolResult" && /^(get_goal|create_goal|update_goal|set_goal_tasks|update_goal_task|goal_question|goal_questionnaire|propose_goal_draft)$/.test(message.toolName ?? "")) ||
+  (message.role === "toolResult" && /^(get_goal|create_goal|update_goal|set_goal_tasks|update_goal_task|goal_questionnaire|propose_goal_draft)$/.test(message.toolName ?? "")) ||
   (message.role === "custom" && message.customType?.startsWith("pi-goal"))
  ).reduce((sum, message) => sum + JSON.stringify(message).length, 0);
  return {

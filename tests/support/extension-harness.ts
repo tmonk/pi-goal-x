@@ -45,6 +45,7 @@ export function createExtensionHarness(options: ExtensionHarnessOptions) {
 	const entries: Array<{ type: "custom"; customType: string; data: unknown }> = [];
 	const notices: Notice[] = [];
 	const userMessages: unknown[] = [];
+	const userMessageModes: Array<string | undefined> = [];
 	const sentMessages: any[] = [];
 	const toolHistory: string[][] = [];
 	let activeTools = [...DEFAULT_ACTIVE_TOOLS];
@@ -62,7 +63,7 @@ export function createExtensionHarness(options: ExtensionHarnessOptions) {
 		appendEntry: (customType: string, data: unknown) => { entries.push({ type: "custom", customType, data }); },
 		registerMessageRenderer: () => {},
 		sendMessage: (message: unknown) => { sentMessages.push(message); },
-		sendUserMessage: (message: unknown) => { userMessages.push(message); },
+		sendUserMessage: (message: unknown, options?: { deliverAs?: string }) => { userMessages.push(message); userMessageModes.push(options?.deliverAs); },
 		getActiveTools: () => [...activeTools],
 		setActiveTools: (names: string[]) => { activeTools = [...names]; toolHistory.push([...names]); },
 		hasUI,
@@ -113,6 +114,8 @@ export function createExtensionHarness(options: ExtensionHarnessOptions) {
 		entries,
 		notices,
 		userMessages,
+		/** deliverAs for each entry in userMessages. */
+		userMessageModes,
 		sentMessages,
 		toolHistory,
 		get notifications() { return notices.map((notice) => notice.message); },

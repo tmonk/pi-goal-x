@@ -229,7 +229,7 @@ export function isErrorAssistantMessage(message: unknown): boolean {
 /**
  * Transient provider failures are safe for goal-level recovery backoff:
  * Pi-declared network errors plus HTTP 429/5xx-style outages surfaced by
- * providers (429 rate limits, 503 server_error, HTTP/2 PROTOCOL_ERROR,
+ * providers (429 rate limits, 499 when a gateway loses the upstream, 503 server_error, HTTP/2 PROTOCOL_ERROR,
  * "Endpoint is unavailable", overloaded, gateway failures). Deliberately excludes auth and
  * malformed-request failures (and quota/billing text), which retrying
  * cannot fix.
@@ -240,7 +240,7 @@ const TRANSIENT_PROVIDER_ERROR_RE = new RegExp(
 		"\\bprotocol[_\\s-]?error\\b",
 		"\\bserver[_\\s]?error\\b",
 		"\\bfinish[_\\s-]?reason:\\s*error\\b",
-		"\\b(?:429|502|503|504|529)\\b",
+		"\\b(?:429|499|502|503|504|529)\\b",
 		"\\brate[_\\s-]?limited\\b",
 		"\\brate[_\\s-]?limit\\b",
 		"\\btoo many requests\\b",
@@ -285,6 +285,15 @@ export function hasAbortedAssistantMessage(messages: unknown[]): boolean {
 
 export function hasErrorAssistantMessage(messages: unknown[]): boolean {
 	return messages.some(isErrorAssistantMessage);
+}
+
+/** The provider's error text from the last failed assistant message, shortened for a notice. */
+export function providerErrorText(messages: unknown[]): string | undefined {
+	const failed = messages.filter(isErrorAssistantMessage).at(-1);
+	const text = asRecord(failed)?.errorMessage;
+	if (typeof text !== "string" || !text.trim()) return undefined;
+	const line = text.trim().replace(/\s+/g, " ");
+	return line.length > 200 ? `${line.slice(0, 199)}…` : line;
 }
 
 export function hasNetworkErrorAssistantMessage(messages: unknown[]): boolean {

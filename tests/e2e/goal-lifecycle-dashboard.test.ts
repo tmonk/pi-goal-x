@@ -169,7 +169,7 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 
 		// ── Step 2: clarification questions ─────────────────────────────────
 		const q = callTool(h, "goal_questionnaire", "q-1", {
-			questions: [{ id: "filters", question: "Which filters apply?", options: ["Active filters", "All rows"] }],
+			questions: [{ question: "Which filters apply?", options: ["Active filters", "All rows"] }],
 		});
 		assert.ok(h.hasDialog(), "questionnaire dialog opens");
 		h.dialogResult({
@@ -200,7 +200,7 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 			{ id: "t4", title: "Add documentation" },
 			{ id: "t5", title: "Add and run tests" },
 		];
-		const pending = callTool(h, "propose_goal_draft", "prop-1", { objective, sisyphus: false, tasks: flatTasks });
+		const pending = callTool(h, "propose_goal_draft", "prop-1", { objective, tasks: flatTasks });
 		assert.ok(h.hasDialog(), "confirmation dialog opens");
 		h.dialogResult({ questions: [], answers: [{ id: "confirm", question: "Confirm Goal Draft", answer: CONFIRM_ANSWER, wasCustom: false }], cancelled: false });
 		await pending;

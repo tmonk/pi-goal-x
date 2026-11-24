@@ -516,3 +516,20 @@ test("RPC cancellation preserves the persisted task list", async () => {
 		f.cleanup();
 	}
 });
+
+test("update_goal_task has no empty string in its status enums", () => {
+	const f = fixtureWithTasks([]);
+	try {
+		const h = createHarness(f.cwd, f.sessionEntries);
+		const tool = h.tools.get("update_goal_task")!;
+		const schema = JSON.parse(JSON.stringify(tool.parameters));
+		const statuses = ["start", "complete", "skipped", "pending"];
+		assert.deepEqual(schema.properties.status.enum, statuses, "Google rejects tools with an empty enum value");
+		assert.deepEqual(schema.properties.updates.items.properties.status.enum, statuses);
+		assert.deepEqual(tool.prepareArguments({ status: " ", updates: [] }), { updates: [] }, "a blank status is dropped before validation");
+		const valid = { task_id: "a", status: "start" };
+		assert.equal(tool.prepareArguments(valid), valid, "other calls pass through unchanged");
+	} finally {
+		f.cleanup();
+	}
+});
