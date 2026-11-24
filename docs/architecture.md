@@ -9,9 +9,14 @@ the runtime work together, see [agent flow design](agent-flow-design.md).
 builds one `GoalCore`, then registers commands, tools and event handlers. A
 delegated session (the auditor or Oracle) only installs the context filter.
 
-`GoalCore` (`goal-state.ts`) is a facade. The state lives in
+`GoalCore` (`goal-state.ts`) is a facade with 28 members. The state lives in
 `GoalSessionState`; each group of behavior lives in its own service, and
-`createGoalCore` wires them together.
+`createGoalCore` wires them together. Callers reach a service directly
+(`core.state`, `view`, `focus`, `lifecycle`, `progress`, `watch`,
+`goalService`, `scheduler`, `runtime`) and the few members left on the core are
+shortcuts that join several services. Modules never take the whole core: each
+declares only the slices it uses, taken from `goal-core-types.ts`, so its
+signature shows what it touches and a test can fake just that.
 
 ```text
 goal.ts
@@ -40,6 +45,7 @@ All files are in `extensions/`.
 |---|---|
 | `goal.ts` | Installer: renderers, core, commands, tools, events |
 | `goal-state.ts` | `GoalCore` interface and `createGoalCore` wiring |
+| `goal-core-types.ts` | The small slices of `GoalCore` (`GoalDiskSync`, `GoalUiRefresh`, ...) that modules combine with `&` |
 | `goal-session-state.ts` | `GoalSessionState`, `ActiveGoalAudit`, `FocusToken` |
 | `goal-focus.ts` | `GoalFocus` |
 | `goal-lifecycle.ts` | `GoalLifecycle` |
@@ -69,6 +75,7 @@ All files are in `extensions/`.
 | `goal-controls.ts` | Action ids, key actions, command and key settings |
 | `goal-settings-menu.ts` | The `/goal-settings` editor |
 | `goal-events.ts` | Pi event handlers (see below) |
+| `goal-messages.ts` | Reads what Pi hands us: continuation markers, aborted, failed and network-error turns, token use, progress tool calls |
 | `goal-terminal-input.ts` | Key handling: pause, audit interrupt, dashboard keys, shortcuts |
 
 `goal-events.ts` handles `context_with_system`, `before_provider_request`,
@@ -116,15 +123,22 @@ All files are in `extensions/`.
 
 | File | Responsibility |
 |---|---|
-| `goal-ledger.ts` | Append, read and rebuild state from the JSONL ledger (29 event types) |
+| `goal-ledger.ts` | Append and read the JSONL ledger, with a cache; re-exports the pieces below |
+| `goal-ledger-events.ts` | The `GoalLedgerEvent` union (29 event types) |
 | `goal-ledger-validate.ts` | Per-event field checks |
-| `goal-ledger-checkpoint.ts` | Derived checkpoint file (version 4) and its codec |
+| `goal-ledger-reconstruct.ts` | Folds events into per-goal state, incrementally so a checkpoint can resume mid-stream |
+| `goal-ledger-queries.ts` | Read-only lookups: latest audit, recent events for a goal |
+| `goal-ledger-checkpoint.ts` | Derived checkpoint file (version 4), its types and codec |
+| `goal-ledger-checkpoint-store.ts` | In-process checkpoint mirror, write throttle, file read and write |
 | `goal-ledger-index.ts` | Bounded per-goal working set (recent events, audit, Oracle state) |
 | `goal-activity.ts` | Ledger to readable activity items |
 | `goal-detail.ts` | Lossless paged objective, task and history text |
 | `goal-recovery.ts` | `/goal-recovery` report and guarded repair |
 | `goal-session-health.ts` | Read-only checkpoint health report for session files |
-| `storage/goal-files.ts` | Goal file paths, parse and serialize, active pool scan, archive |
+| `storage/goal-files.ts` | Goal file read, write and archive, and the active pool scan |
+| `storage/goal-paths.ts` | Goal directories, file-name patterns, path checks (no disk access) |
+| `storage/goal-file-format.ts` | Goal file text format: JSON metadata plus markdown body (pure string work) |
+| `storage/goal-pool-snapshot.ts` | One-file pool snapshot so a cold start skips scanning every goal file |
 | `storage/goal-root.ts` | Where the goal pool lives (`goalsRoot`, `PI_GOAL_ROOT`) |
 | `storage/goal-lock.ts`, `storage/file-lock.ts` | Per-goal lock and the shared cross-process file lock |
 | `storage/atomic-rename.ts` | Atomic file replace, tolerant of Windows rename errors |
@@ -167,9 +181,15 @@ All files are in `extensions/`.
 | `goal-format.ts` | Entry names, summaries, message renderers, message checks |
 | `goal-display.ts` | Status labels, durations, token text, footer status |
 | `goal-status.ts` | `/goal-status` text |
-| `widgets/goal-dashboard-model.ts` | The one dashboard model; task scrolling math |
-| `widgets/goal-dashboard-renderer.ts` | Compact, expanded, unfocused, audit renderers |
+| `widgets/goal-dashboard-model.ts` | The one dashboard model (pure data, no TUI) |
+| `widgets/dashboard-format.ts` | Plain-text numbers: durations, tokens, percentages, budget |
+| `widgets/dashboard-box.ts` | Box drawing, padding and truncation within the terminal width |
+| `widgets/goal-dashboard-renderer.ts` | Compact, expanded and unfocused renderers |
+| `widgets/goal-audit-renderer.ts` | Audit dashboard and result card |
 | `widgets/goal-widget.ts` | The above-editor widget component |
+| `widgets/widget-height.ts` | Height cap and stable-height rules for the widget |
+| `widgets/task-viewport.ts` | Pure task-list window and anchoring maths |
+| `widgets/task-scroll.ts` | Mutable scroll offsets and the re-anchor rule |
 | `widgets/auditor-dashboard-model.ts` | Audit progress and result models |
 | `widgets/goal-controls-dialog.ts`, `choice-dialog.ts`, `goal-escape-dialog.ts` | Dialogs |
 | `widgets/goal-notifications.ts`, `text-cache.ts` | Toast text, cached ANSI wrapping |

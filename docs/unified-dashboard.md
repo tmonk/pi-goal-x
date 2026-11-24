@@ -12,6 +12,13 @@ so they can never drift apart on data or terminology.
   overlay; `Ctrl+Shift+T` now toggles between compact and expanded instead of
   opening a separate overlay.
 
+The code is split by job under `extensions/widgets/`: the model derives data,
+`dashboard-format.ts` and `dashboard-box.ts` format numbers and draw boxes, the
+renderers (`goal-dashboard-renderer.ts`, `goal-audit-renderer.ts`) decide what
+to show, `task-viewport.ts` and `task-scroll.ts` handle the task window, and
+`widget-height.ts` keeps the widget from filling the terminal. See
+[architecture](architecture.md) for the full table.
+
 Everything shown is derived from persisted goal state and the durable ledger:
 progress, the current task, verification status, the audit result, and recent
 activity are never fabricated for display.
