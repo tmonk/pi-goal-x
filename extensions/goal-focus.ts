@@ -16,7 +16,7 @@ import {
 import type { GoalScheduler } from "./goal-scheduler.ts";
 import type { GoalService } from "./goal-service.ts";
 import type { GoalSessionState } from "./goal-session-state.ts";
-import { loadGoalSettings } from "./goal-settings.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 import { mergeGoalPromptFromDisk, readActiveGoalPoolAsync, sanitizeGoalPaths } from "./storage/goal-files.ts";
 import { goalStorageContext } from "./storage/goal-root.ts";
 

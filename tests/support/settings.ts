@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { goalSettingsPath, invalidateGoalSettingsCache, parseSettingsLayer, type GoalSettingsLayer } from "../../extensions/goal-settings.ts";
+import { parseSettingsLayer, type GoalSettingsLayer } from "../../extensions/settings/schema.ts";
+import { goalSettingsPath, invalidateGoalSettingsCache } from "../../extensions/settings/files.ts";
 
 /** Replace the project settings file with `settings`, as a user editing it by hand would. */
 export function writeProjectSettings(cwd: string, settings: GoalSettingsLayer): void {

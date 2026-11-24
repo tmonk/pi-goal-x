@@ -10,7 +10,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { GoalRecord, GoalTask, GoalTaskList } from "./goal-record.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
-import { loadGoalSettings, type GoalSettings, type ThinkingLevel } from "./goal-settings.ts";
+import { type GoalSettings, type ThinkingLevel } from "./settings/schema.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 import { statusLabel } from "./goal-display.ts";
 
 export interface AuditorProgress {

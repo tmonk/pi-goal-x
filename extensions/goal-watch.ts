@@ -4,7 +4,7 @@ import type { GoalRecord } from "./goal-record.ts";
 import { nowIso } from "./goal-record.ts";
 import type { GoalService } from "./goal-service.ts";
 import type { GoalSessionState } from "./goal-session-state.ts";
-import { loadGoalSettings } from "./goal-settings.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 
 const BUDGET_WARNING_THRESHOLDS = [0.5, 0.75, 0.9];
 

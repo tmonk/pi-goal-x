@@ -1,5 +1,5 @@
 import { commandHint, type GoalCommands } from "./goal-controls.ts";
-import type { GoalKeybindings } from "./goal-settings.ts";
+import type { GoalKeybindings } from "./settings/schema.ts";
 /**
  * /goal-status text builder (plan §13).
  *

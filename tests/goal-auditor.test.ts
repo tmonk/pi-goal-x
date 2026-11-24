@@ -11,9 +11,7 @@ import {
 	resolveAuditorSessionModelOptions,
 	runGoalCompletionAuditor,
 } from "../extensions/goal-auditor.ts";
-import {
-	loadGoalSettings,
-} from "../extensions/goal-settings.ts";
+import { loadGoalSettings } from "../extensions/settings/resolve.ts";
 import type { GoalRecord } from "../extensions/goal-record.ts";
 import { parseSettings } from "./support/settings.ts";
 

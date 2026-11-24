@@ -5,7 +5,7 @@ import {
 	type GoalDisplayRecordLike,
 } from "../goal-display.ts";
 import type { GoalRecord, GoalTaskList } from "../goal-record.ts";
-import type { GoalDashboardKeybindings, GoalSettings } from "../goal-settings.ts";
+import type { GoalDashboardKeybindings, GoalSettings } from "../settings/schema.ts";
 import type { GoalLedgerEvent } from "../goal-ledger.ts";
 import {
 	anchoredScrollOffset,

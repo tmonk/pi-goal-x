@@ -8,7 +8,7 @@ import {goalRuntimeEvents, invalidateGoalLedgerCache} from "../extensions/goal-l
 import {writeActiveGoalFile, parseGoalFile} from "../extensions/storage/goal-files.ts";
 import {mkdirSync, rmSync} from "node:fs";
 import path from "node:path";
-import {mutateSettingsLayer} from "../extensions/goal-settings.ts";
+import { mutateSettingsLayer } from "../extensions/settings/mutate.ts";
 
 const approved = {approved: true, output: "Evidence checked. <approved/>", model: "fixture"};
 const stale = () => {throw new Error("This extension ctx is stale after session replacement or reload.");};

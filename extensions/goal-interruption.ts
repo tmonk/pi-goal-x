@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { GoalCore } from "./goal-state.ts";
-import { loadGoalSettings } from "./goal-settings.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 
 /** A user-stopped turn must not become a retry, nor affect a replacement goal. */
 export class GoalInterruption {

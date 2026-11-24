@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
 import { defineTool, SessionManager, SettingsManager, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { makeAuditorResourceLoader, resolveAuditorSessionModelOptions } from "./goal-auditor.ts";
-import type { ResolvedGoalOracleSettings } from "./goal-settings.ts";
+import type { ResolvedGoalOracleSettings } from "./settings/schema.ts";
 import { safeIdPart, type GoalRecord } from "./goal-record.ts";
 
 function escapePromptPayload(value: string): string {

@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { readGoalLedger } from "../extensions/goal-ledger.ts";
-import { goalSettingsPath } from "../extensions/goal-settings.ts";
+import { goalSettingsPath } from "../extensions/settings/files.ts";
 import { proposalText, DRAFT_ENTRY, hasActiveDraft, type ActiveGoalDraft } from "../extensions/goal-drafting.ts";
 import { createGoal, type GoalRecord } from "../extensions/goal-record.ts";
 import { goalDraftingPrompt } from "../extensions/prompts/goal-draft-prompts.ts";

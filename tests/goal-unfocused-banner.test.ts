@@ -12,13 +12,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import {
-	loadGoalSettings,
-	loadSettingsSnapshot,
-	mutateSettingsLayer,
-	parseSettingsLayer,
-	invalidateGoalSettingsCache,
-} from "../extensions/goal-settings.ts";
+import { parseSettingsLayer } from "../extensions/settings/schema.ts";
+import { invalidateGoalSettingsCache } from "../extensions/settings/files.ts";
+import { loadGoalSettings, loadSettingsSnapshot } from "../extensions/settings/resolve.ts";
+import { mutateSettingsLayer } from "../extensions/settings/mutate.ts";
 import { unfocusedOpenGoalsPrompt } from "../extensions/prompts/goal-prompts.ts";
 
 function withTempDir(fn: (dir: string) => void): void {

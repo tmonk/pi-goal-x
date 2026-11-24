@@ -19,7 +19,7 @@ import {
 	focusedFixture,
 	cleanupFixture,
 } from "./bench-common.mjs";
-import { loadGoalSettings } from "../../extensions/goal-settings.ts";
+import { loadGoalSettings } from "../../extensions/settings/resolve.ts";
 import { readActiveGoalPool } from "../../extensions/storage/goal-files.ts";
 import { readGoalLedger } from "../../extensions/goal-ledger.ts";
 import { checkpointTriggerPrompt } from "../../extensions/prompts/goal-prompts.ts";

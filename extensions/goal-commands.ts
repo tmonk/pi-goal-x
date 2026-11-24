@@ -5,17 +5,10 @@ import { existsSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { extractVerificationContract, sisyphusObjectiveSufficient } from "./goal-contract.ts";
 import { detailedSummary, oneLineSummary } from "./goal-format.ts";
-import {
-	goalSettingsPath,
-	goalGlobalSettingsPath,
-	loadGoalSettings,
-	loadSettingsSnapshot,
-	mutateSettingsLayer,
-	envOverrideFor,
-	type GoalSettings,
-	type SettingsMutation,
-	type SettingsScope,
-} from "./goal-settings.ts";
+import { type GoalSettings, type SettingsScope } from "./settings/schema.ts";
+import { goalSettingsPath, goalGlobalSettingsPath } from "./settings/files.ts";
+import { loadGoalSettings, loadSettingsSnapshot, envOverrideFor } from "./settings/resolve.ts";
+import { mutateSettingsLayer, type SettingsMutation } from "./settings/mutate.ts";
 import {
 	buildGoalListText,
 	buildUnfocusedOpenGoalsSummary,
@@ -25,7 +18,8 @@ import {
 import { clearGoalCommandMessage } from "./goal-policy.ts";
 import { invalidateGoalLedgerCache, readGoalLedger } from "./goal-ledger.ts";
 import { buildGoalStatusText } from "./goal-status.ts";
-import { effectiveSettingsReport, invalidateGoalSettingsCache, loadGoalSettingsFileConfig } from "./goal-settings.ts";
+import { invalidateGoalSettingsCache, loadGoalSettingsFileConfig } from "./settings/files.ts";
+import { effectiveSettingsReport } from "./settings/resolve.ts";
 import { invalidateGoalPoolCache, readActiveGoalPool } from "./storage/goal-files.ts";
 import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
 import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "./goal-drafting.ts";

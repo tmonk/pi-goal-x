@@ -6,10 +6,10 @@ import {
 	commandRoutes, keybindingProblems, normalizeGoalKey, parseCommandPaths, parseGoalKeybinding, resolveGoalControls, sameGoalKey, valueAtPath,
 	type GoalKeyAction, type GoalKeybinding,
 } from "../goal-controls.ts";
-import {
-	formatGoalKeybinding, invalidateGoalSettingsCache, loadSettingsSnapshot, mutateSettingsLayer,
-	type GoalSettings, type SettingsSnapshot, type SettingsScope, type SettingsMutation,
-} from "../goal-settings.ts";
+import { formatGoalKeybinding, type GoalSettings, type SettingsScope } from "../settings/schema.ts";
+import { invalidateGoalSettingsCache } from "../settings/files.ts";
+import { loadSettingsSnapshot, type SettingsSnapshot } from "../settings/resolve.ts";
+import { mutateSettingsLayer, type SettingsMutation } from "../settings/mutate.ts";
 import type { GoalCore } from "../goal-state.ts";
 import { truncateToWidth } from "./text-cache.ts";
 
