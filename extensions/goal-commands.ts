@@ -340,7 +340,10 @@ export function registerGoalCommands(core: GoalCore): void {
 		ctx.abort?.();
 	}
 
-	async function handleGoalResume(ctx: ExtensionContext): Promise<void> {
+	async function handleGoalResume(ctx: ExtensionContext, rawArgs = ""): Promise<void> {
+		// Send any text first, so no early return below can drop it.
+		const text = rawArgs.trim();
+		if (text) core.pi.sendUserMessage(text, { deliverAs: ctx.isIdle() ? "followUp" : "steer" });
 		core.reconcileFocusedGoalFromDisk(ctx);
 		if (!core.state.goal && otherOpenGoalCount(core.goalsById, null) > 0) {
 			const selected = await chooseOpenGoal(ctx, "Resume or focus open goal");
@@ -825,9 +828,9 @@ export function registerGoalCommands(core: GoalCore): void {
 		},
 	});
 	define("goal-resume", {
-		description: "Continue now and renew the configured autonomous-run allowance.",
-		handler: async (_rawArgs, ctx) => {
-			await handleGoalResume(ctx);
+		description: "Continue now and renew the configured autonomous-run allowance. Any text after the command is sent to the agent.",
+		handler: async (rawArgs, ctx) => {
+			await handleGoalResume(ctx, rawArgs);
 		},
 	});
 	const configured = loadGoalSettings(process.cwd()).commands;
