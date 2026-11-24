@@ -4,6 +4,11 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- The Escape-during-audit dialog and the task list confirmation share one dialog. Their footers no longer run past the border on a narrow terminal, and a host that cannot show the Escape dialog now keeps the goal working instead of failing.
+- Internal cleanup with no other behavior change: settings resolve from one table, production code that only tests used is gone, helpers used by one module are no longer exported, and test suites are named after what they cover.
+
 ## [0.34.2] — 2026-11-24
 
 Includes #136 and #137.
