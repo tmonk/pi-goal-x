@@ -7,9 +7,21 @@ export function needsRuntimeChecks(files) {
  return files.length === 0 || files.some(file => !/^(README\.md|CHANGELOG\.md|LICENSE|(?:docs|specs|assets)\/.*|pi-goal-x\.png)$/.test(file));
 }
 
-// The benchmark measures the extension. Test files cannot move it, but it does load tests/support and tests/stubs.
+const PROSE='README\\.md|CHANGELOG\\.md|LICENSE|(?:docs|specs|assets)\\/.*|pi-goal-x\\.png';
+const TEST_FILES='tests\\/(?:.*\\/)?[^/]+\\.test\\.ts';
+// CI scripts and their tests. Nothing the product or the heavy checks load.
+const CI_TOOLING='scripts\\/(?:ci-checks|ci-scope|test-ci|test-publish-workflow|test-update-ranking|update-ranking|extract-strings)\\.[a-z]+';
+const anyOutside=(files, safe) => files.length === 0 || files.some(file => !new RegExp(`^(?:${PROSE}|${safe})$`).test(file));
+
+// The benchmark measures the extension. It loads tests/support and tests/stubs, but not test files,
+// the walkthrough or the context checks.
 export function needsBench(files) {
- return files.length === 0 || files.some(file => !/^(README\.md|CHANGELOG\.md|LICENSE|(?:docs|specs|assets)\/.*|tests\/(?:.*\/)?[^/]+\.test\.ts|pi-goal-x\.png)$/.test(file));
+ return anyOutside(files, `${TEST_FILES}|${CI_TOOLING}|experiments\\/(?:controls|continuation|context)\\/.*`);
+}
+
+// The walkthrough drives the real Pi CLI with the extension. The benchmark and context checks do not touch it.
+export function needsControls(files) {
+ return anyOutside(files, `${TEST_FILES}|${CI_TOOLING}|experiments\\/(?:bench|context)\\/.*`);
 }
 
 export function changedFiles(base, cwd=process.cwd()) {
@@ -24,8 +36,11 @@ export function changedFiles(base, cwd=process.cwd()) {
 if(process.argv[1]===fileURLToPath(import.meta.url)) {
  const files=changedFiles(process.env.CI_BASE_SHA);
  const runtime=files===undefined || needsRuntimeChecks(files);
- const bench=files===undefined || needsBench(files);
- if(process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,`runtime=${runtime}\nbench=${bench}\n`);
+ // Every push to main runs everything. Pull requests run what their files can affect.
+ const everything=files===undefined || process.env.GITHUB_EVENT_NAME==='push';
+ const bench=everything || needsBench(files), controls=everything || needsControls(files);
+ if(process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,`runtime=${runtime}\nbench=${bench}\ncontrols=${controls}\n`);
  console.log(runtime?'Runtime checks required.':'Prose/assets only; runtime checks are unchanged.');
- if(runtime&&!bench) console.log('Tests and prose only; the benchmark gate is skipped.');
+ if(runtime&&!bench) console.log('Nothing here can move the benchmark; its gate is skipped.');
+ if(runtime&&!controls) console.log('Nothing here can change the walkthrough; it is skipped.');
 }

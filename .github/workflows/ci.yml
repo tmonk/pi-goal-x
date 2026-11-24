@@ -99,6 +99,8 @@ jobs:
       - uses: actions/checkout@v5
       - id: setup
         uses: ./.github/actions/setup
+        with:
+          need: controls
       - if: steps.setup.outputs.run == 'true'
         name: Controls walkthrough in the Pi CLI
         run: node experiments/controls/cli-walkthrough.mjs ${{ matrix.cases }}
