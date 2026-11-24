@@ -13,7 +13,7 @@ import type { GoalEventDetails } from "./goal-record.ts";
 import { createGoalCore } from "./goal-state.ts";
 import { registerCoreTools } from "./goal-core-tools.ts";
 import { registerTaskTools } from "./goal-task-tools.ts";
-import { registerDraftingTools } from "./goal-drafting.ts";
+import { registerDraftingTools } from "./goal-drafting-tools.ts";
 import { runGoalCompletionFlow } from "./goal-completion.ts";
 import { filterGoalSessionContext, isDelegatedGoalSession } from "./goal-session-safety.ts";
 import { registerGoalContext } from "./goal-context.ts";

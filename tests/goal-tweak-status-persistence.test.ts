@@ -240,7 +240,7 @@ for(const answer of ["Cancel", "Continue chatting"]){
 }
 
 test("budget-only confirmation displays current and proposed limits",async()=>{
-	const {proposalText}=await import("../extensions/goal-drafting.ts");
+	const {proposalText}=await import("../extensions/goal-drafting-tools.ts");
 	const {createGoal}=await import("../extensions/goal-record.ts");
 	const goal=createGoal({objective:"Keep objective",autoContinue:true,sisyphus:false});goal.tokenBudget=10;
 	const text=proposalText({mode:"tweak",originalTopic:"Remove the budget",startedAt:"now",auditorEnabled:true},goal.objective,true,undefined,goal,null);
