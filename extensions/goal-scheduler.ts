@@ -12,6 +12,7 @@ import {
 } from "./goal-scheduler-rules.ts";
 import type { SchedulerHost } from "./goal-scheduler-host.ts";
 import { WakeTimer } from "./goal-wake-timer.ts";
+import { t } from "./i18n/index.ts";
 
 /**
  * Scheduling intent is durable; timers only arrange an opportunity to claim it.
@@ -73,7 +74,7 @@ export class GoalScheduler {
 		try { fn(); } catch (error) {
 			this.cancelTimer();
 			this.core.runtime.clearContinuationState();
-			ctx.ui.notify(`Goal scheduling stopped: ${error instanceof Error ? error.message : String(error)}`, "warning");
+			ctx.ui.notify(t("Goal scheduling stopped: {message}", { message: error instanceof Error ? error.message : String(error) }), "warning");
 		}
 	}
 	cancelTimer(): void {
@@ -100,7 +101,7 @@ export class GoalScheduler {
 		this.safe(ctx, () => this.pause(ctx, reason));
 	}
 	private allowanceReason(ctx: ExtensionContext): string {
-		return this.limit(ctx) === 0 ? commandInstructions("Automatic continuation disabled by maxAutonomousRuns=0. Change the setting in /goal-settings, then use /goal-resume.", this.core.loadedCommands) : commandInstructions("Autonomous-run allowance exhausted. Increase or remove maxAutonomousRuns, or use /goal-resume to renew.", this.core.loadedCommands);
+		return this.limit(ctx) === 0 ? commandInstructions(t("Automatic continuation disabled by maxAutonomousRuns=0. Change the setting in /goal-settings, then use /goal-resume."), this.core.loadedCommands) : commandInstructions(t("Autonomous-run allowance exhausted. Increase or remove maxAutonomousRuns, or use /goal-resume to renew."), this.core.loadedCommands);
 	}
 
 	/** Bind once per live session. The event is deliberately not a triggerTurn message. */
@@ -123,7 +124,7 @@ export class GoalScheduler {
 			const goal = this.core.state.goal;
 			if (!goal || goal.status !== "active" || !goal.autoContinue || !goal.scheduler) return;
 			const s = goal.scheduler;
-			if (s.owner !== this.owner(ctx)) { ctx.ui.notify(commandInstructions("Goal owned by another session. Use /goal-resume to take ownership.", this.core.loadedCommands), "info"); return; }
+			if (s.owner !== this.owner(ctx)) { ctx.ui.notify(commandInstructions(t("Goal owned by another session. Use /goal-resume to take ownership."), this.core.loadedCommands), "info"); return; }
 			if (["claimed", "running", "interrupted"].includes(s.phase)) {
 				this.pause(ctx, commandInstructions("Previous autonomous execution was interrupted. Use /goal-resume; its dispatch will not be replayed.", this.core.loadedCommands));
 				return;
@@ -251,7 +252,7 @@ export class GoalScheduler {
 			} catch (error) {
 				this.rejectCheckpoint(ctx);
 				this.core.runtime.setCheckpoint(String(d?.goalId ?? "invalid"));
-				ctx.ui.notify(`Goal checkpoint rejected: ${String(error)}`, "warning");
+				ctx.ui.notify(t("Goal checkpoint rejected: {message}", { message: String(error) }), "warning");
 			}
 			return;
 		}
