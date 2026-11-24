@@ -16,11 +16,21 @@ import { asRecord } from "./goal-record.ts";
  * when they were emitted), the whole preceding history is verified unchanged
  * by digest, and only genuinely new tail content is appended. Identical
  * content across repeated requests appends nothing, so tool loops and idle
- * re-requests cost zero growth. A stable-state change, any history rewrite
- * (compaction, resume, session-tree moves, filter changes, middle-message
- * edits), an unsafe insertion point, or overflow all perform one documented
- * full reset instead of silently shifting the prefix or corrupting message
- * structure.
+ * re-requests cost zero growth.
+ *
+ * Three kinds of text go through here, by how often they change:
+ * - state: the goal policy (rules, objective, contract, status). A change is
+ *   appended as a new block that says it supersedes the earlier ones, so the
+ *   cached prefix survives pause, resume and settings changes.
+ * - counters: the task list snapshot. A change appends a new snapshot.
+ * - ephemeral: usage, run counts and notes that are cleared by omission
+ *   (scheduling waits, stall notes, one-shot reminders). It rides at the end of
+ *   each request and is never retained, so nothing stale is left in history.
+ *
+ * A change of scope (a different goal), any history rewrite (compaction,
+ * resume, session-tree moves, filter changes, middle-message edits), an unsafe
+ * insertion point, or overflow performs one documented full reset instead of
+ * silently shifting the prefix or corrupting message structure.
  */
 
 const LIVE_CONTEXT_TYPE = "pi-goal-live-context";
@@ -37,26 +47,44 @@ interface LiveMessage {
 }
 
 /**
- * Upper bound on retained tails per session. Retained tails are small (the
- * per-turn volatile counters), so the steady-state wire overhead stays near
- * a few kilobytes; exceeding the bound performs a single full reset, i.e. at
- * most one prefix break per MAX_RETAINED_LIVE_TAILS state changes.
+ * Upper bound on retained tails per session. Retained tails are small (policy
+ * blocks and task snapshots), so the steady-state wire overhead stays near a
+ * few kilobytes; exceeding the bound performs a single full reset, i.e. at
+ * most one prefix break per MAX_RETAINED_LIVE_TAILS changes.
  */
-export const MAX_RETAINED_LIVE_TAILS = 32;
+export const MAX_RETAINED_LIVE_TAILS = 48;
+
+/**
+ * Upper bound on policy blocks kept in history. Each change appends a block
+ * that supersedes the earlier ones; past this many, one reset removes them.
+ */
+export const MAX_RETAINED_POLICY_BLOCKS = 12;
+
+/** Said once at the top of every policy block that follows an earlier one. */
+export const POLICY_SUPERSEDED_NOTE = "[This is the current goal policy. It supersedes every earlier [PI GOAL …] block above; follow only this one.]";
+
+/** Sent with every request while superseded policy blocks remain in history. */
+export const POLICY_RECENCY_NOTE = "Only the latest goal policy block above applies; earlier goal policy blocks are superseded.";
 
 /** Upper bound on concurrently tracked sessions (parent plus isolated runs). */
 const MAX_TRACKED_SESSIONS = 16;
 /**
- * Extra historical snapshots (task list, usage, runs), excluding the single
- * current policy block. Past this a full reset happens. Old snapshots are
- * cheap cached tokens; a reset re-sends the whole history since the first
- * anchor uncached, so this is sized to hold a few task-list updates.
+ * Extra historical snapshots (the task list), excluding policy blocks. Past
+ * this a full reset happens. Old snapshots are cheap cached tokens; a reset
+ * re-sends the whole history since the first anchor uncached, so this is sized
+ * to hold the task-list updates of a long goal.
  */
-export const MAX_RETAINED_COUNTER_BYTES = 16384;
+export const MAX_RETAINED_COUNTER_BYTES = 24576;
 
-interface FreshLiveTails {
+export interface FreshLiveTails {
+	/** Goal policy. Retained; a change is appended and supersedes earlier blocks. */
 	state: string;
+	/** Task list snapshot. Retained; a change appends a new snapshot. */
 	counters?: string | undefined;
+	/** Request-only text for this request, never retained: usage, runs, notes cleared by omission. */
+	ephemeral?: string | undefined;
+	/** What the goal is about (usually the goal id). A different scope starts over. */
+	scope?: string | undefined;
 }
 
 interface RetainedTail {
@@ -68,14 +96,13 @@ interface RetainedTail {
 
 interface SessionRetention {
 	tails: RetainedTail[];
-	lastFresh: FreshLiveTails | undefined;
+	lastFresh: { state: string; counters: string | undefined; countersState: string | undefined; scope: string | undefined } | undefined;
+	/** The request-only text sent last, so the explicit-cache marker can skip it. */
+	lastEphemeral: string | undefined;
 	/** Digest of every base message at the last apply; any earlier rewrite resets. */
 	baseFingerprints: Array<string | null>;
 }
 
-function freshBlocks(fresh: FreshLiveTails): string[] {
-	return fresh.counters === undefined ? [fresh.state] : [fresh.state, fresh.counters];
-}
 
 /** Full-message digest, or null (never a match) when serialization fails. */
 function fingerprintMessage(message: unknown): string | null {
@@ -125,17 +152,17 @@ function makeLiveMessage(content: string): LiveMessage {
 export class LiveTailRetention {
 	private readonly sessions = new Map<string, SessionRetention>();
 
-	apply<T>(sessionKey: string, base: readonly T[], fresh: FreshLiveTails | null): { messages: Array<T | LiveMessage>; transientContents: string[] } {
+	apply<T>(sessionKey: string, base: readonly T[], fresh: FreshLiveTails | null): { messages: Array<T | LiveMessage>; transientContents: string[]; stableLength: number } {
 		if (fresh === null) {
 			this.sessions.delete(sessionKey);
-			return { messages: [...base], transientContents: [] };
+			return { messages: [...base], transientContents: [], stableLength: base.length };
 		}
 		// Hash each message once per request. Extensions may reuse and mutate
 		// message objects, so object identity cannot cache a digest across requests.
 		const fingerprints = base.map(fingerprintMessage);
 		let session = this.sessions.get(sessionKey);
 		if (!session) {
-			session = { tails: [], lastFresh: undefined, baseFingerprints: [] };
+			session = { tails: [], lastFresh: undefined, lastEphemeral: undefined, baseFingerprints: [] };
 			if (this.sessions.size >= MAX_TRACKED_SESSIONS) {
 				const oldest = this.sessions.keys().next();
 				if (!oldest.done) this.sessions.delete(oldest.value);
@@ -147,11 +174,13 @@ export class LiveTailRetention {
 			session!.lastFresh = undefined;
 			session!.baseFingerprints = [];
 		};
-		// A changed state block supersedes every previously sent tail: start
-		// fresh rather than leave a stale objective or a cancelled scheduling
-		// instruction lingering mid-history.
-		if (session.lastFresh !== undefined && (session.lastFresh.state !== fresh.state
-			|| (session.lastFresh.counters !== undefined && fresh.counters === undefined))) reset();
+		// A different goal (or a stale-checkpoint or unfocused state) shares
+		// nothing with the earlier blocks, so start over.
+		if (session.lastFresh !== undefined && session.lastFresh.scope !== fresh.scope) reset();
+		// A task list that disappears under the same policy it was sent with
+		// would leave the old list in history with nothing to supersede it. Under
+		// a different policy (paused, blocked) the new block takes over.
+		if (session.lastFresh?.counters !== undefined && fresh.counters === undefined && session.lastFresh.countersState === fresh.state) reset();
 		// Tails anchored while history was empty would linger at the head once
 		// real history arrives. Reset once so fresh tails anchor at the tail.
 		if (session.tails.length > 0 && session.baseFingerprints.length === 0 && base.length > 0) reset();
@@ -182,39 +211,59 @@ export class LiveTailRetention {
 			valid++;
 		}
 		if (valid < session.tails.length) reset();
-		const blocks = freshBlocks(fresh);
-		// Append only the suffix that differs from the last emitted tails, so
-		// unchanged content across repeats, tool loops, and history advances
-		// adds zero blocks while keeping the prefix literal.
-		const previous = session.lastFresh === undefined ? [] : freshBlocks(session.lastFresh);
-		let shared = 0;
-		while (shared < blocks.length && shared < previous.length && blocks[shared] === previous[shared]) shared++;
-		// Overflow is measured against what this request actually appends: an
-		// unchanged request adds nothing and must never trigger a reset.
-		if (session.tails.length + (blocks.length - shared) > MAX_RETAINED_LIVE_TAILS
-			|| session.tails.filter(tail => tail.kind === "goal-counters").reduce((n, tail) => n + Buffer.byteLength(tail.content), 0)
-				+ (fresh.counters === undefined || shared === blocks.length ? 0 : Buffer.byteLength(fresh.counters)) > MAX_RETAINED_COUNTER_BYTES) {
+		// Append only what differs from the last emitted blocks, so unchanged
+		// content across repeats, tool loops, and history advances adds zero
+		// blocks while keeping the prefix literal. Overflow is measured against
+		// what this request actually appends: an unchanged request adds nothing
+		// and must never trigger a reset.
+		const counterBytes = () => session!.tails.filter(tail => tail.kind === "goal-counters").reduce((n, tail) => n + Buffer.byteLength(tail.content), 0);
+		const changes = () => {
+			const last = session!.lastFresh;
+			return {
+				policy: last === undefined || last.state !== fresh.state,
+				counters: fresh.counters !== undefined && (last === undefined || last.counters !== fresh.counters),
+			};
+		};
+		let changed = changes();
+		const policyBlocks = session.tails.filter(tail => tail.kind === "goal-state").length;
+		if (session.tails.length + Number(changed.policy) + Number(changed.counters) > MAX_RETAINED_LIVE_TAILS
+			|| (changed.policy && policyBlocks >= MAX_RETAINED_POLICY_BLOCKS)
+			|| (changed.counters && counterBytes() + Buffer.byteLength(fresh.counters!) > MAX_RETAINED_COUNTER_BYTES)) {
 			reset();
-			shared = 0;
+			changed = changes();
 		}
 		const messages: Array<T | LiveMessage> = [...base];
 		for (let i = session.tails.length - 1; i >= 0; i--) {
 			const tail = session.tails[i]!;
 			messages.splice(tail.anchorIndex, 0, makeLiveMessage(tail.content));
 		}
-		for (let i = shared; i < blocks.length; i++) {
-			const content = blocks[i]!;
-			const kind: LiveTailKind = i === 0 ? "goal-state" : "goal-counters";
+		const anchorFingerprint = fingerprints.at(-1) ?? null;
+		const append = (content: string, kind: LiveTailKind) => {
 			messages.push(makeLiveMessage(content));
-			session.tails.push({ anchorIndex: base.length, anchorFingerprint: fingerprints.at(-1) ?? null, content, kind });
-		}
+			session!.tails.push({ anchorIndex: base.length, anchorFingerprint, content, kind });
+		};
+		if (changed.policy) append(session.tails.some(tail => tail.kind === "goal-state") ? `${POLICY_SUPERSEDED_NOTE}\n${fresh.state}` : fresh.state, "goal-state");
+		if (changed.counters) append(fresh.counters!, "goal-counters");
+		// Request-only text goes last and is never retained. While superseded
+		// policy blocks remain in history, say once per request which one counts.
+		const superseded = session.tails.filter(tail => tail.kind === "goal-state").length > 1;
+		const ephemeral = [superseded ? POLICY_RECENCY_NOTE : "", fresh.ephemeral ?? ""].filter(Boolean).join("\n");
+		const stableLength = messages.length;
+		if (ephemeral) messages.push(makeLiveMessage(ephemeral));
 		session.baseFingerprints = fingerprints;
-		session.lastFresh = { state: fresh.state, counters: fresh.counters };
-		return { messages, transientContents: [...new Set([...session.tails.map(tail => tail.content), ...blocks])] };
+		const previous = session.lastFresh;
+		session.lastFresh = fresh.counters === undefined
+			? { state: fresh.state, counters: previous?.counters, countersState: previous?.countersState, scope: fresh.scope }
+			: { state: fresh.state, counters: fresh.counters, countersState: fresh.state, scope: fresh.scope };
+		session.lastEphemeral = ephemeral || undefined;
+		return { messages, stableLength, transientContents: [...new Set([...session.tails.map(tail => tail.content), ...(ephemeral ? [ephemeral] : [])])] };
 	}
 
 	contents(sessionKey: string): string[] | undefined {
-		return this.sessions.get(sessionKey)?.tails.map(tail => tail.content);
+		const session = this.sessions.get(sessionKey);
+		if (!session) return undefined;
+		const tails = session.tails.map(tail => tail.content);
+		return session.lastEphemeral === undefined ? tails : [...tails, session.lastEphemeral];
 	}
 
 	clear(sessionKey?: string): void {

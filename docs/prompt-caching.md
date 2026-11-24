@@ -6,7 +6,7 @@ The request layout is:
 
 1. Host system prompt and tool schemas.
 2. Conversation history, with each goal checkpoint normalized to a tiny, stable trigger in its original position.
-3. Request-only goal policy plus compact counter/context snapshots, replayed at verified history anchors when safe. Current policy includes the objective, tasks, lifecycle rules, limits, scheduling state and applicable recovery/auditor reminders.
+3. Request-only goal text, replayed at verified history anchors when safe: a policy block (rules, objective, contract, limits, status), the task list as append-only snapshots, and a last block of text that exists only for this request (usage, run counts, scheduling waits, stall notes and one-shot reminders).
 
 Changing goal state never rewrites the system prompt or historical messages. The full goal-state message is not persisted into the session. Old checkpoints remain until Pi compacts history; retaining small markers avoids shifting the prefix on every continuation. Display-only auditor messages are consistently excluded, and tool calls stay adjacent to their results.
 
@@ -24,7 +24,25 @@ Validation includes consecutive request-prefix regressions; actual Anthropic, An
 
 Provider references: [Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) describes exact-prefix matching and explicit breakpoints; [DeepSeek context caching](https://api-docs.deepseek.com/guides/kv_cache/) describes its automatic prefix cache and usage counters.
 
-Active requests split policy from snapshots. The snapshot holds the task list, usage, runs and context, so task progress appends a new snapshot instead of resetting. Already-sent tails are replayed at verified history anchors so implicit-cache requests extend their previous prefix. Policy changes (objective, status, settings, including budget/run-limit removal), rewritten history and unsafe tool-result boundaries reset retention. At most 32 tails and 16 KiB of snapshot text are retained per session, across at most 16 session/model identities; no full-state tails are persisted. Unchanged requests add no tail. Older snapshots are historical, and current policy takes precedence over cache reuse.
+Active requests split goal text by how often it changes.
+
+- **Policy block**: rules, objective, contract, limits and status. When it changes (pause, resume, settings, budget or run limits), the new block is appended with a line saying it supersedes the earlier ones. Nothing before it moves, so the cached prefix survives. Every request that still has older policy blocks in history ends with a line saying only the latest one applies.
+- **Task list**: kept as snapshots. A change appends a new snapshot; an unchanged list adds nothing.
+- **Request-only text**: usage, run counts, scheduling waits, stall notes and one-shot reminders go at the very end of each request and are never kept. They clear by simply not being sent again, so nothing stale is left in history.
+
+Retention starts over (one uncached request) only when the goal's scope changes (a different goal, or a changed objective, verification contract or sisyphus mode), history is rewritten (compaction, session-tree moves), a tool-result boundary is unsafe, or a bound is hit: at most 12 policy blocks, 48 tails and 24 KiB of task-list snapshots per session, across at most 16 session/model identities. No full-state tails are persisted. Older snapshots are historical, and the current policy takes precedence over cache reuse.
+
+Measured with `experiments/prompt-cache/simulate.ts` (request construction only, not live provider hit rates; 128-token blocks, cached reads priced at a tenth). Uncached input tokens, 0.35.0 against this layout:
+
+| session | before | after |
+|---|---|---|
+| 60 steady turns | 191,209 | 147,210 |
+| typical (tasks, one pause, waits) | 227,991 | 143,428 |
+| three pauses | 191,736 | 131,402 |
+| heavy tool output, two pauses | 1,218,284 | 721,038 |
+| 150 turns | 348,024 | 230,301 |
+
+Big prefix breaks in these sessions went from one or two to none. The floor with no goal text at all is within about 10% of the new numbers, so little is left to gain from the goal text.
 
 Explicit-marker relocation skips all retained live text and tolerates Pi's trailing effort-only messages. Another extension's content-bearing suffix is left alone. Changing models/providers starts a separate retention identity. Unknown session identities do not retain history between requests.
 

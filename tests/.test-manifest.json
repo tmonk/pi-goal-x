@@ -15,6 +15,7 @@
     "./tests/goal-budget.test.ts",
     "./tests/goal-cache-correctness.test.ts",
     "./tests/goal-cache-regression.test.ts",
+    "./tests/goal-cache-simulation.test.ts",
     "./tests/goal-command-palette.test.ts",
     "./tests/goal-context-isolation.test.ts",
     "./tests/goal-context-usage.test.ts",

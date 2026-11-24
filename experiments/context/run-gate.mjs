@@ -82,10 +82,9 @@ for (const fixtureId of expectedFixtureIds) {
 	if (captured.extensionSystem) failures.push(`${fixtureId}: goal state must not enter the system prefix`);
 	const liveState = captured.messages.filter(m => m.customType === "pi-goal-live-context");
 	const active = liveState[0]?.content?.includes("[PI GOAL ACTIVE goalId=");
-	const expectedTails = active ? 2 : 1;
-	if (liveState.length && (liveState.length !== expectedTails || liveState.some((m, i) => captured.messages.at(-expectedTails + i) !== m))) failures.push(`${fixtureId}: current policy and optional counters must occur once at the tail`);
-	// The snapshot may start with the task list; the usage line always follows.
-	if (active && !liveState[1]?.content?.includes("Goal snapshot:")) failures.push(`${fixtureId}: counters snapshot missing`);
+	// Layout: policy block, optional task list, request-only snapshot last.
+	if (liveState.length && (liveState.length > 3 || liveState.some((m, i) => captured.messages.at(-liveState.length + i) !== m))) failures.push(`${fixtureId}: current policy, optional task list and request-only snapshot must occur once at the tail`);
+	if (active && !liveState.at(-1)?.content?.includes("Goal snapshot:")) failures.push(`${fixtureId}: request-only snapshot missing`);
 	const liveText = liveState[0]?.content ?? "";
 
 	// Required single-source markers on active-goal fixtures whose turn was

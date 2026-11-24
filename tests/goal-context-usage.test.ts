@@ -21,16 +21,16 @@ test("context display defaults off and explicit true preserves the existing coun
 	for (const usage of [undefined, {tokens: 0, contextWindow: 1000}, {tokens: 20, contextWindow: 1000}]) {
 		for (const maxAutonomousRuns of [undefined, 10]) for (const showAutonomousRuns of [false, true]) {
 			const enabled = goalPromptParts(goal, {showContextUsage: true, maxAutonomousRuns, showAutonomousRuns}, usage);
-			assert.match(enabled.counters, /Context snapshot:/);
+			assert.match(enabled.ephemeral, /Context snapshot:/);
 			for (const value of [undefined, false]) {
 				const hidden = goalPromptParts(goal, {showContextUsage: value, maxAutonomousRuns, showAutonomousRuns}, usage);
 				assert.equal(hidden.state, enabled.state);
-				assert.equal(hidden.counters, enabled.counters.replace(`\n${contextUsageLine(usage)}`, ""));
-				assert.doesNotMatch(hidden.counters, /Context snapshot:|\n\n/);
+				assert.equal(hidden.ephemeral, enabled.ephemeral.replace(`\n${contextUsageLine(usage)}`, ""));
+				assert.doesNotMatch(hidden.ephemeral, /Context snapshot:|\n\n/);
 			}
 		}
 	}
-	assert.doesNotMatch(goalPromptParts(goal).counters, /Context snapshot:/);
+	assert.doesNotMatch(goalPromptParts(goal).ephemeral, /Context snapshot:/);
 });
 
 for (const mode of ["ordinary", "audit", "wait"]) test(`registered context toggles preserve the prefix and pending ${mode} state`, async () => {
@@ -60,7 +60,7 @@ for (const mode of ["ordinary", "audit", "wait"]) test(`registered context toggl
 			mutateSettingsLayer({scope: "project", cwd: h.cwd, mutation: {op: "set", path: ["showContextUsage"], value}});
 			base.push({role: "assistant", content: "work", timestamp: base.length + 1});
 			const next = await capture();
-			assert.deepEqual(next.slice(0, previous.length), previous);
+			assert.deepEqual(next.slice(0, previous.length - 1), previous.slice(0, -1), "everything before the request-only usage line is a literal prefix");
 			assert.equal(next.at(-1).content.includes("Context snapshot:"), value);
 			assert.deepEqual(await capture(), next);
 			previous = next;
@@ -136,18 +136,21 @@ test("the registered settings menu edits and resets context display in both scop
 	}
 });
 
-test("changing and removing budget or run limits clears historical policy", () => {
+test("changing and removing budget or run limits appends a policy block that supersedes the old limits", () => {
 	const goal = createGoal({ objective: "Continue work", autoContinue: true, sisyphus: false });
 	goal.tokenBudget = 100;
 	goal.usage.tokensUsed = 20;
 	const retention = new LiveTailRetention();
 	const base = [{ role: "user", content: "start" }];
-	retention.apply("s", base, goalPromptParts(goal, { maxAutonomousRuns: 10 }));
+	const first = retention.apply("s", base, goalPromptParts(goal, { maxAutonomousRuns: 10 }));
 	delete goal.tokenBudget;
 	const parts = goalPromptParts(goal, {}, { tokens: 20, contextWindow: 1000 });
 	const out = retention.apply("s", [...base, { role: "assistant", content: "work" }], parts);
-	assert.equal(out.transientContents.length, 2);
-	assert.match(out.transientContents[0]!, /Limits: lifetime tokens=none; runs=unlimited/);
-	assert.doesNotMatch(out.transientContents.join("\n"), /tokens=100|runs=10/);
+	assert.deepEqual(out.messages.slice(0, first.stableLength), first.messages.slice(0, first.stableLength), "the earlier policy stays where it was, so the cached prefix survives");
+	const blocks = out.transientContents.filter(text => text.includes("Limits:"));
+	assert.equal(blocks.length, 2);
+	assert.match(blocks[1]!, /^\[This is the current goal policy\./);
+	assert.match(blocks[1]!, /Limits: lifetime tokens=none; runs=unlimited/);
+	assert.match(String((out.messages.at(-1) as { content: string }).content), /Only the latest goal policy block above applies/);
 	assert.match(modelBudgetLine({ tokenBudget: 1, usage: { tokensUsed: 2 } })!, /spending cap, not context capacity/);
 });
