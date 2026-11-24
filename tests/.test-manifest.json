@@ -63,6 +63,7 @@
     "./tests/goal-settings.test.ts",
     "./tests/goal-stale-continuation-golden.test.ts",
     "./tests/goal-status.test.ts",
+    "./tests/goal-storage-modules.test.ts",
     "./tests/goal-storage-root.test.ts",
     "./tests/goal-surface-baseline.test.ts",
     "./tests/goal-task-count.test.ts",

@@ -1,5 +1,5 @@
 import { safeIdPart } from "./goal-record.ts";
-import type { GoalLedgerEvent } from "./goal-ledger.ts";
+import type { GoalLedgerEvent } from "./goal-ledger-events.ts";
 
 type Check = (value: unknown) => boolean;
 
