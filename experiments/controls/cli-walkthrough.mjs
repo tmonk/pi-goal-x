@@ -1,6 +1,7 @@
 /** Human-style controls walkthrough in the installed Pi CLI, using an isolated local provider. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -282,7 +283,7 @@ async function foreignFocusWalkthrough(){
 }
 
 // Each case owns its Pi process, provider, sessions and both settings layers.
-// Two terminals at a time keeps the walkthrough bounded on two-core CI runners.
+// The cases mostly wait on the terminal, so run up to four at once.
 const available=[['controls-ui',controlsWalkthrough],['settings-paths',settingsPathsWalkthrough],['editor-controls',editorWalkthrough],['command-shortcuts',commandShortcutWalkthrough],['together',()=>pauseWalkthrough('together')],['goal-first',()=>pauseWalkthrough('goal-first')],['goal-first-finish',()=>pauseWalkthrough('goal-first',true)],['native-interrupt',nativeInterruptWalkthrough],['dialog-keys',dialogKeysWalkthrough],['answer-editing',answerEditingWalkthrough]];
 available.push(['foreign-focus',foreignFocusWalkthrough]);
 const requested=process.argv.slice(2);
@@ -290,7 +291,7 @@ assert.ok(requested.every(name=>available.some(([id])=>id===name)),'Unknown walk
 const cases=available.filter(([name])=>!requested.length||requested.includes(name));
 const results=new Array(cases.length);
 const started=Date.now();let next=0;
-await Promise.all(Array.from({length:2},async()=>{
+await Promise.all(Array.from({length:Math.min(4,os.availableParallelism())},async()=>{
  while(next<cases.length){
   const index=next++;
   try{results[index]=await cases[index][1]();}

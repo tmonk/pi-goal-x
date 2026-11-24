@@ -56,6 +56,10 @@ if(process.argv[1]===fileURLToPath(import.meta.url)) {
   {name:'cache',args:['--experimental-strip-types','experiments/context/cache-gate.mjs']},
   {name:'retention',args:['--experimental-strip-types','experiments/context/retention-check.mjs']},
  ];
- const results=await runChecks(checks,{directory});
+ // `--skip name` leaves a check out, so CI can run it in a job of its own.
+ const skip=process.argv.slice(2).filter((arg,i,args)=>args[i-1]==='--skip');
+ const unknown=skip.filter(name=>!checks.some(check=>check.name===name));
+ if(unknown.length) throw new Error(`Unknown checks: ${unknown.join(', ')}`);
+ const results=await runChecks(checks.filter(check=>!skip.includes(check.name)),{directory});
  process.exitCode=results.every(result=>result.passed)?0:1;
 }
