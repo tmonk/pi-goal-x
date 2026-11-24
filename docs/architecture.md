@@ -160,6 +160,8 @@ All files are in `extensions/`.
 | `settings/files.ts` | Global and project settings paths, cached layer reads |
 | `settings/resolve.ts` | Merge layers and environment into `GoalSettings`; effective report |
 | `settings/mutate.ts` | Locked read-modify-write of one layer |
+| `i18n/index.ts` | `t()` and `tn()`: English text at the call site is the key and the fallback |
+| `i18n/locales.ts` | Registered translation catalogs and `configureLocale` |
 
 ### Questionnaire and dialogs
 

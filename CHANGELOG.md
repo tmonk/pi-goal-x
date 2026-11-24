@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Text shown in the host UI (notices, dialogs, status line, dashboard, command descriptions, settings report) can now be translated. English stays the default and reads the same. Choose a language with the `locale` setting or `PI_GOAL_LOCALE`; see `specs/2026-11-24-localisation/TECH.md` for adding one. No translations are included yet. Credit to @xiaoliu10 for raising it (#119).
+
 ### Changed
 
 - The Escape-during-audit dialog and the task list confirmation share one dialog. Their footers no longer run past the border on a narrow terminal, and a host that cannot show the Escape dialog now keeps the goal working instead of failing.
