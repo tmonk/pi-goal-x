@@ -234,16 +234,14 @@ not claim completion unless real), and pending continuations are cancelled.
 ```text
 goal.ts (thin installer)
 ├─ goal-state.ts     GoalCore: state + service/runtime/accounting wiring
-├─ goal-tools.ts     registration composition only
 ├─ goal-core-tools.ts create/get/update handlers + blocked and agent-pause flows
 ├─ goal-completion.ts audit orchestration + completion commit
 ├─ goal-task-tools.ts task structure/status handlers + tree helpers
 ├─ goal-task-confirmation.ts task result boundary with neutral labels
-├─ goal-draft.ts     drafting prompt/confirmation text helpers
 ├─ goal-drafting.ts  guided drafting orchestration + durable draft sessions
 ├─ goal-commands.ts  fourteen-command palette
 ├─ goal-events.ts    13 lifecycle event handlers
-├─ goal-widget.ts    terminal keybindings + debug helpers
+├─ goal-terminal-input.ts terminal keybindings
 ├─ goal-format.ts    pure formatting/message helpers
 ├─ goal-service.ts   sole mutation boundary
 ├─ goal-runtime.ts   continuation/stale-checkpoint/turn-stop
@@ -253,9 +251,9 @@ goal.ts (thin installer)
 ├─ goal-ledger.ts    ledger reads
 ├─ goal-record.ts    record types/creation/migration
 ├─ goal-pool.ts      pool/focus helpers
-├─ prompts/          bounded five-tool steering prompts
-├─ storage/          goal file IO (reads + serializers)
-└─ widgets/          goal widget, notifications, escape dialog, task overlay
+├─ prompts/          bounded steering prompts + drafting prompt text
+├─ storage/          goal file IO, file lock, atomic writes
+└─ widgets/          goal widget, dashboard, notifications, dialogs
 ```
 
 ## 14. Key design trade-offs

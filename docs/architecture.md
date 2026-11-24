@@ -11,28 +11,27 @@ handlers from their dedicated modules:
 
 | Module | Responsibility |
 |---|---|
-| `goal.ts` | Thin installer: renderers + module registration only |
+| `goal.ts` | Thin installer: renderers, core, commands, tools (`registerCoreTools`, `registerTaskTools`, `registerDraftingTools`) and events |
 | `goal-state.ts` | `GoalCore`: all mutable state (pool, focus, audit/UI flags), `GoalService`/`GoalRuntime`/`GoalAccounting` wiring, persistence and reconciliation closures, widget status |
-| `goal-tools.ts` | Registration composition only: a 14-line installer that wires `registerCoreTools` + `registerTaskTools` |
 | `goal-core-tools.ts` | `create_goal` / `get_goal` / `update_goal` executors plus the blocked flow |
 | `goal-completion.ts` | The completion transaction: `runGoalCompletionFlow` (audit orchestration) + shared `commitGoalCompletion` |
 | `goal-task-tools.ts` | `set_goal_tasks` / `update_goal_task` executors plus flat parent-linked conversion, id-stable merge, `countTasks` |
 | `goal-task-confirmation.ts` | Task-only result boundary (`{decision}`, no auditor toggle) with neutral Confirm task list / Keep current tasks labels |
 | `goal-commands.ts` | The curated fourteen-command palette and its handlers |
 | `goal-events.ts` | Lifecycle and provider event handlers (`context`, `before_provider_request`, `turn_start`, `tool_call`, `tool_execution_end`, `turn_end`, `message_end`, `session_start`, `session_before_compact`, `session_compact`, `session_tree`, `before_agent_start`, `agent_end`, `agent_settled`, `session_shutdown`) |
-| `goal-widget.ts` | Terminal input keybindings (Esc pause / abort-audit, Ctrl+Shift+T overlay) and the hidden debug helpers |
+| `goal-terminal-input.ts` | Terminal input keybindings: Esc pause / abort-audit, dashboard expand and navigation, auditor toggle, command shortcuts |
 | `goal-format.ts` | Pure formatting/message-introspection helpers and renderers |
 | `goal-service.ts` | `GoalService` — the sole mutation boundary: ordered reconcile → id/focus-revision validation → clone-mutate → write/archive → ledger → memory commit → returned effects |
 | `goal-runtime.ts` | `GoalRuntime` — continuation scheduling, stale checkpoint state, turn-stop guard, one-shot steering reminders |
 | `goal-accounting.ts` | `GoalAccounting` — serialized idempotent token/time accounting, budget helpers |
 | `goal-record.ts` | Goal record types, creation, cloning, usage normalization, persisted-record migration |
 | `goal-pool.ts` | Open-goal pool helpers, focus resolution, list output, selector labels, unfocused summaries |
-| `goal-core.ts` | Compact display formatting, status labels, objective title cleanup |
+| `goal-display.ts` | Compact display formatting, status labels, objective title cleanup |
 | `goal-contract.ts` | Record/input parser: verification-contract extraction and objective prompt-safety |
 | `goal-policy.ts` | Lifecycle policy and validation (completion/blocked/resume/task gates), task-tree helpers, compaction policy, result reports |
 | `goal-auditor.ts` | Independent pi auditor agent prompt/config/decision parsing and completion audit execution |
 | `goal-ledger.ts` | Single-file goal ledger append/read/reconstruction (18 event types incl. `task_reopened`) |
-| `goal-draft.ts` | Drafting prompt/confirmation text helpers (goalDraftingPrompt, buildDraftConfirmationText, renderConfirmationTasks, GoalDraftingFocus) |
+| `prompts/goal-draft-prompts.ts` | Drafting prompt/confirmation text helpers (goalDraftingPrompt, buildDraftConfirmationText, renderConfirmationTasks, GoalDraftingFocus) |
 | `goal-drafting.ts` | Guided drafting orchestration: durable `pi-goal-draft` session entries (survive compaction/tree navigation), resume/replace/cancel protection, transient drafting profile, `goal_question`/`goal_questionnaire`/`propose_goal_draft` tools, per-draft auditor selection |
 | `goal-questionnaire.ts` | Structured question/answer UI (`runGoalQuestionnaire`, `showProposalDialog`) used by the drafting tools and confirmations |
 | `goal-tool-names.ts` | The five published tool-name constants, lifecycle-dependent profiles, work/progress classification, post-stop allowlist |
@@ -41,6 +40,9 @@ handlers from their dedicated modules:
 | `goal-task-index.ts` | Content-keyed task snapshots shared by prompts, tools, and dashboard models |
 | `prompts/goal-prompts.ts` | Bounded five-tool steering prompts (active-goal, continuation, stale-checkpoint, unfocused, budget-limited) |
 | `storage/goal-files.ts` | Goal path safety, serialization/parsing, active-file scanning, active-file writes, archive writes, prompt-body merge from disk |
+| `storage/file-lock.ts` | The one cross-process file lock (goal records and settings files) |
+| `storage/goal-lock.ts` | Per-goal lock path and fail-fast acquisition bounds |
+| `storage/atomic-rename.ts` | Atomic file replacement: `writeFileAtomicSync`/`writeFileAtomic` and the Windows-tolerant rename they use |
 | `widgets/goal-widget.ts` | Above-editor Goal Beacon component |
 | `widgets/goal-notifications.ts` | Widget-style notification text for goal lifecycle toasts |
 

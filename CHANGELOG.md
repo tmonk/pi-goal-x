@@ -4,6 +4,19 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Removed
+
+- The undocumented `PI_GOAL_DEBUG` keybindings, debug panel and mock audit.
+
+### Changed
+
+- Internal cleanup with no behavior change: remove unused code, share one file lock and one atomic writer across goal files, ledger checkpoints and settings, rename modules after what they hold, share one test host, enforce unused-symbol and tab-indentation checks, and move superseded design documents out of `docs/` and the npm package.
+
+### Fixed
+
+- Settings writes no longer leak a file descriptor when syncing the settings directory, and keep the file's permissions under a stricter umask.
+- The test runner starts on Windows (`--import` is passed as a file URL).
+
 ## [0.34.1] — 2026-10-27
 
 Includes #118.
