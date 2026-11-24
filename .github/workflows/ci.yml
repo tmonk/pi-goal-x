@@ -150,11 +150,9 @@ jobs:
             echo "The gate failed against the saved base result. Measuring the base again on this machine."
             measure_base
           else
-            # Both runs use their own directory, and the runner has cores to spare.
-            measure_base &
-            base=$!
+            # One after the other: timings taken while another run competes for the CPU are not reliable.
+            measure_base
             npm run bench:naf -- after naf
-            wait "$base"
           fi
           PI_GOAL_BENCH_REFERENCE="$GITHUB_WORKSPACE/.benchmark-base/experiments/bench/baseline-naf-after.json" npm run bench:gate:naf
           mkdir -p .bench-saved && cp experiments/bench/baseline-naf-after.json .bench-saved/
