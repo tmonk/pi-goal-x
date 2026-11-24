@@ -6,7 +6,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {stripVTControlCharacters} from 'node:util';
 
-export async function runChecks(checks, {directory, cwd=process.cwd(), concurrency=2, quiet=false}={}) {
+export async function runChecks(checks, {directory, cwd=process.cwd(), concurrency=4, quiet=false}={}) {
  mkdirSync(directory,{recursive:true});
  // Match npm run: CLI checks must find the checkout's Pi, even without a global install.
  const env={...process.env,PATH:`${path.join(cwd,'node_modules','.bin')}${path.delimiter}${process.env.PATH??''}`};
@@ -56,10 +56,13 @@ if(process.argv[1]===fileURLToPath(import.meta.url)) {
   {name:'cache',args:['--experimental-strip-types','experiments/context/cache-gate.mjs']},
   {name:'retention',args:['--experimental-strip-types','experiments/context/retention-check.mjs']},
  ];
- // `--skip name` leaves a check out, so CI can run it in a job of its own.
- const skip=process.argv.slice(2).filter((arg,i,args)=>args[i-1]==='--skip');
- const unknown=skip.filter(name=>!checks.some(check=>check.name===name));
+ // `--skip name` leaves a check out and `--only name` keeps just that one, so CI can
+ // run checks in jobs of their own. `--shard i/n` runs part of the test suite.
+ const option=name=>process.argv.slice(2).filter((arg,i,args)=>args[i-1]===name);
+ const skip=option('--skip'), only=option('--only'), [shard]=option('--shard');
+ const unknown=[...skip,...only].filter(name=>!checks.some(check=>check.name===name));
  if(unknown.length) throw new Error(`Unknown checks: ${unknown.join(', ')}`);
- const results=await runChecks(checks.filter(check=>!skip.includes(check.name)),{directory});
+ if(shard) checks.find(check=>check.name==='tests').args.push(`--shard=${shard}`);
+ const results=await runChecks(checks.filter(check=>!skip.includes(check.name)&&(!only.length||only.includes(check.name))),{directory});
  process.exitCode=results.every(result=>result.passed)?0:1;
 }

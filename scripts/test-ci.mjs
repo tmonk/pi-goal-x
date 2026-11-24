@@ -4,7 +4,7 @@ import {mkdtempSync,readFileSync,rmSync,mkdirSync,writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {needsRuntimeChecks,changedFiles} from './ci-scope.mjs';
+import {needsRuntimeChecks,needsBench,needsControls,changedFiles} from './ci-scope.mjs';
 import {runChecks} from './ci-checks.mjs';
 
 test('only known prose/assets skip runtime checks; uncertainty and mixed changes run them',()=>{
@@ -15,6 +15,20 @@ test('only known prose/assets skip runtime checks; uncertainty and mixed changes
  assert.equal(needsRuntimeChecks([]),true);
  assert.equal(changedFiles('0'.repeat(40)),undefined);
  assert.equal(changedFiles('not-a-sha'),undefined);
+});
+
+test('the benchmark gate is skipped only for tests and prose',()=>{
+ assert.equal(needsBench(['tests/goal-controls.test.ts','docs/controls.md']),false);
+ for(const file of ['extensions/goal.ts','experiments/bench/run-bench.mjs','tests/support/tui-test-utils.ts','tests/stubs/x.mjs','package-lock.json','.github/workflows/ci.yml','unknown.file']) assert.equal(needsBench(['tests/a.test.ts',file]),true,file);
+ assert.equal(needsBench([]),true);
+});
+
+test('the walkthrough is skipped only when nothing it loads changed',()=>{
+ assert.equal(needsControls(['tests/a.test.ts','experiments/bench/run-bench.mjs','scripts/ci-scope.mjs','docs/x.md']),false);
+ for(const file of ['extensions/goal.ts','experiments/controls/cli-walkthrough.mjs','experiments/continuation/terminal.mjs','scripts/pi-host.mjs','package-lock.json','.github/workflows/ci.yml','unknown.file']) assert.equal(needsControls(['tests/a.test.ts',file]),true,file);
+ assert.equal(needsBench(['experiments/controls/cli-walkthrough.mjs','scripts/test-ci.mjs']),false);
+ assert.equal(needsBench(['scripts/pi-host.mjs']),true);
+ assert.equal(needsControls([]),true);
 });
 
 test('change detection includes deleted runtime files and compares actual commit trees',()=>{
@@ -70,4 +84,14 @@ test('full-suite checks reject skipped tests and missing summaries',async()=>{
   assert.match(results[0].error,/skipped 2/);
   assert.match(results[1].error,/skip count/);
  }finally{rmSync(directory,{recursive:true,force:true});}
+});
+
+test('every controls walkthrough case runs in exactly one CI group',()=>{
+ const script=readFileSync(new URL('../experiments/controls/cli-walkthrough.mjs',import.meta.url),'utf8');
+ const listed=script.split('\n').filter(line=>line.startsWith('const available=')||line.startsWith('available.push(')).join('\n');
+ const cases=[...listed.matchAll(/\['([a-z-]+)',/g)].map(match=>match[1]);
+ const workflow=readFileSync(new URL('../.github/workflows/ci.yml',import.meta.url),'utf8');
+ const grouped=[...workflow.matchAll(/^ {10}- ([a-z -]+)$/gm)].flatMap(match=>match[1].split(' '));
+ assert.ok(cases.length>=10);
+ assert.deepEqual([...grouped].sort(),[...cases].sort());
 });

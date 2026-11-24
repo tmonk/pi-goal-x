@@ -44,7 +44,16 @@ async function boot(label,settings={},scenario='normal'){
   fs.appendFileSync(actions,JSON.stringify({...value,id})+'\n');
   await until(()=>fs.existsSync(path.join(cwd,'actions-ack'))&&Number(fs.readFileSync(path.join(cwd,'actions-ack'),'utf8'))>=id,`PTY delivered action ${id}`);
  };
- const send=async text=>{await action({text});await delay(160);};
+ // After a key, wait for the screen to react and go quiet instead of sleeping a fixed time.
+ // Keys that draw nothing fall back to the old 160ms pause.
+ const size=()=>fs.existsSync(raw)?fs.statSync(raw).size:0;
+ const settle=async before=>{
+  const deadline=Date.now()+160;
+  while(size()===before&&Date.now()<deadline)await delay(10);
+  let last=size(),quietSince=Date.now();
+  while(Date.now()-quietSince<40){await delay(10);const now=size();if(now!==last){last=now;quietSince=Date.now();}}
+ };
+ const send=async text=>{const before=size();await action({text});await settle(before);};
  const keys=async(...list)=>{for(const text of list)await send(text);};
  const resize=async(r,c)=>{rows=r;cols=c;await action({resize:[r,c]});await delay(200);};
  const settingsFile=path.join(cwd,'.pi/pi-goal-x-settings.json');
