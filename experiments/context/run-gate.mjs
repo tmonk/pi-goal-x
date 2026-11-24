@@ -67,7 +67,8 @@ for (const fixtureId of expectedFixtureIds) {
 	}
 
  const names = captured.tools.map(t => t.name);
- if (scenario.draftPrompt && JSON.stringify([...names].sort()) !== JSON.stringify(["goal_question", "goal_questionnaire", "propose_goal_draft"].sort())) failures.push(`${fixtureId}: incorrect drafting profile`);
+ // The tool list is the same in every phase; a draft only blocks goal tools at call time.
+ if (scenario.draftPrompt && !["goal_question", "goal_questionnaire", "propose_goal_draft", "create_goal", "get_goal", "update_goal"].every(n => names.includes(n))) failures.push(`${fixtureId}: drafting must keep the fixed tool list`);
  if (fixtureId === "tasks-disabled" && names.some(n => n === "set_goal_tasks" || n === "update_goal_task")) failures.push(`${fixtureId}: disabled tools advertised`);
  if (["completion-audit", "audit-rejection-and-rework", "oracle-consultation"].includes(fixtureId) && !(breakdown.childRequestChars > 0)) failures.push(`${fixtureId}: child request not captured`);
  if (fixtureId === "post-compaction-turn" && !serializedRequestText(captured).includes("POST-COMPACTION RESYNC")) failures.push(`${fixtureId}: compaction hook was not exercised`);
@@ -83,7 +84,8 @@ for (const fixtureId of expectedFixtureIds) {
 	const active = liveState[0]?.content?.includes("[PI GOAL ACTIVE goalId=");
 	const expectedTails = active ? 2 : 1;
 	if (liveState.length && (liveState.length !== expectedTails || liveState.some((m, i) => captured.messages.at(-expectedTails + i) !== m))) failures.push(`${fixtureId}: current policy and optional counters must occur once at the tail`);
-	if (active && !liveState[1]?.content?.startsWith("Goal snapshot:")) failures.push(`${fixtureId}: counters snapshot missing`);
+	// The snapshot may start with the task list; the usage line always follows.
+	if (active && !liveState[1]?.content?.includes("Goal snapshot:")) failures.push(`${fixtureId}: counters snapshot missing`);
 	const liveText = liveState[0]?.content ?? "";
 
 	// Required single-source markers on active-goal fixtures whose turn was

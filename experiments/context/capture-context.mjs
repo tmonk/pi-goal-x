@@ -38,7 +38,8 @@ function createCapture(cwd) {
  let activeTools = hostTools.map(t => t.name);
 
 	const mockPi = {
-		registerTool: (def) => tools.push(def),
+		// Pi activates every registered tool by default, in registration order.
+		registerTool: (def) => { tools.push(def); activeTools.push(def.name); },
 		registerCommand: () => {},
 		on: (event, handler) => {
 			const previous = handlers.get(event);
