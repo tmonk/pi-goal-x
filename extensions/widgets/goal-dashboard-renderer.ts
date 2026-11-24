@@ -15,6 +15,7 @@
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { t, tn } from "../i18n/index.ts";
 import { bindingKeys, commandHint, type GoalCommands, type GoalKeybinding } from "../goal-controls.ts";
 import type { GoalActivityItem } from "../goal-activity.ts";
 import { DEFAULT_GOAL_KEYBINDINGS, formatGoalKeybinding, type GoalDashboardKeybindings } from "../settings/schema.ts";
@@ -60,18 +61,18 @@ const STATUS_COLOR: Record<DashboardStatusCode, RenderColor> = {
 function statusLine(theme: Theme, model: GoalDashboardModel): string {
 	const color = STATUS_COLOR[model.status.code];
 	const usage = model.usage.footerBits ? ` [${model.usage.footerBits}]` : "";
-	const open = model.otherOpenGoals > 0 ? ` (+${model.otherOpenGoals} open)` : "";
-	return `${theme.fg(color, `goal: ${model.status.footerLabel}`)}${muted(theme, `${usage}${open}`)}`;
+	const open = model.otherOpenGoals > 0 ? ` ${t("(+{count} open)", { count: model.otherOpenGoals })}` : "";
+	return `${theme.fg(color, t("goal: {status}", { status: model.status.footerLabel }))}${muted(theme, `${usage}${open}`)}`;
 }
 
 /** The `↑ N more tasks` row above a task window. */
 function moreAboveText(hidden: number): string {
-	return `↑ ${hidden} more task${hidden === 1 ? "" : "s"}`;
+	return tn(hidden, { one: "↑ {n} more task", other: "↑ {n} more tasks" });
 }
 
 /** The `… +N more tasks` row below a task window. */
 function moreBelowText(hidden: number): string {
-	return `… +${hidden} more task${hidden === 1 ? "" : "s"}`;
+	return tn(hidden, { one: "… +{n} more task", other: "… +{n} more tasks" });
 }
 
 /** Task rows: pending amber ·, complete green ✓, skipped gray ~, current teal ▸. */
@@ -164,7 +165,7 @@ function titleHeader({ box, theme, model }: SectionContext<unknown>): string[] {
 
 function verificationSection({ box, model }: SectionContext<unknown>): string[] {
 	if (!model.goalVerificationContract) return [];
-	return [box.rule("Verification"), ...box.wrapped("", model.goalVerificationContract)];
+	return [box.rule(t("Verification")), ...box.wrapped("", model.goalVerificationContract)];
 }
 
 // ── compact dashboard ───────────────────────────────────────────────────────
@@ -185,7 +186,7 @@ interface CompactContext extends SectionContext<CompactOptions> {
 
 function compactStatus({ box, theme, model }: CompactContext): string[] {
 	if (model.status.code === "complete") {
-		return [box.line(`${success(theme, "✓")} ${success(theme, "All required work is complete.")}`)];
+		return [box.line(`${success(theme, "✓")} ${success(theme, t("All required work is complete."))}`)];
 	}
 	return [box.line(model.idlePacing ? fit(model.idlePacing, box.inner) : statusLine(theme, model))];
 }
@@ -198,7 +199,7 @@ function compactScheduling({ box, theme, model }: CompactContext): string[] {
 function compactBudget({ box, theme, model }: CompactContext): string[] {
 	if (!model.budget) return [];
 	const fuel: RenderColor = model.budget.used >= model.budget.total ? "error" : "mdHeading";
-	return [box.line(`${theme.fg(fuel, "⛽")} ${muted(theme, "Budget")} ${theme.fg(fuel, formatBudget(model.budget.used, model.budget.total))}`)];
+	return [box.line(`${theme.fg(fuel, "⛽")} ${muted(theme, t("Budget"))} ${theme.fg(fuel, formatBudget(model.budget.used, model.budget.total))}`)];
 }
 
 /**
@@ -213,12 +214,12 @@ function compactTasks(ctx: CompactContext): string[] {
 	const offset = opts.scrollOffset ?? anchoredScrollOffset(topLevel, taskRows);
 	const viewport = deriveTaskListViewport(topLevel.length, taskRows, offset);
 	const progress = model.taskProgress;
-	const label = progress ? `Tasks · ✓${progress.completed} done · ${progress.total - progress.completed} open` : "Tasks";
+	const label = progress ? t("Tasks · ✓{done} done · {open} open", { done: progress.completed, open: progress.total - progress.completed }) : t("Tasks");
 	let right = progress ? progressBar(theme, progress.percentage, spec.headerBarWidth) : "";
 	const current = model.currentTask;
 	if (current && current.totalSubtasks > 0 && mode !== "minimal") {
 		const subBar = progressBar(theme, current.subtaskPercentage, spec.subtaskBarWidth);
-		const subWord = mode === "narrow" ? "" : "Sub ";
+		const subWord = mode === "narrow" ? "" : `${t("Sub")} `;
 		right += `${muted(theme, ` · ${subWord}`)}${muted(theme, `${current.completedSubtasks}/${current.totalSubtasks}`)} ${subBar}`;
 	}
 	return [box.rule(label, right), ...renderCompactTaskRows(theme, topLevel, viewport, box.inner).map((row) => box.line(row))];
@@ -227,7 +228,7 @@ function compactTasks(ctx: CompactContext): string[] {
 /** All top-level tasks done and no current task. */
 function compactAllTasksDone({ box, theme, model }: CompactContext): string[] {
 	if (model.currentTask || !model.taskProgress || model.taskProgress.completed !== model.taskProgress.total || model.status.code === "complete") return [];
-	return [box.line(`${muted(theme, "Current")}  ${accent(theme, "All tasks complete")}`)];
+	return [box.line(`${muted(theme, t("Current"))}  ${accent(theme, t("All tasks complete"))}`)];
 }
 
 function compactCurrentTask({ box, theme, model, mode }: CompactContext): string[] {
@@ -236,14 +237,16 @@ function compactCurrentTask({ box, theme, model, mode }: CompactContext): string
 	if (mode === "minimal") {
 		return [box.line(`${accent(theme, "▸")} ${accent(theme, fit(current.title, box.inner - 3))}`)];
 	}
-	const titleBudget = box.inner - visibleWidth(`Current  ${current.id} · `);
-	return [box.line(`${muted(theme, "Current")}  ${accent(theme, current.id)} · ${accent(theme, fit(current.title, titleBudget))}`)];
+	const currentLabel = t("Current");
+	const titleBudget = box.inner - visibleWidth(`${currentLabel}  ${current.id} · `);
+	return [box.line(`${muted(theme, currentLabel)}  ${accent(theme, current.id)} · ${accent(theme, fit(current.title, titleBudget))}`)];
 }
 
 /** Goal-level verification: the contract squeezed onto one truncated line. */
 function compactVerification({ box, theme, model, mode }: CompactContext): string[] {
 	if (!model.goalVerificationContract || mode === "minimal") return [];
-	return [box.line(`${muted(theme, "Verify")}   ${fit(model.goalVerificationContract.replace(/\s+/g, " "), box.inner - 9)}`)];
+	const verify = t("Verify");
+	return [box.line(`${muted(theme, verify)}   ${fit(model.goalVerificationContract.replace(/\s+/g, " "), box.inner - visibleWidth(verify) - 3)}`)];
 }
 
 /** Why the goal is blocked or paused, and what to do about it. */
@@ -251,18 +254,21 @@ function compactStopDetails({ box, theme, model, spec }: CompactContext): string
 	const lines: string[] = [];
 	const { status } = model;
 	if (status.code === "blocked") {
-		if (status.reason) lines.push(box.line(`${theme.fg("error", "Blocker")}  ${muted(theme, fit(status.reason, box.inner - 10))}`));
-		if (spec.showPauseAction && status.suggestedAction) lines.push(box.line(`${muted(theme, "Action")}   ${fit(status.suggestedAction, box.inner - 9)}`));
+		const blocker = t("Blocker");
+		const action = t("Action");
+		if (status.reason) lines.push(box.line(`${theme.fg("error", blocker)}  ${muted(theme, fit(status.reason, box.inner - visibleWidth(blocker) - 2))}`));
+		if (spec.showPauseAction && status.suggestedAction) lines.push(box.line(`${muted(theme, action)}   ${fit(status.suggestedAction, box.inner - visibleWidth(action) - 3)}`));
 	}
 	if (status.code === "paused" && status.reason) {
-		lines.push(box.line(`${muted(theme, "Reason")}   ${fit(status.reason, box.inner - 9)}`));
+		const reason = t("Reason");
+		lines.push(box.line(`${muted(theme, reason)}   ${fit(status.reason, box.inner - visibleWidth(reason) - 3)}`));
 	}
 	return lines;
 }
 
 function compactFilePath({ box, theme, model, spec }: CompactContext): string[] {
 	if (!spec.showPath || !model.filePath) return [];
-	return [box.line(dim(theme, `File     ${model.filePath}`))];
+	return [box.line(dim(theme, `${t("File")}     ${model.filePath}`))];
 }
 
 /**
@@ -278,14 +284,14 @@ function compactFooter({ box, theme, model, mode, topLevel, taskRows, opts }: Co
 	const defaults = DEFAULT_GOAL_KEYBINDINGS.dashboard;
 	const usesDefaultScrollKeys = keybindings.scrollUp === defaults.scrollUp && keybindings.scrollDown === defaults.scrollDown;
 	const scrollHint = usesDefaultScrollKeys ? (mode === "minimal" ? "↑↓" : "Ctrl+Shift+↑↓") : scrollShortcut;
-	const expandHint = !bindingKeys(keybindings.toggleExpand).length ? "" : roomy ? `${toggleShortcut}: expand tasks` : `${toggleShortcut}: expand`;
+	const expandHint = !bindingKeys(keybindings.toggleExpand).length ? "" : roomy ? t("{key}: expand tasks", { key: toggleShortcut }) : t("{key}: expand", { key: toggleShortcut });
 	const listOverflows = topLevel.length > taskRows;
 	const footerHint = opts.footerHint
-		?? (listOverflows ? (roomy ? `${toggleShortcut}: expand · ${scrollHint}: scroll` : `${scrollHint}: scroll`) : expandHint);
+		?? (listOverflows ? (roomy ? t("{key}: expand · {scroll}: scroll", { key: toggleShortcut, scroll: scrollHint }) : t("{scroll}: scroll", { scroll: scrollHint })) : expandHint);
 	const auditorDot = model.auditorEnabled ? success(theme, "●") : muted(theme, "●");
 	const auditorKey = opts.auditorKey ?? "ctrl+shift+a";
 	const right = roomy && bindingKeys(auditorKey).length
-		? `${frame(theme, `${formatGoalKeybinding(auditorKey)}: toggle auditor`)} ${auditorDot}`
+		? `${frame(theme, t("{key}: toggle auditor", { key: formatGoalKeybinding(auditorKey) }))} ${auditorDot}`
 		: auditorDot;
 	return [box.footer(footerHint, right)];
 }
@@ -337,9 +343,9 @@ type ExpandedContext = SectionContext<ExpandedOptions>;
 function expandedSummary({ box, theme, model, spec }: ExpandedContext): string[] {
 	const lines = [box.line(statusLine(theme, model))];
 	for (const row of model.scheduling ?? []) lines.push(box.line(muted(theme, fit(row, box.inner))));
-	if (spec.showPath && model.filePath) lines.push(box.line(dim(theme, `File: ${model.filePath}`)));
+	if (spec.showPath && model.filePath) lines.push(box.line(dim(theme, t("File: {path}", { path: model.filePath }))));
 	if (model.budget) {
-		lines.push(box.line(`${theme.fg("mdHeading", "⛽")} ${muted(theme, `Budget ${formatBudget(model.budget.used, model.budget.total)}`)}`));
+		lines.push(box.line(`${theme.fg("mdHeading", "⛽")} ${muted(theme, t("Budget {value}", { value: formatBudget(model.budget.used, model.budget.total) }))}`));
 	}
 	return lines;
 }
@@ -349,8 +355,8 @@ function expandedProgress({ box, theme, model, spec }: ExpandedContext): string[
 	if (!progress) return [];
 	const bar = progressBar(theme, progress.percentage, Math.max(10, spec.barWidth + 8));
 	return [
-		box.rule("Progress"),
-		box.line(`${bar} ${muted(theme, `${progress.completed}/${progress.total} tasks · ${progress.percentage}%`)}`),
+		box.rule(t("Progress")),
+		box.line(`${bar} ${muted(theme, t("{done}/{total} tasks · {percent}%", { done: progress.completed, total: progress.total, percent: progress.percentage }))}`),
 	];
 }
 
@@ -365,7 +371,7 @@ function expandedTasks({ box, theme, model, opts }: ExpandedContext): string[] {
 	const rows = opts.rows ?? totalRows;
 	const offset = opts.scrollOffset ?? anchoredScrollOffset(model.taskTree, rows);
 	const viewport = deriveTaskListViewport(totalRows, rows, offset);
-	const lines = [box.rule("Tasks")];
+	const lines = [box.rule(t("Tasks"))];
 	if (viewport.hiddenAbove > 0) lines.push(box.line(dim(theme, moreAboveText(viewport.hiddenAbove))));
 	for (const node of model.taskTree.slice(viewport.offset, viewport.offset + viewport.rows)) {
 		lines.push(box.line(renderTaskRow(theme, node, Math.min(node.depth, 6), box.inner)));
@@ -384,7 +390,7 @@ function expandedActivity({ model, theme, box }: ExpandedContext): string[] {
 
 function expandedFooter({ box, opts }: ExpandedContext): string[] {
 	const closeKeys = [opts.keybindings?.collapse ?? "escape", opts.keybindings?.toggleExpand ?? DEFAULT_GOAL_KEYBINDINGS.dashboard.toggleExpand].flatMap(bindingKeys);
-	return [box.footer(closeKeys.length ? `${closeKeys.map(formatGoalKeybinding).join("/")}: collapse` : "")];
+	return [box.footer(closeKeys.length ? t("{keys}: collapse", { keys: closeKeys.map(formatGoalKeybinding).join("/") }) : "")];
 }
 
 const EXPANDED_SECTIONS: Array<Section<ExpandedContext>> = [
@@ -430,23 +436,23 @@ export function renderCurrentTaskBlock(
 	const box = new Box(theme, width);
 	const current = model.currentTask!;
 	const lines = [
-		box.rule("Current task"),
+		box.rule(t("Current task")),
 		box.line(`${accent(theme, current.id)} · ${fit(current.title, box.inner - visibleWidth(`${current.id} · `))}`),
 	];
 	if (current.totalSubtasks > 0) {
 		const bar = progressBar(theme, current.subtaskPercentage, Math.max(8, barWidth));
-		lines.push(box.line(`${muted(theme, "Subtasks")} ${bar} ${current.completedSubtasks}/${current.totalSubtasks} · ${current.subtaskPercentage}%`));
+		lines.push(box.line(`${muted(theme, t("Subtasks"))} ${bar} ${current.completedSubtasks}/${current.totalSubtasks} · ${current.subtaskPercentage}%`));
 	}
-	if (current.verificationContract) lines.push(...box.wrapped("Contract", current.verificationContract));
-	if (current.evidence) lines.push(...box.wrapped("Evidence", current.evidence));
-	if (current.inferred) lines.push(box.line(dim(theme, "Inferred from the first pending task — no persisted current task.")));
+	if (current.verificationContract) lines.push(...box.wrapped(t("Contract"), current.verificationContract));
+	if (current.evidence) lines.push(...box.wrapped(t("Evidence"), current.evidence));
+	if (current.inferred) lines.push(box.line(dim(theme, t("Inferred from the first pending task — no persisted current task."))));
 	return lines;
 }
 
 /** The recent-activity block, shared by the expanded dashboard and /goal-status. */
 export function renderActivityBlock(items: GoalActivityItem[], theme: Theme, width: number): string[] {
 	const box = new Box(theme, width);
-	const lines = [box.rule("Recent activity")];
+	const lines = [box.rule(t("Recent activity"))];
 	for (const item of items) {
 		const marker = activityMarker(item);
 		lines.push(box.line(`${theme.fg(marker.color, marker.symbol)} ${fit(item.text, box.inner - 4)}`));
@@ -462,11 +468,11 @@ export function renderActivityBlock(items: GoalActivityItem[], theme: Theme, wid
  */
 export function renderUnfocusedDashboard(openGoalCount: number, theme: Theme, width: number, commands?: GoalCommands): string[] {
 	const box = new Box(theme, width);
-	const goals = openGoalCount === 1 ? "1 open goal is available." : `${openGoalCount} open goals are available.`;
+	const goals = tn(openGoalCount, { one: "{n} open goal is available.", other: "{n} open goals are available." });
 	return [
-		box.header(frame(theme, "pi-goal-x ─ Goal focus required")),
+		box.header(frame(theme, `pi-goal-x ─ ${t("Goal focus required")}`)),
 		box.line(muted(theme, goals)),
-		box.line(muted(theme, `Run ${commandHint("goal-focus", commands)} to choose the goal for this session.`)),
+		box.line(muted(theme, t("Run {command} to choose the goal for this session.", { command: commandHint("goal-focus", commands) }))),
 		box.footer(""),
 	];
 }

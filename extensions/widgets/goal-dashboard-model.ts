@@ -12,7 +12,8 @@ import { taskIndex } from "../goal-task-index.ts";
  * the durable ledger.
  */
 
-import { displayObjectiveTitle, formatDuration, statusLabel } from "../goal-display.ts";
+import { displayObjectiveTitle, displayStatusLabel, formatDuration } from "../goal-display.ts";
+import { t } from "../i18n/index.ts";
 import { formatCompactTokens, percentageOf } from "./dashboard-format.ts";
 import type { GoalLedgerEvent } from "../goal-ledger.ts";
 import type { GoalRecord, GoalTask } from "../goal-record.ts";
@@ -141,25 +142,25 @@ export function deriveGoalStatus(goal: GoalRecord): DashboardGoalStatus {
 	switch (goal.status) {
 		case "active":
 			return goal.autoContinue
-				? { code: "running", label: "In progress", footerLabel: statusLabel(goal) }
-				: { code: "idle", label: "Idle", footerLabel: statusLabel(goal) };
+				? { code: "running", label: t("In progress"), footerLabel: displayStatusLabel(goal) }
+				: { code: "idle", label: t("Idle"), footerLabel: displayStatusLabel(goal) };
 		case "paused": {
-			const who = goal.stopReason === "agent" ? " (agent)" : goal.stopReason === "user" ? " (user)" : "";
-			const status: DashboardGoalStatus = { code: "paused", label: `Paused${who}`, footerLabel: statusLabel(goal) };
+			const label = goal.stopReason === "agent" ? t("Paused (agent)") : goal.stopReason === "user" ? t("Paused (user)") : t("Paused");
+			const status: DashboardGoalStatus = { code: "paused", label, footerLabel: displayStatusLabel(goal) };
 			if (goal.pauseReason) status.reason = goal.pauseReason;
 			if (goal.pauseSuggestedAction) status.suggestedAction = goal.pauseSuggestedAction;
 			return status;
 		}
 		case "blocked": {
-			const status: DashboardGoalStatus = { code: "blocked", label: "Blocked", footerLabel: statusLabel(goal) };
+			const status: DashboardGoalStatus = { code: "blocked", label: t("Blocked"), footerLabel: displayStatusLabel(goal) };
 			if (goal.pauseReason) status.reason = goal.pauseReason;
 			if (goal.pauseSuggestedAction) status.suggestedAction = goal.pauseSuggestedAction;
 			return status;
 		}
 		case "budget_limited":
-			return { code: "budget_limited", label: "Budget limited", footerLabel: statusLabel(goal) };
+			return { code: "budget_limited", label: t("Budget limited"), footerLabel: displayStatusLabel(goal) };
 		case "complete":
-			return { code: "complete", label: "Complete", footerLabel: statusLabel(goal) };
+			return { code: "complete", label: t("Complete"), footerLabel: displayStatusLabel(goal) };
 	}
 }
 
@@ -350,8 +351,8 @@ export function deriveGoalDashboardModel(
 	const { focused, otherOpenGoals, ledgerEvents = [], activityLimit, tasksDisabled = false } = options;
 
 	const status = deriveGoalStatus(goal);
-	if (goal.status === "active" && goal.scheduler?.phase === "interrupted") { status.code = "idle"; status.label = "Waiting for you"; status.footerLabel = "waiting for you"; }
-	if (goal.status === "active" && goal.scheduler?.phase === "waiting") { status.code = "idle"; status.label = "Waiting"; status.footerLabel = "waiting"; }
+	if (goal.status === "active" && goal.scheduler?.phase === "interrupted") { status.code = "idle"; status.label = t("Waiting for you"); status.footerLabel = t("waiting for you"); }
+	if (goal.status === "active" && goal.scheduler?.phase === "waiting") { status.code = "idle"; status.label = t("Waiting"); status.footerLabel = t("waiting"); }
 	// §9.5: with tasks disabled, omit task sections entirely (status,
 	// verification, usage, path, and focus remain).
 	const {taskProgress, taskTree, currentTask, taskTitles} = taskPresentation(goal, tasksDisabled);
