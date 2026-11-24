@@ -18,7 +18,7 @@ import { performance } from "node:perf_hooks";
 
 import { beginFsCount, endFsCount, state } from "./guard-state.mjs";
 import { readActiveGoalPool } from "../../extensions/storage/goal-files.ts";
-import { loadGoalSettings } from "../../extensions/goal-settings.ts";
+import { loadGoalSettings } from "../../extensions/settings/resolve.ts";
 import { readGoalLedger, loadLedgerState } from "../../extensions/goal-ledger.ts";
 import { createGoalCore } from "../../extensions/goal-state.ts";
 

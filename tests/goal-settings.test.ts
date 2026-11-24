@@ -12,14 +12,9 @@ import {
 	normalizeTaskList,
 	type GoalRecord,
 } from "../extensions/goal-record.ts";
-import {
-	goalSettingsPath,
-	parseSettingsLayer,
-	loadGoalSettingsFileConfig,
-	loadGoalSettings,
-	effectiveSettingsReport,
-	formatGoalKeybinding,
-} from "../extensions/goal-settings.ts";
+import { parseSettingsLayer, formatGoalKeybinding } from "../extensions/settings/schema.ts";
+import { goalSettingsPath, loadGoalSettingsFileConfig } from "../extensions/settings/files.ts";
+import { loadGoalSettings, effectiveSettingsReport } from "../extensions/settings/resolve.ts";
 import { writeProjectSettings, parseSettings } from "./support/settings.ts";
 
 // ── parseSettings ───────────────────────────────────────────────────

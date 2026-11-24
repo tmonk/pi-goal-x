@@ -8,7 +8,7 @@
  * thinking-level row offers Pi's seven levels or `(default)`.
  */
 
-import { GOAL_THINKING_LEVELS } from "./goal-settings.ts";
+import { GOAL_THINKING_LEVELS } from "./settings/schema.ts";
 
 type AuditorModelSummary = { provider: string; id: string; name?: string };
 

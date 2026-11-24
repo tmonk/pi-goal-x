@@ -13,7 +13,7 @@ import { modelBudgetLine } from "./goal-accounting.ts";
 import { buildGoalCreatedReport, buildTaskSummary, validateGoalAgentPause, validateGoalBlock } from "./goal-policy.ts";
 import { buildUnfocusedOpenGoalsSummary, otherOpenGoalCount } from "./goal-pool.ts";
 import { readGoalLedger, goalOracleState } from "./goal-ledger.ts";
-import { loadGoalSettings } from "./goal-settings.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 import { buildGoalHistoryBlock, buildGoalTaskDetailBlock } from "./goal-format.ts";
 import { sisyphusStepProgress } from "./goal-policy.ts";
 import { deriveTasksFromObjective } from "./goal-task-derive.ts";
@@ -29,7 +29,8 @@ import {
 	renderOracleAdviceReminder,
 	runBlockerOracle,
 } from "./goal-oracle.ts";
-import { loadSettingsSnapshot, type ResolvedGoalOracleSettings } from "./goal-settings.ts";
+import { type ResolvedGoalOracleSettings } from "./settings/schema.ts";
+import { loadSettingsSnapshot } from "./settings/resolve.ts";
 
 /** Current + first-pending (excluding current) task pointers for concise get_goal. */
 function conciseTaskPointers(goal: GoalRecord): { findCurrentTask?: GoalTask; firstPendingTask?: GoalTask } {

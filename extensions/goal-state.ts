@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { goalStorageContext } from "./storage/goal-root.ts";
 import { type AgentToolResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { FOCUS_ENTRY, STATE_ENTRY, GOAL_EVENT_ENTRY, goalDetails } from "./goal-format.ts";
-import { loadGoalSettings } from "./goal-settings.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
 	applicableGoalTools,

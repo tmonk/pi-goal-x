@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { focusedFixture, beginFsCount, endFsCount } from './bench-common.mjs';
-import { loadGoalSettings } from '../../extensions/goal-settings.ts';
+import { loadGoalSettings } from '../../extensions/settings/resolve.ts';
 import { goalPrompt } from '../../extensions/prompts/goal-prompts.ts';
 import { taskIndex } from '../../extensions/goal-task-index.ts';
 import { goalDetailPage } from '../../extensions/goal-detail.ts';

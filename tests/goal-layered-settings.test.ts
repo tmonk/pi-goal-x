@@ -13,18 +13,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import {
-	resolveAgentDir,
-	goalGlobalSettingsPath,
-	goalSettingsPath,
-	loadGoalSettings,
-	loadSettingsSnapshot,
-	readSettingsLayer,
-	mutateSettingsLayer,
-	SettingsMutationError,
-	invalidateGoalSettingsCache,
-	type SettingsScope,
-} from "../extensions/goal-settings.ts";
+import { type SettingsScope } from "../extensions/settings/schema.ts";
+import { resolveAgentDir, goalGlobalSettingsPath, goalSettingsPath, readSettingsLayer, invalidateGoalSettingsCache } from "../extensions/settings/files.ts";
+import { loadGoalSettings, loadSettingsSnapshot } from "../extensions/settings/resolve.ts";
+import { mutateSettingsLayer, SettingsMutationError } from "../extensions/settings/mutate.ts";
 
 function withTempDir(fn: (dir: string) => void): void {
 	const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "goal-layered-")));

@@ -20,7 +20,7 @@ import goalExtension from "../../extensions/goal.ts";
 import { createGoal, goalFocusDetails } from "../../extensions/goal-record.ts";
 import { writeActiveGoalFile } from "../../extensions/storage/goal-files.ts";
 import { appendGoalEvent, goalLedgerPath, readGoalLedger } from "../../extensions/goal-ledger.ts";
-import { loadGoalSettings } from "../../extensions/goal-settings.ts";
+import { loadGoalSettings } from "../../extensions/settings/resolve.ts";
 import { acquireGoalLock } from "../../extensions/storage/goal-lock.ts";
 import { readActiveGoalPool } from "../../extensions/storage/goal-files.ts";
 import { createGoalCore } from "../../extensions/goal-state.ts";
