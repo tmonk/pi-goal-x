@@ -31,12 +31,16 @@ jobs:
       - if: steps.setup.outputs.run == 'true'
         name: Publication workflow tests
         run: node --test scripts/test-publish-workflow.mjs scripts/test-ci.mjs
+      # The type check, lint and audit do not depend on each other, so they run together.
       - if: steps.setup.outputs.run == 'true'
-        run: npm run check
-      - if: steps.setup.outputs.run == 'true'
-        run: npm run lint
-      - if: steps.setup.outputs.run == 'true'
-        run: npm audit --omit=dev
+        name: Type check, lint and dependency audit
+        run: |
+          npm run check & check=$!
+          npm run lint & lint=$!
+          npm audit --omit=dev & audit=$!
+          status=0
+          for job in $check $lint $audit; do wait "$job" || status=1; done
+          exit $status
 
   # The unit, integration and end-to-end suite, in four parts.
   tests:
