@@ -92,6 +92,7 @@ export type GoalEventsCore = GoalContextCore &
 import { filterGoalSessionContext, isStaleExtensionContextError } from "./goal-session-safety.ts";
 import { registerGoalContext } from "./goal-context.ts";
 import type { GoalMutationOutcome } from "./goal-service.ts";
+import { t } from "./i18n/index.ts";
 
 /** Normalize checkpoints independently: deleting old markers shifts the cached prefix. */
 export function compactGoalCheckpointContext(
@@ -140,13 +141,13 @@ function archiveCompletedGoal(core: GoalEventsCore, ctx: ExtensionContext, compl
 		// transaction still writes goal_completed. Best-effort: the archive
 		// itself already succeeded.
 		appendBestEffort(core, ctx, { type: "goal_archived", goalId: completedGoal.id, archivePath: path, at: nowIso() });
-		ctx.ui.notify(path ? `Goal archived.\nFile: ${path}` : "Goal archived.", "info");
+		ctx.ui.notify(path ? t("Goal archived.\nFile: {path}", { path }) : t("Goal archived."), "info");
 		return;
 	}
 	// Never claim success: the complete record stays at its active path,
 	// and we log a diagnostic event when we can.
 	const remainingPath = completedGoal.activePath ?? "(unknown)";
-	ctx.ui.notify(`Failed to archive completed goal: ${archiveResult.message}. The complete record remains at ${remainingPath}.`, "warning");
+	ctx.ui.notify(t("Failed to archive completed goal: {message}. The complete record remains at {path}.", { message: archiveResult.message ?? "", path: remainingPath }), "warning");
 	appendBestEffort(core, ctx, { type: "goal_archive_failed", goalId: completedGoal.id, message: archiveResult.message ?? "archive write failed", at: nowIso() });
 }
 
@@ -402,7 +403,7 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 			await core.focus.load(ctx);
 			if (session !== owner) return;
 			if (ctx.hasUI) ctx.ui.setStatus("goal-interrupt", undefined);
-			if (core.controlWarnings?.length) ctx.ui.notify(`Goal command settings were not applied: ${core.controlWarnings.join(" ")} Open /goal-settings controls to correct them.`, "warning");
+			if (core.controlWarnings?.length) ctx.ui.notify(t("Goal command settings were not applied: {warnings} Open /goal-settings controls to correct them.", { warnings: core.controlWarnings.join(" ") }), "warning");
 			rehydrateDraft(core, ctx);
 			core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
 			syncTerminalInputPause(core, ctx);
@@ -416,7 +417,7 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 				const byLabel = new Map(labels.map((label, index) => [label, open[index]?.id]));
 				core.state.enterModal();
 				try {
-					const selected = await ctx.ui.select("Focus open goal", labels);
+					const selected = await ctx.ui.select(t("Focus open goal"), labels);
 					const selectedId = selected ? byLabel.get(selected) : undefined;
 					if (selectedId && session === owner) {
 						core.focus.setFocus(selectedId, ctx, "selected");
@@ -430,7 +431,7 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 			// Codex behavior: prompt before reactivating a paused goal on resume.
 			if (askOnResume && core.state.goal?.status === "paused") {
 				const current = core.state.goal;
-				const shouldResume = await ctx.ui.confirm("Resume paused goal?", `Goal: ${current.objective}`);
+				const shouldResume = await ctx.ui.confirm(t("Resume paused goal?"), t("Goal: {objective}", { objective: current.objective }));
 				if (shouldResume && session === owner) core.scheduler.resume(ctx);
 			}
 			if (session !== owner) return;
@@ -466,7 +467,9 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		if (event.aborted || !core.state.goal) return;
 		const detail = event.errorMessage ? `: ${event.errorMessage}` : "";
 		ctx.ui.notify(
-			`Goal context compaction failed (${event.reason})${detail}. The goal stays active; retry with /compact or keep working.`,
+			detail
+				? t("Goal context compaction failed ({reason}): {error}. The goal stays active; retry with /compact or keep working.", { reason: event.reason, error: event.errorMessage ?? "" })
+				: t("Goal context compaction failed ({reason}). The goal stays active; retry with /compact or keep working.", { reason: event.reason }),
 			"warning",
 		);
 	});
@@ -617,7 +620,7 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		if (plan) {
 			const cap = plan.maxAttempts > 0 ? `/${plan.maxAttempts}` : ", unbounded";
 			ctx.ui.notify(
-				`Provider network error. Retrying the goal in ${Math.round(plan.delayMs / 1000)}s (recovery ${plan.attempt}${cap}).`,
+				t("Provider network error. Retrying the goal in {seconds}s (recovery {attempt}{cap}).", { seconds: Math.round(plan.delayMs / 1000), attempt: plan.attempt, cap }),
 				"warning",
 			);
 			return;
