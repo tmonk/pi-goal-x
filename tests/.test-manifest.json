@@ -84,6 +84,7 @@
     "./tests/goal-update-objective.test.ts",
     "./tests/goal-widget-lifetime.test.ts",
     "./tests/goal-widget.test.ts",
+    "./tests/i18n-dialogs.test.ts",
     "./tests/i18n-notices.test.ts",
     "./tests/i18n-usage.test.ts",
     "./tests/i18n-widgets.test.ts",

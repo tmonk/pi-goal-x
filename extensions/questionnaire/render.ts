@@ -5,6 +5,7 @@ import { truncateToWidth, wrapTextWithAnsi } from "../widgets/text-cache.ts";
 import { renderContextLines } from "./context.ts";
 import { allAnswered, currentQuestion, displayOptions, onSubmitTab, type QuestionnaireState } from "./state.ts";
 import type { DialogControls } from "./types.ts";
+import { t } from "../i18n/index.ts";
 
 /**
  * Where the last render put things. It is deliberately kept between renders:
@@ -78,7 +79,7 @@ export function renderQuestionnaire(args: RenderArgs): string[] {
 			tabs.push(isActive ? theme.bg("selectedBg", theme.fg("text", label)) : theme.fg(isAnswered ? "success" : "muted", label));
 			tabs.push(" ");
 		}
-		const submitText = " ✓ Submit ";
+		const submitText = ` ✓ ${t("Submit")} `;
 		tabs.push(onSubmitTab(state) ? theme.bg("selectedBg", theme.fg("text", submitText)) : theme.fg(allAnswered(state) ? "success" : "dim", submitText));
 		tabs.push(" →");
 		add(` ${tabs.join("")}`);
@@ -108,20 +109,20 @@ export function renderQuestionnaire(args: RenderArgs): string[] {
 			renderOptions();
 			lines.push("");
 		}
-		add(theme.fg("muted", " Your answer:"));
+		add(theme.fg("muted", ` ${t("Your answer:")}`));
 		for (const line of editor.render(safeWidth - 2)) add(` ${line}`);
 		lines.push("");
-		add(theme.fg("dim", ` Enter to submit • ${controls.editorCancelHint()} to cancel`));
+		add(theme.fg("dim", ` ${t("Enter to submit • {cancelKey} to cancel", { cancelKey: controls.editorCancelHint() })}`));
 	} else if (onSubmitTab(state)) {
-		add(theme.fg("accent", theme.bold(" Ready to submit")));
+		add(theme.fg("accent", theme.bold(` ${t("Ready to submit")}`)));
 		protectedCount = lines.length;
 		lines.push("");
 		for (const question of questions) {
 			const answer = answers.get(question.id);
-			add(`${theme.fg("muted", ` ${question.id}: `)}${answer ? theme.fg("text", `${answer.wasCustom ? "(wrote) " : ""}${answer.answer}`) : theme.fg("warning", "(unanswered)")}`);
+			add(`${theme.fg("muted", ` ${question.id}: `)}${answer ? theme.fg("text", `${answer.wasCustom ? `${t("(wrote)")} ` : ""}${answer.answer}`) : theme.fg("warning", t("(unanswered)"))}`);
 		}
 		lines.push("");
-		add(allAnswered(state) ? theme.fg("success", ` Press ${controls.hint("confirm")} to submit`) : theme.fg("warning", ` Unanswered: ${questions.filter((qq) => !answers.has(qq.id)).map((qq) => qq.id).join(", ")}`));
+		add(allAnswered(state) ? theme.fg("success", ` ${t("Press {key} to submit", { key: controls.hint("confirm") })}`) : theme.fg("warning", ` ${t("Unanswered: {ids}", { ids: questions.filter((qq) => !answers.has(qq.id)).map((qq) => qq.id).join(", ") })}`));
 	} else if (q) {
 		addWrapped(theme.fg("text", ` ${q.question}`));
 		layout.questionBlockEnd = lines.length;
@@ -130,22 +131,22 @@ export function renderQuestionnaire(args: RenderArgs): string[] {
 		// Auditor toggle line between context and options
 		if (state.hasAuditorToggle) {
 			const circle = state.auditorEnabled ? "●" : "○";
-			const label = state.auditorEnabled ? "Auditor enabled" : "Auditor disabled";
+			const label = state.auditorEnabled ? t("Auditor enabled") : t("Auditor disabled");
 			const color = state.auditorEnabled ? "success" : "warning";
-			add(theme.fg(color, ` ${circle} ${label}`) + theme.fg("dim", `  (press '${controls.hint("toggleAuditor")}' to toggle)`));
+			add(theme.fg(color, ` ${circle} ${label}`) + theme.fg("dim", `  ${t("(press '{key}' to toggle)", { key: controls.hint("toggleAuditor") })}`));
 			lines.push("");
 		}
 		const existing = answers.get(q.id);
-		if (existing) add(theme.fg("dim", ` Current: ${existing.wasCustom ? "(wrote) " : ""}${existing.answer}`));
+		if (existing) add(theme.fg("dim", ` ${t("Current:")} ${existing.wasCustom ? `${t("(wrote)")} ` : ""}${existing.answer}`));
 		lines.push("");
 		if (opts.length > 0) renderOptions();
-		else add(theme.fg("muted", ` Press ${controls.hint("confirm")} to write your answer`));
+		else add(theme.fg("muted", ` ${t("Press {key} to write your answer", { key: controls.hint("confirm") })}`));
 	}
 
 	lines.push("");
 	if (!inputMode) {
-		const auditorHint = state.hasAuditorToggle ? ` • ${controls.hint("toggleAuditor")} toggle auditor` : "";
-		add(theme.fg("dim", state.isMulti ? ` ${controls.hint("next")}/${controls.hint("previous")} navigate • ${controls.navigationHint()} select • ${controls.hint("confirm")} confirm • ${controls.hint("cancel")} cancel` + auditorHint : ` ${controls.navigationHint()} navigate • ${controls.hint("confirm")} select • ${controls.hint("cancel")} cancel` + auditorHint));
+		const auditorHint = state.hasAuditorToggle ? ` • ${t("{key} toggle auditor", { key: controls.hint("toggleAuditor") })}` : "";
+		add(theme.fg("dim", state.isMulti ? ` ${t("{prevNext} navigate • {nav} select • {confirm} confirm • {cancel} cancel", { prevNext: `${controls.hint("next")}/${controls.hint("previous")}`, nav: controls.navigationHint(), confirm: controls.hint("confirm"), cancel: controls.hint("cancel") })}` + auditorHint : ` ${t("{nav} navigate • {confirm} select • {cancel} cancel", { nav: controls.navigationHint(), confirm: controls.hint("confirm"), cancel: controls.hint("cancel") })}` + auditorHint));
 	}
 	add(theme.fg("accent", "─".repeat(safeWidth)));
 	// Safety net: ensure no returned line exceeds the terminal width

@@ -8,6 +8,7 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { goalDialogControls } from "../goal-dialog-controls.ts";
 import { truncateToWidth } from "./text-cache.ts";
+import { t } from "../i18n/index.ts";
 
 export interface ChoiceOption<T> {
 	label: string;
@@ -69,7 +70,7 @@ export async function showChoiceDialog<T>(ctx: ExtensionContext, dialog: ChoiceD
 						lines.push(line(pad + (selected ? "▸ " : "  ") + truncateToWidth(label, innerWidth - 6, "…")));
 						if (selected) lines.push(line(pad + "    " + truncateToWidth(dim(option.description), innerWidth - 10, "…")));
 					});
-					const footer = dim(`${controls.hint("confirm")} to select  ·  ${controls.navigationHint()} to navigate  ·  ${controls.hint("cancel")} = ${dialog.cancelHint}`);
+					const footer = dim(t("{confirm} to select  ·  {nav} to navigate  ·  {cancel} = {cancelHint}", { confirm: controls.hint("confirm"), nav: controls.navigationHint(), cancel: controls.hint("cancel"), cancelHint: dialog.cancelHint }));
 					lines.push(rule("├", "┤"), line(pad + truncateToWidth(footer, innerWidth - 2, "…")), rule("└", "┘"));
 					return lines;
 				},
