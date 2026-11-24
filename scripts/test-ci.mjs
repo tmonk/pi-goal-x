@@ -77,3 +77,13 @@ test('full-suite checks reject skipped tests and missing summaries',async()=>{
   assert.match(results[1].error,/skip count/);
  }finally{rmSync(directory,{recursive:true,force:true});}
 });
+
+test('every controls walkthrough case runs in exactly one CI group',()=>{
+ const script=readFileSync(new URL('../experiments/controls/cli-walkthrough.mjs',import.meta.url),'utf8');
+ const listed=script.split('\n').filter(line=>line.startsWith('const available=')||line.startsWith('available.push(')).join('\n');
+ const cases=[...listed.matchAll(/\['([a-z-]+)',/g)].map(match=>match[1]);
+ const workflow=readFileSync(new URL('../.github/workflows/ci.yml',import.meta.url),'utf8');
+ const grouped=[...workflow.matchAll(/^ {10}- ([a-z -]+)$/gm)].flatMap(match=>match[1].split(' '));
+ assert.ok(cases.length>=10);
+ assert.deepEqual([...grouped].sort(),[...cases].sort());
+});

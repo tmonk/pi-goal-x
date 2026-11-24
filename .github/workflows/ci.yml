@@ -16,55 +16,47 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# Every job starts at once. The setup step works out from the changed files
+# whether the job has anything to do, and the steps after it only run if so.
 jobs:
-  scope:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      runtime: ${{ steps.changes.outputs.runtime }}
-      bench: ${{ steps.changes.outputs.bench }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 2
-      - id: changes
-        run: node scripts/ci-scope.mjs
-      - name: Ranking updater tests
-        run: python3 -B scripts/test-update-ranking.py
-
   static:
-    needs: scope
-    if: needs.scope.outputs.runtime == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-      - name: Publication workflow tests
+      - id: setup
+        uses: ./.github/actions/setup
+      - name: Ranking updater tests
+        run: python3 -B scripts/test-update-ranking.py
+      - if: steps.setup.outputs.run == 'true'
+        name: Publication workflow tests
         run: node --test scripts/test-publish-workflow.mjs scripts/test-ci.mjs
-      - run: npm run check
-      - run: npm run lint
-      - run: npm audit --omit=dev
+      - if: steps.setup.outputs.run == 'true'
+        run: npm run check
+      - if: steps.setup.outputs.run == 'true'
+        run: npm run lint
+      - if: steps.setup.outputs.run == 'true'
+        run: npm audit --omit=dev
 
-  # The unit, integration and end-to-end suite, split in two to finish sooner.
+  # The unit, integration and end-to-end suite, in three parts.
   tests:
-    needs: scope
-    if: needs.scope.outputs.runtime == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        shard: ['1/2', '2/2']
+        shard: ['1/3', '2/3', '3/3']
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-      - name: Tests (shard ${{ matrix.shard }})
+      - id: setup
+        uses: ./.github/actions/setup
+      - if: steps.setup.outputs.run == 'true'
+        name: Tests (part ${{ matrix.shard }})
         env:
           PI_GOAL_CI_LOG_DIR: ${{ runner.temp }}/pi-goal-validation
         run: node scripts/ci-checks.mjs --only tests --shard ${{ matrix.shard }}
-      - uses: actions/upload-artifact@v4
-        if: failure()
+      - if: failure()
+        uses: actions/upload-artifact@v4
         with:
           name: tests-${{ strategy.job-index }}
           path: ${{ runner.temp }}/pi-goal-validation/
@@ -72,68 +64,83 @@ jobs:
           if-no-files-found: ignore
 
   package:
-    needs: scope
-    if: needs.scope.outputs.runtime == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-      - name: Installed package, context and cache regressions
+      - id: setup
+        uses: ./.github/actions/setup
+      - if: steps.setup.outputs.run == 'true'
+        name: Installed package, context and cache regressions
         env:
           PI_GOAL_CI_LOG_DIR: ${{ runner.temp }}/pi-goal-validation
         run: node scripts/ci-checks.mjs --skip tests --skip controls-cli
-      - uses: actions/upload-artifact@v4
-        if: failure()
+      - if: failure()
+        uses: actions/upload-artifact@v4
         with:
           name: package
           path: ${{ runner.temp }}/pi-goal-validation/
           retention-days: 5
           if-no-files-found: ignore
 
+  # The walkthrough cases are independent, so they run in three groups.
+  # scripts/test-ci.mjs checks that every case is in exactly one group.
   controls:
-    needs: scope
-    if: needs.scope.outputs.runtime == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cases:
+          - controls-ui settings-paths editor-controls command-shortcuts
+          - together goal-first goal-first-finish native-interrupt
+          - dialog-keys answer-editing foreign-focus
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-      - name: Controls walkthrough in the Pi CLI
-        run: node experiments/controls/cli-walkthrough.mjs
-      - uses: actions/upload-artifact@v4
-        if: failure()
+      - id: setup
+        uses: ./.github/actions/setup
+      - if: steps.setup.outputs.run == 'true'
+        name: Controls walkthrough in the Pi CLI
+        run: node experiments/controls/cli-walkthrough.mjs ${{ matrix.cases }}
+      - if: failure()
+        uses: actions/upload-artifact@v4
         with:
-          name: controls
+          name: controls-${{ strategy.job-index }}
           path: experiments/runs/goal-controls/
           retention-days: 5
           if-no-files-found: ignore
 
   bench:
-    needs: scope
-    if: needs.scope.outputs.bench == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup
-      - uses: actions/checkout@v5
+      - id: setup
+        uses: ./.github/actions/setup
+        with:
+          need: bench
+      - if: steps.setup.outputs.run == 'true'
+        uses: actions/checkout@v5
         with:
           ref: ${{ env.CI_BASE_SHA }}
           path: .benchmark-base
-      - name: Runtime benchmark regression gate
+      - if: steps.setup.outputs.run == 'true'
+        name: Runtime benchmark regression gate
         run: |
           ln -s "$GITHUB_WORKSPACE/node_modules" .benchmark-base/node_modules
           # Main preserves compact historical checkpoints; use the corrected fixture for both runs.
           cp experiments/bench/b10-checkpoint-growth.mjs .benchmark-base/experiments/bench/b10-checkpoint-growth.mjs
-          npm --prefix .benchmark-base run bench:naf -- after naf
+          # Both runs use their own directory, and the runner has cores to spare.
+          npm --prefix .benchmark-base run bench:naf -- after naf &
+          base=$!
           npm run bench:naf -- after naf
+          wait "$base"
           PI_GOAL_BENCH_REFERENCE="$GITHUB_WORKSPACE/.benchmark-base/experiments/bench/baseline-naf-after.json" npm run bench:gate:naf
 
   # The one check branch protection needs. It passes when every job above
-  # passed or was skipped for a prose-only change.
+  # passed or had nothing to do.
   validate:
-    needs: [scope, static, tests, package, controls, bench]
+    needs: [static, tests, package, controls, bench]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

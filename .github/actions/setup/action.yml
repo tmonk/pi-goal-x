@@ -1,11 +1,32 @@
 name: Set up Node
-description: Install the pinned Node and the locked dependencies.
+description: Work out whether this job has anything to do, then install the pinned Node and the locked dependencies.
+inputs:
+  need:
+    description: The scope output that decides whether the job runs (runtime or bench).
+    default: runtime
+outputs:
+  run:
+    description: "'true' when the job should run its checks."
+    value: ${{ steps.scope.outputs[inputs.need] }}
 runs:
   using: composite
   steps:
-    - uses: actions/setup-node@v5
+    # Prose-only changes skip the checks. The job still starts and passes,
+    # so the final validate check stays satisfied.
+    - id: scope
+      run: node scripts/ci-scope.mjs
+      shell: bash
+    - if: steps.scope.outputs[inputs.need] == 'true'
+      uses: actions/setup-node@v5
       with:
         node-version: 22.19.0
-        cache: npm
-    - run: npm ci --no-audit --no-fund
+    # Restoring node_modules is quicker than npm ci. Only a lockfile change misses.
+    - id: modules
+      if: steps.scope.outputs[inputs.need] == 'true'
+      uses: actions/cache@v4
+      with:
+        path: node_modules
+        key: node-modules-${{ runner.os }}-22.19.0-${{ hashFiles('package-lock.json') }}
+    - if: steps.scope.outputs[inputs.need] == 'true' && steps.modules.outputs.cache-hit != 'true'
+      run: npm ci --no-audit --no-fund
       shell: bash

@@ -6,7 +6,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {stripVTControlCharacters} from 'node:util';
 
-export async function runChecks(checks, {directory, cwd=process.cwd(), concurrency=2, quiet=false}={}) {
+export async function runChecks(checks, {directory, cwd=process.cwd(), concurrency=4, quiet=false}={}) {
  mkdirSync(directory,{recursive:true});
  // Match npm run: CLI checks must find the checkout's Pi, even without a global install.
  const env={...process.env,PATH:`${path.join(cwd,'node_modules','.bin')}${path.delimiter}${process.env.PATH??''}`};
