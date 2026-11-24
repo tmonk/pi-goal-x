@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { commandHint, type GoalCommands } from "./goal-controls.ts";
+import { t } from "./i18n/index.ts";
+import { uiCommandHint, type GoalCommands } from "./goal-controls.ts";
 import type { GoalAccounting } from "./goal-accounting.ts";
 import { goalActivityEvents } from "./goal-ledger.ts";
 import { otherOpenGoalCount } from "./goal-pool.ts";
@@ -151,7 +152,7 @@ export class GoalView {
 				this.clear(ctx);
 				return;
 			}
-			ctx.ui.setStatus("goal", `goal: unfocused [${totalOpen} open] - ${commandHint("goal-focus", this.deps.getCommands())}`);
+			ctx.ui.setStatus("goal", t("goal: unfocused [{count} open] - {command}", { count: totalOpen, command: uiCommandHint("goal-focus", this.deps.getCommands()) }));
 			this.showWidget(ctx);
 			return;
 		}

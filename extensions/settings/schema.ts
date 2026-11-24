@@ -9,6 +9,7 @@
  * every valid known key still applies.
  */
 
+import { t } from "../i18n/index.ts";
 import { GOAL_COMMANDS, GOAL_KEY_ACTIONS, PAUSE_ORDERS, parseCommandPaths, parseGoalKeybinding, type GoalCommands, type GoalKeybinding, type PauseOrder } from "../goal-controls.ts";
 
 export const GOAL_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -55,8 +56,8 @@ export const DEFAULT_GOAL_KEYBINDINGS: GoalKeybindings = {
 export const DEFAULT_NETWORK_RECOVERY_MAX_DELAY_MS = 80_000;
 
 export function formatGoalKeybinding(key: GoalKeybinding | undefined): string {
-	if (Array.isArray(key)) return key.length ? key.map(k => formatGoalKeybinding(k)).join(" / ") : "Unbound";
-	if (!key) return "Unbound";
+	if (Array.isArray(key)) return key.length ? key.map(k => formatGoalKeybinding(k)).join(" / ") : t("Unbound");
+	if (!key) return t("Unbound");
 	return key.split("+").map((part) => ({
 		ctrl: "Ctrl",
 		control: "Ctrl",

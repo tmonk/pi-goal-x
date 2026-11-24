@@ -1,4 +1,5 @@
 import { goalStoragePath, goalPoolSnapshotPath, ensureGoalStorageDirectory } from "./storage/goal-root.ts";
+import { t, tn } from "./i18n/index.ts";
 import { commandPaths, type GoalCommands } from "./goal-controls.ts";
 /**
  * /goal-recovery — read-only storage/recovery report + guarded repair.
@@ -192,7 +193,7 @@ export async function runRecoveryRepair(
 		try {
 			fs.copyFileSync(source, path.join(backupDir, `lock-${safeLockName(lock.fileName)}`));
 			fs.unlinkSync(source);
-			applied.push(`removed stale lock ${lock.fileName}`);
+			applied.push(t("removed stale lock {name}", { name: lock.fileName }));
 		} catch {
 			// best-effort per item
 		}
@@ -208,7 +209,7 @@ export async function runRecoveryRepair(
 			// the re-read goes cold and rewrites the snapshot).
 			invalidateGoalPoolCache();
 			readActiveGoalPool(ctx);
-			applied.push(`refreshed pool snapshot (${report.orphanedSnapshotGoals.length} orphaned entr${report.orphanedSnapshotGoals.length === 1 ? "y" : "ies"} dropped)`);
+			applied.push(tn(report.orphanedSnapshotGoals.length, { one: "refreshed pool snapshot ({n} orphaned entry dropped)", other: "refreshed pool snapshot ({n} orphaned entries dropped)" }));
 		} catch {
 			// best-effort
 		}
@@ -219,26 +220,26 @@ export async function runRecoveryRepair(
 
 export function formatRecoveryReport(report: RecoveryReport, commands?: GoalCommands): string {
 	const lines: string[] = [];
-	lines.push(report.healthy ? "Recovery report: OK — no issues found." : "Recovery report: issues found.");
+	lines.push(report.healthy ? t("Recovery report: OK — no issues found.") : t("Recovery report: issues found."));
 	if (report.malformedGoalFiles.length > 0) {
-		lines.push(`  - ${report.malformedGoalFiles.length} malformed goal file(s):`);
+		lines.push(`  - ${t("{count} malformed goal file(s):", { count: report.malformedGoalFiles.length })}`);
 		for (const f of report.malformedGoalFiles) lines.push(`      ${f.relPath} — ${f.error}`);
 	}
 	if (report.malformedLedgerLines > 0) {
-		lines.push(`  - ${report.malformedLedgerLines} malformed ledger line(s) (read-only; manual review advised)`);
+		lines.push(`  - ${t("{count} malformed ledger line(s) (read-only; manual review advised)", { count: report.malformedLedgerLines })}`);
 	}
 	if (report.staleLocks.length > 0) {
-		lines.push(`  - ${report.staleLocks.length} stale lock(s):`);
-		for (const l of report.staleLocks) lines.push(`      ${l.fileName} (pid ${l.pid}, ${Math.round(l.ageMs / 1000)}s old)`);
+		lines.push(`  - ${t("{count} stale lock(s):", { count: report.staleLocks.length })}`);
+		for (const l of report.staleLocks) lines.push(`      ${t("{name} (pid {pid}, {seconds}s old)", { name: l.fileName, pid: l.pid, seconds: Math.round(l.ageMs / 1000) })}`);
 	}
 	if (report.orphanedSnapshotGoals.length > 0) {
-		lines.push(`  - ${report.orphanedSnapshotGoals.length} orphaned snapshot entr${report.orphanedSnapshotGoals.length === 1 ? "y" : "ies"}:`);
+		lines.push(`  - ${tn(report.orphanedSnapshotGoals.length, { one: "{n} orphaned snapshot entry:", other: "{n} orphaned snapshot entries:" })}`);
 		for (const o of report.orphanedSnapshotGoals) lines.push(`      ${o.goalId} (${o.activePath})`);
 	}
 	if (report.staleLocks.length > 0 || report.orphanedSnapshotGoals.length > 0) {
 		const route = commandPaths(commands, "goal-recovery")[0];
-		lines.push(route ? `Run \`/${route} repair\` to remove stale locks and refresh the pool snapshot (confirmation + backup required).`
-			: "Enable a recovery command in /goal-settings controls to repair these files (confirmation + backup required).");
+		lines.push(route ? t("Run `/{route} repair` to remove stale locks and refresh the pool snapshot (confirmation + backup required).", { route })
+			: t("Enable a recovery command in /goal-settings controls to repair these files (confirmation + backup required)."));
 	}
 	return lines.join("\n");
 }

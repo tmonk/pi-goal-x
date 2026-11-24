@@ -1,4 +1,5 @@
-import { commandHint, commandInstructions, type GoalCommands } from "./goal-controls.ts";
+import { commandHint, commandInstructions, uiCommandHint, type GoalCommands } from "./goal-controls.ts";
+import { t } from "./i18n/index.ts";
 import { randomUUID } from "node:crypto";
 
 type GoalDispatchKind = "ready" | "check" | "wake" | "repair" | "kickoff" | "recovery";
@@ -69,27 +70,40 @@ export function normalizeGoalScheduler(raw: unknown): GoalSchedulerState | undef
  * omission, so a retained stale copy would keep issuing a cancelled order:
  * they belong with the reset-on-change state, never with retained counters.
  */
-export function schedulerSummaryParts(s: GoalSchedulerState | undefined, limit?: number, showRuns = true, idleBackoff = false, commands?: GoalCommands): { runs: string; instructions: string; idlePacing?: string } {
+export function schedulerSummaryParts(s: GoalSchedulerState | undefined, limit?: number, showRuns = true, idleBackoff = false, commands?: GoalCommands, ui = false): { runs: string; instructions: string; idlePacing?: string } {
 	// An unlimited allowance has no limit to report, so the runs line is left
 	// empty rather than rendered as "used/unlimited". A finite allowance is
 	// reported unless showAutonomousRuns is off. Enforcement reads the limit
 	// elsewhere; this is display only.
-	const runs = limit !== undefined && showRuns ? `Autonomous runs: ${s?.used ?? 0}/${limit}${limit === 0 ? " (automatic continuation disabled)" : ""}.` : "";
+	// `ui` renders for the host UI (follows the locale); the default is the model-facing English text.
+	const runs = limit !== undefined && showRuns
+		? ui
+			? limit === 0
+				? t("Autonomous runs: {used}/{limit} (automatic continuation disabled).", { used: s?.used ?? 0, limit })
+				: t("Autonomous runs: {used}/{limit}.", { used: s?.used ?? 0, limit })
+			: `Autonomous runs: ${s?.used ?? 0}/${limit}${limit === 0 ? " (automatic continuation disabled)" : ""}.`
+		: "";
 	const lines: string[] = [];
 	let idlePacing: string | undefined;
 	if (s) {
 		if (idleBackoff && s.phase === "ready" && s.decision?.kind === "ready" && s.decision.purpose === "ready" && s.idle && s.idle.nextAt > Date.now()) {
 			const seconds = Math.ceil((s.idle.nextAt - Date.now()) / 1000);
 			const time = new Date(s.idle.nextAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
-			idlePacing = `Next automatic attempt in ${seconds}s (${time} local). ${commandHint("goal-resume", commands)} now.`;
+			idlePacing = ui
+				? t("Next automatic attempt in {seconds}s ({time} local). {command} now.", { seconds, time, command: uiCommandHint("goal-resume", commands) })
+				: `Next automatic attempt in ${seconds}s (${time} local). ${commandHint("goal-resume", commands)} now.`;
 			lines.push(idlePacing);
 		}
 		if (s.wait) {
-			lines.push(`Waiting: ${s.wait.reason}; wait_id=${s.wait.id}; deadline=${new Date(s.wait.deadline).toISOString()}.`);
-			if (s.wait.nextCheckAt !== undefined) lines.push(`Next check: ${new Date(s.wait.nextCheckAt).toISOString()}; ${s.wait.remainingChecks} checks remaining.`);
+			const deadline = new Date(s.wait.deadline).toISOString();
+			lines.push(ui ? t("Waiting: {reason}; wait_id={id}; deadline={deadline}.", { reason: s.wait.reason, id: s.wait.id, deadline }) : `Waiting: ${s.wait.reason}; wait_id=${s.wait.id}; deadline=${deadline}.`);
+			if (s.wait.nextCheckAt !== undefined) {
+				const next = new Date(s.wait.nextCheckAt).toISOString();
+				lines.push(ui ? t("Next check: {next}; {remaining} checks remaining.", { next, remaining: s.wait.remainingChecks ?? 0 }) : `Next check: ${next}; ${s.wait.remainingChecks} checks remaining.`);
+			}
 		}
-		if (s.phase === "interrupted") lines.push("Turn stopped. Resume or send a message to continue.");
-		if (s.phase === "claimed") lines.push(commandInstructions("Execution requires dispatch admission or explicit /goal-resume after interruption.", commands));
+		if (s.phase === "interrupted") lines.push(ui ? t("Turn stopped. Resume or send a message to continue.") : "Turn stopped. Resume or send a message to continue.");
+		if (s.phase === "claimed") lines.push(commandInstructions(ui ? t("Execution requires dispatch admission or explicit /goal-resume after interruption.") : "Execution requires dispatch admission or explicit /goal-resume after interruption.", commands));
 	}
 	return { runs, instructions: lines.join("\n"), idlePacing };
 }

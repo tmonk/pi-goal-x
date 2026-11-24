@@ -1,5 +1,5 @@
 import { t } from "./i18n/index.ts";
-import { GOAL_COMMANDS, commandHint, commandPaths, commandProblems, commandRoutes, matchCommandRoute, type GoalCommandId } from "./goal-controls.ts";
+import { GOAL_COMMANDS, uiCommandHint, commandPaths, commandProblems, commandRoutes, matchCommandRoute, type GoalCommandId } from "./goal-controls.ts";
 import { showGoalControls } from "./widgets/goal-controls-dialog.ts";
 import { handleSettingsMenu } from "./goal-settings-menu.ts";
 import { goalStoragePath, goalStorageRoot } from "./storage/goal-root.ts";
@@ -9,7 +9,7 @@ import { extractVerificationContract, sisyphusObjectiveSufficient } from "./goal
 import { detailedSummary, oneLineSummary } from "./goal-format.ts";
 import {
 	buildGoalListText,
-	buildUnfocusedOpenGoalsSummary,
+	unfocusedOpenGoalsNotice,
 	goalSelectorLabel,
 	otherOpenGoalCount,
 } from "./goal-pool.ts";
@@ -144,7 +144,7 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 			return core.state.goal;
 		}
 		if (!ctx.hasUI) {
-			ctx.ui.notify(buildUnfocusedOpenGoalsSummary(open.length), "warning");
+			ctx.ui.notify(unfocusedOpenGoalsNotice(open.length), "warning");
 			return null;
 		}
 		const picked = await pickOpenGoal(ctx, title, open, (goalId) => core.focus.setFocus(goalId, ctx, "selected"));
@@ -165,7 +165,7 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 	async function focusGoalCommand(ctx: ExtensionContext): Promise<void> {
 		const open = core.state.openGoals();
 		if (open.length === 0) {
-			ctx.ui.notify(t("No open goals. Use {draft} to draft one, or {direct} <objective> to start immediately.", { draft: commandHint("goal", core.loadedCommands), direct: commandHint("goal-direct", core.loadedCommands) }), "warning");
+			ctx.ui.notify(t("No open goals. Use {draft} to draft one, or {direct} <objective> to start immediately.", { draft: uiCommandHint("goal", core.loadedCommands), direct: uiCommandHint("goal-direct", core.loadedCommands) }), "warning");
 			return;
 		}
 		if (open.length === 1) {
@@ -209,7 +209,7 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 		}
 		if (!current) {
 			const openCount = otherOpenGoalCount(core.state.goalsById, null);
-			ctx.ui.notify(openCount > 0 ? buildUnfocusedOpenGoalsSummary(openCount) : detailedSummary(null, core.loadedCommands), "info");
+			ctx.ui.notify(openCount > 0 ? unfocusedOpenGoalsNotice(openCount) : detailedSummary(null, core.loadedCommands), "info");
 			return;
 		}
 		ctx.ui.notify(t("Goal unfocused for this session. It remains open in .pi/goals: {id}", { id: current.id }), "info");
@@ -218,12 +218,12 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 	function handleDirectGoalSet(rawObjective: string, ctx: ExtensionContext, mode: GoalMode): void {
 		const raw = rawObjective.trim();
 		if (!raw) {
-			const command = `${commandHint(mode === "sisyphus" ? "sisyphus-direct" : "goal-direct", core.loadedCommands)} <objective>`;
+			const command = `${uiCommandHint(mode === "sisyphus" ? "sisyphus-direct" : "goal-direct", core.loadedCommands)} <objective>`;
 			ctx.ui.notify(t("No objective provided. Use {command}.", { command }), "warning");
 			return;
 		}
 		if (mode === "sisyphus" && !sisyphusObjectiveSufficient(raw)) {
-			ctx.ui.notify(t("A Sisyphus objective needs ordered steps with per-step done criteria. Use {command} for guided drafting, or provide numbered steps (1) ..., 2) ...) in the objective.", { command: commandHint("sisyphus", core.loadedCommands) }), "warning");
+			ctx.ui.notify(t("A Sisyphus objective needs ordered steps with per-step done criteria. Use {command} for guided drafting, or provide numbered steps (1) ..., 2) ...) in the objective.", { command: uiCommandHint("sisyphus", core.loadedCommands) }), "warning");
 			return;
 		}
 		const settings = loadGoalSettings(ctx.cwd);
@@ -358,7 +358,7 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 			return;
 		}
 		if (currentGoal.status === "paused") {
-			ctx.ui.notify(t("Goal is already paused. Use {command} to continue.", { command: commandHint("goal-resume", core.loadedCommands) }), "info");
+			ctx.ui.notify(t("Goal is already paused. Use {command} to continue.", { command: uiCommandHint("goal-resume", core.loadedCommands) }), "info");
 			if (!ctx.isIdle()) ctx.abort?.();
 			return;
 		}
@@ -403,7 +403,7 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 		// Headless behavior is explicit: guidance without mutation. Clearing
 		// requires an interactive confirmation (follow-up Stage 2).
 		if (!ctx.hasUI) {
-			ctx.ui.notify(t("Run {command} in an interactive session to confirm clearing: {summary}", { command: commandHint("goal-clear", core.loadedCommands), summary: oneLineSummary(target) }), "warning");
+			ctx.ui.notify(t("Run {command} in an interactive session to confirm clearing: {summary}", { command: uiCommandHint("goal-clear", core.loadedCommands), summary: oneLineSummary(target) }), "warning");
 			return;
 		}
 		const confirmed = await ctx.ui.confirm(t("Clear goal?"), oneLineSummary(target));
@@ -431,18 +431,18 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 		const pick = await pickWhenUnfocused(ctx, t("Tweak which open goal?"));
 		if (pick === "cancelled") return;
 		if (pick === "none") {
-			ctx.ui.notify(t("No goal is set. Use {draft} to draft one, or {direct} <objective> to create one immediately.", { draft: commandHint("goal", core.loadedCommands), direct: commandHint("goal-direct", core.loadedCommands) }), "warning");
+			ctx.ui.notify(t("No goal is set. Use {draft} to draft one, or {direct} <objective> to create one immediately.", { draft: uiCommandHint("goal", core.loadedCommands), direct: uiCommandHint("goal-direct", core.loadedCommands) }), "warning");
 			return;
 		}
 		const currentGoal = core.state.goal;
 		if (!currentGoal) return;
 		if (currentGoal.status === "complete") {
-			ctx.ui.notify(t("Goal is complete. Use {draft} to draft a new one, or {direct} <objective> to create one immediately.", { draft: commandHint("goal", core.loadedCommands), direct: commandHint("goal-direct", core.loadedCommands) }), "warning");
+			ctx.ui.notify(t("Goal is complete. Use {draft} to draft a new one, or {direct} <objective> to create one immediately.", { draft: uiCommandHint("goal", core.loadedCommands), direct: uiCommandHint("goal-direct", core.loadedCommands) }), "warning");
 			return;
 		}
 		const trimmed = replacement.trim();
 		if (!trimmed) {
-			ctx.ui.notify(t("Describe the requested change: {command} <change>, for example remove the token budget", { command: commandHint("goal-tweak", core.loadedCommands) }), "info");
+			ctx.ui.notify(t("Describe the requested change: {command} <change>, for example remove the token budget", { command: uiCommandHint("goal-tweak", core.loadedCommands) }), "info");
 			return;
 		}
 		const max = loadGoalSettings(ctx.cwd).objectiveMaxChars;

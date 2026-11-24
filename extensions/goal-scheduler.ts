@@ -85,7 +85,8 @@ export class GoalScheduler {
 		this.cancelTimer();
 		this.timer.arm(delay, () => this.safe(ctx, fn));
 	}
-	private pause(ctx: ExtensionContext, reason: string): void {
+	/** `reason` is stored and shown to the model (English); `notice` is the host-UI text and follows the locale. */
+	private pause(ctx: ExtensionContext, reason: string, notice: string = reason): void {
 		this.cancelTimer();
 		this.core.runtime.clearContinuationState();
 		this.write(ctx, g => {
@@ -94,14 +95,21 @@ export class GoalScheduler {
 				scheduler: g.scheduler ? { ...g.scheduler, generation: randomUUID(), phase: "idle", decision: undefined, dispatch: undefined, wait: undefined } : undefined };
 		});
 		this.core.clearActiveAccounting();
-		ctx.ui.notify(reason, "warning");
+		ctx.ui.notify(notice, "warning");
 	}
 	/** Pause the focused goal because it cannot go on by itself, and say why. */
-	pauseForError(ctx: ExtensionContext, reason: string): void {
-		this.safe(ctx, () => this.pause(ctx, reason));
+	pauseForError(ctx: ExtensionContext, reason: string, notice?: string): void {
+		this.safe(ctx, () => this.pause(ctx, reason, notice));
 	}
-	private allowanceReason(ctx: ExtensionContext): string {
-		return this.limit(ctx) === 0 ? commandInstructions(t("Automatic continuation disabled by maxAutonomousRuns=0. Change the setting in /goal-settings, then use /goal-resume."), this.core.loadedCommands) : commandInstructions(t("Autonomous-run allowance exhausted. Increase or remove maxAutonomousRuns, or use /goal-resume to renew."), this.core.loadedCommands);
+	private allowanceReason(ctx: ExtensionContext): { reason: string; notice: string } {
+		const commands = this.core.loadedCommands;
+		return this.limit(ctx) === 0
+			? { reason: commandInstructions("Automatic continuation disabled by maxAutonomousRuns=0. Change the setting in /goal-settings, then use /goal-resume.", commands), notice: commandInstructions(t("Automatic continuation disabled by maxAutonomousRuns=0. Change the setting in /goal-settings, then use /goal-resume."), commands) }
+			: { reason: commandInstructions("Autonomous-run allowance exhausted. Increase or remove maxAutonomousRuns, or use /goal-resume to renew.", commands), notice: commandInstructions(t("Autonomous-run allowance exhausted. Increase or remove maxAutonomousRuns, or use /goal-resume to renew."), commands) };
+	}
+	private pauseForAllowance(ctx: ExtensionContext): void {
+		const { reason, notice } = this.allowanceReason(ctx);
+		this.pause(ctx, reason, notice);
 	}
 
 	/** Bind once per live session. The event is deliberately not a triggerTurn message. */
@@ -126,7 +134,7 @@ export class GoalScheduler {
 			const s = goal.scheduler;
 			if (s.owner !== this.owner(ctx)) { ctx.ui.notify(commandInstructions(t("Goal owned by another session. Use /goal-resume to take ownership."), this.core.loadedCommands), "info"); return; }
 			if (["claimed", "running", "interrupted"].includes(s.phase)) {
-				this.pause(ctx, commandInstructions("Previous autonomous execution was interrupted. Use /goal-resume; its dispatch will not be replayed.", this.core.loadedCommands));
+				this.pause(ctx, commandInstructions("Previous autonomous execution was interrupted. Use /goal-resume; its dispatch will not be replayed.", this.core.loadedCommands), commandInstructions(t("Previous autonomous execution was interrupted. Use /goal-resume; its dispatch will not be replayed."), this.core.loadedCommands));
 				return;
 			}
 			this.schedule(ctx);
@@ -151,7 +159,7 @@ export class GoalScheduler {
 	/** Only explicit user resume resets spent allowance, including while already active/waiting. */
 	resume(ctx: ExtensionContext): boolean {
 		invalidateGoalSettingsCache();
-		if (this.limit(ctx) === 0) { ctx.ui.notify(this.allowanceReason(ctx), "warning"); return false; }
+		if (this.limit(ctx) === 0) { ctx.ui.notify(this.allowanceReason(ctx).notice, "warning"); return false; }
 		try {
 			this.cancelTimer();
 			this.core.runtime.clearContinuationState();
@@ -175,7 +183,7 @@ export class GoalScheduler {
 		this.safe(ctx, () => {
 			const goal = this.core.state.goal;
 			if (!goal || goal.status !== "active" || !goal.autoContinue) return;
-			if (this.limit(ctx) === 0) { this.update(ctx, () => {}); ctx.ui.notify(this.allowanceReason(ctx), "info"); return; }
+			if (this.limit(ctx) === 0) { this.update(ctx, () => {}); ctx.ui.notify(this.allowanceReason(ctx).notice, "info"); return; }
 			this.update(ctx, s => { s.phase = "ready"; s.decision = { kind: "ready", purpose: "kickoff" }; });
 			this.schedule(ctx);
 		});
@@ -186,7 +194,7 @@ export class GoalScheduler {
 			if (!this.core.state.goal || this.core.state.goal.status !== "active" || !this.core.state.goal.autoContinue || this.denied) throw new Error("Scheduling requires an active auto-continue goal in this session.");
 			invalidateGoalSettingsCache(); // an agent may have just configured the allowance
 			const goal = this.update(ctx, s => {
-				if (!this.available(ctx, s)) throw new Error(this.allowanceReason(ctx));
+				if (!this.available(ctx, s)) throw new Error(this.allowanceReason(ctx).reason);
 				if (this.strict(ctx, s)) s.idle = undefined;
 				if (input.kind === "ready") {
 					s.phase = "ready"; s.decision = { kind: "ready", purpose: "ready" }; s.wait = undefined;
@@ -291,7 +299,8 @@ export class GoalScheduler {
 				this.schedule(ctx); return;
 			}
 			if (s.repairUsed || !this.available(ctx, s)) {
-				this.pause(ctx, !this.available(ctx, s) ? this.allowanceReason(ctx) : commandInstructions("No execution disposition after the contract-repair prompt. Use /goal-resume to continue.", this.core.loadedCommands));
+				if (!this.available(ctx, s)) this.pauseForAllowance(ctx);
+				else this.pause(ctx, commandInstructions("No execution disposition after the contract-repair prompt. Use /goal-resume to continue.", this.core.loadedCommands), commandInstructions(t("No execution disposition after the contract-repair prompt. Use /goal-resume to continue."), this.core.loadedCommands));
 				return;
 			}
 			this.update(ctx, state => {
@@ -354,8 +363,8 @@ export class GoalScheduler {
 				s = this.update(ctx, markImplicitReady).scheduler!;
 			}
 			if (!["ready", "waiting"].includes(s.phase)) return;
-			if (budgetReached(g)) { this.pause(ctx, "Goal token budget exhausted."); return; }
-			if (!this.available(ctx, s)) { this.pause(ctx, this.allowanceReason(ctx)); return; }
+			if (budgetReached(g)) { this.pause(ctx, "Goal token budget exhausted.", t("Goal token budget exhausted.")); return; }
+			if (!this.available(ctx, s)) { this.pauseForAllowance(ctx); return; }
 			if (this.holdForWait(ctx, s)) return;
 			const pacedDelay = idleDelay(s, Date.now());
 			if (pacedDelay > 0) {
@@ -372,7 +381,7 @@ export class GoalScheduler {
 	/** Turn the armed readiness into one claimed dispatch, or throw when nothing authorizes it. */
 	private authorizeDispatch(ctx: ExtensionContext, s: GoalSchedulerState, g: GoalRecord, generation: string): Record<string, unknown> | "deferred" {
 		if (s.generation !== generation) throw new Error("Scheduling generation changed.");
-		if (g.status !== "active" || !g.autoContinue || budgetReached(g) || !this.available(ctx, s)) throw new Error(this.allowanceReason(ctx));
+		if (g.status !== "active" || !g.autoContinue || budgetReached(g) || !this.available(ctx, s)) throw new Error(this.allowanceReason(ctx).reason);
 		if (s.wait && Date.now() >= s.wait.deadline) throw new Error("Wait deadline reached.");
 		if (isRepairReady(s) && !this.strict(ctx, s)) markImplicitReady(s);
 		if (!loadGoalSettings(ctx.cwd).idleContinuationBackoff) s.idle = undefined;
@@ -401,7 +410,7 @@ export class GoalScheduler {
 		}
 	}
 	failedDispatch(ctx: ExtensionContext): void {
-		this.safe(ctx, () => this.pause(ctx, commandInstructions("Goal checkpoint delivery failed after claiming allowance. Use /goal-resume; it will not be replayed.", this.core.loadedCommands)));
+		this.safe(ctx, () => this.pause(ctx, commandInstructions("Goal checkpoint delivery failed after claiming allowance. Use /goal-resume; it will not be replayed.", this.core.loadedCommands), commandInstructions(t("Goal checkpoint delivery failed after claiming allowance. Use /goal-resume; it will not be replayed."), this.core.loadedCommands)));
 	}
 	isWaiting(): boolean {
 		const s = this.core.state.goal?.scheduler;
