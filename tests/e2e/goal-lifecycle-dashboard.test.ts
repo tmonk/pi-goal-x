@@ -9,6 +9,7 @@
  * reflect real persisted state (§2.2).
  */
 
+import { skipWhenRoot } from "../support/permissions.ts";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -19,7 +20,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import goalExtension from "../../extensions/goal.ts";
 import { readGoalLedger } from "../../extensions/goal-ledger.ts";
 import type { GoalRecord } from "../../extensions/goal-record.ts";
-import { parseGoalFile, readActiveGoalFiles } from "../../extensions/storage/goal-files.ts";
+import { parseGoalFile, readActiveGoalPool } from "../../extensions/storage/goal-files.ts";
 import { deriveGoalDashboardModel } from "../../extensions/widgets/goal-dashboard-model.ts";
 import { renderCompactDashboard, renderExpandedDashboard } from "../../extensions/widgets/goal-dashboard-renderer.ts";
 import { deriveAuditorDashboardModel } from "../../extensions/widgets/auditor-dashboard-model.ts";
@@ -262,7 +263,7 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 		assert.match(dashboardText(goal, false, cwd), /✓5 done · 0 open/, "all tasks done");
 
 		// ── Step 11: request completion ─────────────────────────────────────
-		const completion = await callTool(h, "update_goal", "complete-1", { status: "complete" });
+		await callTool(h, "update_goal", "complete-1", { status: "complete" });
 		assert.ok(ledgerEvents(cwd).some((e) => e.type === "completion_requested"), "completion_requested ledger event");
 		assert.ok(ledgerEvents(cwd).some((e) => e.type === "audit_started"), "audit_started ledger event");
 
@@ -296,7 +297,7 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 		assert.equal(activeGoalFiles(cwd).length, 0, "active record retired");
 
 		// ── Step 17: reload — the goal is no longer active ──────────────────
-		const reloaded = readActiveGoalFiles({ cwd });
+		const reloaded = [...readActiveGoalPool({ cwd }).values()];
 		assert.equal(reloaded.length, 0, "no active goals after reload");
 		const archivedRecord = parseGoalFile(path.join(cwd, ".pi", "goals", "archived", archived[0]!));
 		assert.equal(archivedRecord?.status, "complete", "archived record is complete and durable");
@@ -305,7 +306,7 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 	}
 });
 
-test("archive failure never reports success; the complete record stays recoverable (§16.6)", async () => {
+test("archive failure never reports success; the complete record stays recoverable (§16.6)", skipWhenRoot, async () => {
 	const cwd = mkdtempSync(path.join(tmpdir(), "goal-archive-fail-"));
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const h = createHarness(cwd, {

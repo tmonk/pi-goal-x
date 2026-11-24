@@ -19,10 +19,9 @@
 import { Type } from "@earendil-works/pi-ai";
 import { createHash } from "node:crypto";
 
-import { defineTool, SessionManager, SettingsManager, type AgentToolResult, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { defineTool, SessionManager, SettingsManager, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { makeAuditorResourceLoader, resolveAuditorSessionModelOptions } from "./goal-auditor.ts";
-import type { GoalLedgerEvent } from "./goal-ledger.ts";
 import type { ResolvedGoalOracleSettings } from "./goal-settings.ts";
 import { safeIdPart, type GoalRecord } from "./goal-record.ts";
 
@@ -81,30 +80,6 @@ export interface OracleConsultState {
 	failedAttempts: number;
 	lastFailure?: { errorCode: "config" | "provider" | "aborted" | "invalid_output"; message: string };
 	followupAttempted: boolean;
-}
-
-/** Reconstruct per-fingerprint consult state from raw ledger events. */
-export function oracleStateForFingerprint(events: readonly GoalLedgerEvent[], goalId: string, fingerprint: string): OracleConsultState {
-	const state: OracleConsultState = { failedAttempts: 0, followupAttempted: false };
-	for (const event of events) {
-		if (event.type !== "oracle_started" && event.type !== "oracle_result" && event.type !== "oracle_failed" && event.type !== "oracle_followup_attempted") continue;
-		if (event.goalId !== goalId || event.fingerprint !== fingerprint) continue;
-		switch (event.type) {
-			case "oracle_result":
-				state.result = { adviceId: event.adviceId, disposition: event.disposition, summary: event.summary };
-				break;
-			case "oracle_failed":
-				state.failedAttempts += 1;
-				state.lastFailure = { errorCode: event.errorCode, message: event.message };
-				break;
-			case "oracle_followup_attempted":
-				state.followupAttempted = true;
-				break;
-			default:
-				break;
-		}
-	}
-	return state;
 }
 
 // ── structured advice + isolated session ────────────────────────────────────

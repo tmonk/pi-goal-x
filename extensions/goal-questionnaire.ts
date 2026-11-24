@@ -1,6 +1,6 @@
 import { goalDialogControls } from "./goal-dialog-controls.ts";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Editor, type EditorTheme, Text, visibleWidth } from "@earendil-works/pi-tui";
+import { Editor, type EditorTheme, visibleWidth } from "@earendil-works/pi-tui";
 import { truncateToWidth, wrapTextWithAnsi } from "./widgets/text-cache.ts";
 
 
@@ -301,13 +301,6 @@ export function proposalDecisionFromQuestionnaireResult(args: { cancelled: boole
 	return "continue";
 }
 
-export function isHeadlessQuestionSufficientForDraft(args: { topic: string; questionText: string }): boolean {
-	const topic = args.topic.toLowerCase();
-	void args;
-	const vagueTopic = topic.trim().length < 20 || /(整理笔记|organize notes|notes|笔记)$/.test(topic.trim());
-	return !vagueTopic;
-}
-
 const CUSTOM_ANSWER_LABEL = "Write your own answer...";
 
 /** Sequential native dialogs for hosts that cannot render terminal components. */
@@ -535,14 +528,14 @@ function advanceAfterAnswer() {
 		 * cursor and mark the Editor focused (emits CURSOR_MARKER for IME).
 		 */
 		/**
-	 * §options-first fit: every option line always stays in frame. When the
-	 * question + context + options exceed the bound, the question/context
-	 * section yields first (it remains in the agent transcript): middle lines
-	 * (blanks, auditor, "Current:", context) drop before the question block
-	 * and the footer hint, and the tail slack (blank/footer) gives way before
-	 * the question. Returns null when even the option block + borders cannot
-	 * fit (pathological) so the caller falls back to the scroll viewport.
-	 */
+		 * §options-first fit: every option line always stays in frame. When the
+		 * question + context + options exceed the bound, the question/context
+		 * section yields first (it remains in the agent transcript): middle lines
+		 * (blanks, auditor, "Current:", context) drop before the question block
+		 * and the footer hint, and the tail slack (blank/footer) gives way before
+		 * the question. Returns null when even the option block + borders cannot
+		 * fit (pathological) so the caller falls back to the scroll viewport.
+		 */
 	function fitOptionsInFrame(
 		lines: string[],
 		maxDialogLines: number,

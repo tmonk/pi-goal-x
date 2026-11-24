@@ -10,7 +10,6 @@ import {
 	archiveGoalFile,
 	archivedPathForGoal,
 	parseGoalFile,
-	readActiveGoalFiles,
 	readActiveGoalPool,
 	serializeGoalFile,
 	writeActiveGoalFile,
@@ -76,7 +75,7 @@ test("goal file paths stay under active and archive roots even with unsafe metad
 	}
 });
 
-test("readActiveGoalFiles scans deterministic safe active goal files only", () => {
+test("the active goal pool scans deterministic safe active goal files only", () => {
 	const ctx = tempCtx();
 	try {
 		mkdirSync(path.join(ctx.cwd, ".pi/goals"), { recursive: true });
@@ -94,7 +93,7 @@ test("readActiveGoalFiles scans deterministic safe active goal files only", () =
 			symlinkSync(path.join(ctx.cwd, first.activePath ?? "missing"), path.join(ctx.cwd, ".pi/goals", "active_goal_symlink.md"));
 		} catch {}
 
-		const goals = readActiveGoalFiles(ctx);
+		const goals = [...readActiveGoalPool(ctx).values()];
 		assert.deepEqual(goals.map((goal) => goal.id), ["a-goal", "b-goal"]);
 		assert.deepEqual(goals.map((goal) => goal.activePath), [second.activePath, first.activePath]);
 

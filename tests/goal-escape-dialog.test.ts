@@ -4,7 +4,6 @@ import test from "node:test";
 import { showEscapeDialog } from "../extensions/widgets/goal-escape-dialog.ts";
 import { visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { createMockExtensionContext, createMockTUI, createMockTheme } from "./tui-test-utils.ts";
-import type { MockExtensionContext } from "./tui-test-utils.ts";
 
 // ── Headless (hasUI = false) path — existing tests preserved ────────────
 
@@ -33,7 +32,7 @@ test("showEscapeDialog does not crash when called with hasUI=true (regression: i
 	const ctx = createMockExtensionContext();
 
 	// Start the dialog (hangs on promise waiting for user input)
-	const promise = showEscapeDialog(ctx, "Test objective");
+	void showEscapeDialog(ctx, "Test objective");
 
 	// If no ReferenceError thrown, the fix works
 	assert.ok(ctx._customCalls.length >= 1, "custom() was called (dialog invoked)");
@@ -42,13 +41,12 @@ test("showEscapeDialog does not crash when called with hasUI=true (regression: i
 	const record = ctx._customCalls[0]!;
 	const { tui } = createMockTUI();
 	const theme = createMockTheme();
-	let doneValue: string | undefined;
 
 	const component = record.factory(
 		tui,
 		theme,
 		undefined,
-		(result: any) => { doneValue = result; },
+		() => {},
 	) as Component;
 
 	// Render at various widths — this is where the ReferenceError used to occur
@@ -62,18 +60,17 @@ test("showEscapeDialog does not crash when called with hasUI=true (regression: i
 
 test("escape dialog component renders correct structure and content", async () => {
 	const ctx = createMockExtensionContext();
-	const promise = showEscapeDialog(ctx, "Test objective");
+	void showEscapeDialog(ctx, "Test objective");
 
 	const record = ctx._customCalls[0]!;
 	const { tui } = createMockTUI();
 	const theme = createMockTheme();
-	let doneValue: string | undefined;
 
 	const component = record.factory(
 		tui,
 		theme,
 		undefined,
-		(result: any) => { doneValue = result; },
+		() => {},
 	) as Component;
 
 	const lines = component.render(80);
@@ -97,7 +94,7 @@ test("escape dialog component renders correct structure and content", async () =
 
 test("escape dialog handleInput: escape returns continue_working", async () => {
 	const ctx = createMockExtensionContext();
-	const promise = showEscapeDialog(ctx, "Test objective");
+	void showEscapeDialog(ctx, "Test objective");
 
 	const record = ctx._customCalls[0]!;
 	const { tui, state: tuiState } = createMockTUI();
@@ -128,7 +125,7 @@ test("escape dialog handleInput: escape returns continue_working", async () => {
 
 test("escape dialog handleInput: enter selects focused option", async () => {
 	const ctx = createMockExtensionContext();
-	const promise = showEscapeDialog(ctx, "Test objective");
+	void showEscapeDialog(ctx, "Test objective");
 
 	const record = ctx._customCalls[0]!;
 	const { tui } = createMockTUI();
@@ -149,7 +146,7 @@ test("escape dialog handleInput: enter selects focused option", async () => {
 
 test("escape dialog handleInput: up + enter selects complete_without_audit", async () => {
 	const ctx = createMockExtensionContext();
-	const promise = showEscapeDialog(ctx, "Test objective");
+	void showEscapeDialog(ctx, "Test objective");
 
 	const record = ctx._customCalls[0]!;
 	const { tui } = createMockTUI();
@@ -171,7 +168,7 @@ test("escape dialog handleInput: up + enter selects complete_without_audit", asy
 
 test("escape dialog handleInput: navigation wraps around", async () => {
 	const ctx = createMockExtensionContext();
-	const promise = showEscapeDialog(ctx, "Test objective");
+	void showEscapeDialog(ctx, "Test objective");
 
 	const record = ctx._customCalls[0]!;
 	const { tui } = createMockTUI();
@@ -210,7 +207,7 @@ test("escape dialog handleInput: navigation wraps around", async () => {
 
 test("escape dialog component dispose restores hardware cursor", async () => {
 	const ctx = createMockExtensionContext();
-	const promise = showEscapeDialog(ctx, "Test objective");
+	void showEscapeDialog(ctx, "Test objective");
 
 	const record = ctx._customCalls[0]!;
 	const { tui, state: tuiState } = createMockTUI();
@@ -237,7 +234,7 @@ for (const testWidth of [50, 60, 70, 80, 90, 109]) {
 	test(`escape dialog renders without overflow at width ${testWidth}`, async () => {
 		// Short objective
 		const ctx1 = createMockExtensionContext();
-		const p1 = showEscapeDialog(ctx1, "Short");
+		void showEscapeDialog(ctx1, "Short");
 		const rec1 = ctx1._customCalls[0]!;
 		const { tui } = createMockTUI();
 		const theme = createMockTheme();
@@ -261,7 +258,7 @@ test("escape dialog with extreme-length objective at various widths", async () =
 
 	for (const testWidth of [50, 60, 70, 80, 90, 109]) {
 		const ctx = createMockExtensionContext();
-		const p = showEscapeDialog(ctx, "A very long objective that should definitely overflow at narrow terminal widths if there's a bug in the rendering code. ".repeat(10));
+		void showEscapeDialog(ctx, "A very long objective that should definitely overflow at narrow terminal widths if there's a bug in the rendering code. ".repeat(10));
 		const rec = ctx._customCalls[0]!;
 		const comp = rec.factory(tui, theme, undefined, () => {}) as Component;
 
@@ -281,7 +278,7 @@ test("escape dialog with extreme-length objective at various widths", async () =
 test("escape dialog renders various objective lengths without error", async () => {
 	// Short objective
 	const ctx1 = createMockExtensionContext();
-	const p1 = showEscapeDialog(ctx1, "Short");
+	void showEscapeDialog(ctx1, "Short");
 	const rec1 = ctx1._customCalls[0]!;
 	const { tui } = createMockTUI();
 	const theme = createMockTheme();
@@ -291,7 +288,7 @@ test("escape dialog renders various objective lengths without error", async () =
 
 	// Long objective (200 chars)
 	const ctx2 = createMockExtensionContext();
-	const p2 = showEscapeDialog(ctx2, "A".repeat(200));
+	void showEscapeDialog(ctx2, "A".repeat(200));
 	const rec2 = ctx2._customCalls[0]!;
 	const comp2 = rec2.factory(tui, theme, undefined, () => {}) as Component;
 	const longLines = comp2.render(80);
@@ -299,7 +296,7 @@ test("escape dialog renders various objective lengths without error", async () =
 
 	// Empty objective
 	const ctx3 = createMockExtensionContext();
-	const p3 = showEscapeDialog(ctx3, "");
+	void showEscapeDialog(ctx3, "");
 	const rec3 = ctx3._customCalls[0]!;
 	const comp3 = rec3.factory(tui, theme, undefined, () => {}) as Component;
 	const emptyLines = comp3.render(80);

@@ -11,7 +11,10 @@ import {
 } from "./goal-format.ts";
 import type { GoalEventDetails } from "./goal-record.ts";
 import { createGoalCore } from "./goal-state.ts";
-import { registerGoalTools } from "./goal-tools.ts";
+import { registerCoreTools } from "./goal-core-tools.ts";
+import { registerTaskTools } from "./goal-task-tools.ts";
+import { registerDraftingTools } from "./goal-drafting.ts";
+import { runGoalCompletionFlow } from "./goal-completion.ts";
 import { filterGoalSessionContext, isDelegatedGoalSession } from "./goal-session-safety.ts";
 import { registerGoalContext } from "./goal-context.ts";
 
@@ -37,6 +40,8 @@ export default function goalExtension(
 	// Test/debug hook: expose the core for harness introspection (no behavior).
 	(pi as unknown as { _goalCore?: typeof core })._goalCore = core;
 	registerGoalCommands(core);
-	registerGoalTools(core);
+	registerCoreTools(core, { runGoalCompletionFlow });
+	registerTaskTools(core);
+	registerDraftingTools(core);
 	registerGoalEvents(core);
 }

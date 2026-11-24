@@ -6,6 +6,7 @@
  * conflict-safe scoped mutation, and fault behavior.
  */
 
+import { skipWhenRoot } from "./support/permissions.ts";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -271,7 +272,7 @@ describe("scoped mutation", () => {
 		});
 	});
 
-	it("failed write preserves the original file (fault injection)", () => {
+	it("failed write preserves the original file (fault injection)", skipWhenRoot, () => {
 		withTempDir((dir) => {
 			const env = { PI_GOAL_GLOBAL_SETTINGS_FILE: path.join(dir, "g.json") };
 			const target = scopeTarget(dir, "global");

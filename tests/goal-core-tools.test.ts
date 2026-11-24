@@ -1,3 +1,4 @@
+import { createExtensionHarness } from "./support/extension-harness.ts";
 import { appendGoalEvent } from "../extensions/goal-ledger.ts";
 /**
  * Stage 3 core-tools tests: create_goal / get_goal / update_goal.
@@ -21,8 +22,6 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../extensions/goal.ts";
 import { createGoal, goalFocusDetails, normalizeGoalRecord } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../extensions/goal-ledger.ts";
@@ -39,53 +38,16 @@ interface HarnessOptions {
 }
 
 function createHarness(options: HarnessOptions) {
-	const handlers = new Map<string, Function>();
-	const commands = new Map<string, any>();
-	const tools = new Map<string, ToolDefinition>();
-	let activeTools = ["read", "bash", "edit", "write"];
-	const pi = {
-		registerTool: (def: ToolDefinition) => { tools.set(def.name, def); },
-		registerCommand: (name: string, def: any) => { commands.set(name, def); },
-		on: (event: string, handler: Function) => { handlers.set(event, handler); },
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendMessage: (message: any, opts?: any) => { options.onSendMessage?.(message, opts); },
-		getActiveTools: () => [...activeTools],
-		setActiveTools: (names: string[]) => { activeTools = [...names]; },
-		hasUI: options.hasUI ?? false,
-	};
-	const ctx = {
+	return createExtensionHarness({
 		cwd: options.cwd,
-		hasUI: options.hasUI ?? false,
-		sessionManager: {
-			getBranch: () => options.sessionEntries,
-			getCwd: () => options.cwd,
-			getSessionId: () => "core-tools-session",
-			getRoot: () => options.cwd,
-		},
-		ui: {
-			notify: () => {},
-			setStatus: () => {},
-			setWidget: () => {},
-			onTerminalInput: () => () => {},
-			select: async () => undefined,
-			confirm: async () => false,
-			custom: options.uiCustom ?? (async () => undefined),
-		},
-		getSystemPrompt: () => "base prompt",
-		isIdle: () => true,
-		hasPendingMessages: () => false,
-		abort: () => {},
-	} as unknown as ExtensionContext;
-	goalExtension(pi as any, { runCompletionAuditor: options.runCompletionAuditor });
-	return {
-		handlers,
-		commands,
-		tools,
-		ctx,
-		get activeTools() { return [...activeTools]; },
-		get core() { return (pi as unknown as { _goalCore: any })._goalCore; },
-	};
+		sessionEntries: options.sessionEntries,
+		hasUI: options.hasUI,
+		sessionId: "core-tools-session",
+		systemPrompt: "base prompt",
+		runCompletionAuditor: options.runCompletionAuditor,
+		ui: options.uiCustom ? { custom: options.uiCustom } : undefined,
+		pi: options.onSendMessage ? { sendMessage: options.onSendMessage } : undefined,
+	});
 }
 
 function makeFixture(opts: { objective?: string; tokenBudget?: number; pauseReason?: string; status?: string } = {}) {

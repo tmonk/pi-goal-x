@@ -8,7 +8,7 @@
 
 import { makeGoalRecord } from "./bench-common.mjs";
 import { Baseline, estimateTokens } from "./bench-common.mjs";
-import { taskListBlock, continuationPrompt, goalPrompt } from "../../extensions/prompts/goal-prompts.ts";
+import { taskListBlock, checkpointTriggerPrompt, goalPrompt } from "../../extensions/prompts/goal-prompts.ts";
 
 
 const PREFILL_TOK_PER_SEC = 1000; // documented heuristic for the estimate only
@@ -46,7 +46,8 @@ export function run(baseline) {
 		const goal = goalWithTasks(count);
 		const blocks = [
 			["taskListBlock", taskListBlock(goal, {}), "prompts/goal-prompts"],
-			["continuationPrompt", continuationPrompt(goal, {}), "prompts/goal-prompts"],
+			// Row id kept from the removed continuationPrompt wrapper, which returned this trigger.
+			["continuationPrompt", checkpointTriggerPrompt(goal.id), "prompts/goal-prompts"],
 			["goalPrompt", goalPrompt(goal, {}), "prompts/goal-prompts"],
 		];
 		for (const [name, text, modules] of blocks) {

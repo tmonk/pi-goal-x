@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { renderGoalWidgetLines, renderAuditorWidgetLines, renderAuditResultCardView, GoalWidgetComponent, applyStableHeightBound, type GoalWidgetRecord, type AuditorWidgetProgress } from "../extensions/widgets/goal-widget.ts";
 import type { GoalTask } from "../extensions/goal-record.ts";
 import { createMockTUI, createMockTheme } from "./tui-test-utils.ts";
@@ -518,7 +518,7 @@ test("GoalWidgetComponent unfocused with 38 open goals at width 109", () => {
 
 // ── §19.5 dashboard interaction tests ────────────────────────────────────────
 
-import { syncTerminalInputPause } from "../extensions/goal-widget.ts";
+import { syncTerminalInputPause } from "../extensions/goal-terminal-input.ts";
 
 const CTRL_SHIFT_T = "\u001b[27;6;84~";
 const CTRL_SHIFT_A = "\u001b[27;6;65~";
@@ -1099,11 +1099,6 @@ test("GoalWidgetComponent bounds the audit dashboard, result card, debug panel, 
 	}).render(100);
 	assert.ok(card.length <= Math.max(1, 6 - WIDGET_HEIGHT_RESERVE), `card rendered ${card.length}`);
 	assert.match(card[0]!, /^╭─ Audit result/, "card header preserved");
-
-	// Debug panel at its natural height (36) on a 36-row terminal.
-	const debug = mk({ rows: 36, extra: { getDebugMode: () => true } }).render(100);
-	assert.ok(debug.length <= Math.max(1, 36 - WIDGET_HEIGHT_RESERVE), `debug rendered ${debug.length}`);
-	assert.match(debug[0]!, /^╭─ pi-goal-x/, "dashboard header preserved");
 
 	// Unfocused panel on a 4-row terminal.
 	const unfocused = new GoalWidgetComponent({

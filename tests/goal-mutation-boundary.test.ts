@@ -8,7 +8,7 @@
  * (goal-state.ts); handlers live in the tools/commands/events/widget modules.
  */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
@@ -17,21 +17,13 @@ import assert from "node:assert/strict";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const extensionsDir = path.join(here, "..", "extensions");
 
-// The modules that make up the extension implementation (the installer plus
-// the extracted state/tools/commands/events/widget/format modules).
-const IMPLEMENTATION_MODULES = [
-	"goal.ts",
-	"goal-state.ts",
-	"goal-tools.ts",
-	"goal-commands.ts",
-	"goal-events.ts",
-	"goal-widget.ts",
-	"goal-format.ts",
-];
-
-const implementationSources = IMPLEMENTATION_MODULES.map((name) =>
-	readFileSync(path.join(extensionsDir, name), "utf8"),
-).join("\n");
+// Every extension module except the storage owners: GoalService is the only
+// mutation boundary, and goal-files/goal-ledger implement the primitives.
+const MUTATION_OWNERS = new Set(["goal-service.ts", "goal-ledger.ts", path.join("storage", "goal-files.ts")]);
+const implementationSources = (readdirSync(extensionsDir, { recursive: true }) as string[])
+	.filter((name) => name.endsWith(".ts") && !MUTATION_OWNERS.has(name))
+	.map((name) => readFileSync(path.join(extensionsDir, name), "utf8"))
+	.join("\n");
 
 // Mutation primitives that must NOT be invoked from implementation modules directly.
 const FORBIDDEN_CALL_SITES = [
@@ -75,12 +67,8 @@ describe("goal mutation boundary", () => {
 		assert.equal(goalTs.includes("appendEvents"), false, "goal.ts must not append ledger events");
 	});
 
-	it("keeps pure serializers and readers importable (no mutation)", () => {
+	it("goal.ts installs the shared core", () => {
 		const goalTs = readFileSync(path.join(extensionsDir, "goal.ts"), "utf8");
-		const widgetSource = readFileSync(path.join(extensionsDir, "goal-widget.ts"), "utf8");
-		// serializeGoalFile is a pure content builder (used for the debug widget);
-		// mergeGoalPromptFromDisk / readActiveGoalPool / readGoalLedger are reads.
 		assert.ok(goalTs.includes("createGoalCore("), "goal.ts must install the core");
-		assert.ok(widgetSource.includes("serializeGoalFile"), "goal-widget.ts may use the pure serializer");
 	});
 });

@@ -15,13 +15,18 @@ import * as path from "node:path";
 
 import {
 	buildBlockerFingerprint,
-	buildBlockerOraclePrompt,
-	oracleStateForFingerprint,
 	resolveOracleModel,
 	runBlockerOracle,
 	type OracleAdvice,
 } from "../extensions/goal-oracle.ts";
 import { createGoal } from "../extensions/goal-record.ts";
+import { buildLedgerIndex } from "../extensions/goal-ledger-index.ts";
+import type { GoalLedgerEvent } from "../extensions/goal-ledger.ts";
+
+/** Oracle consult state exactly as the shipped ledger index projects it. */
+function oracleStateForFingerprint(events: readonly GoalLedgerEvent[], goalId: string, fingerprint: string) {
+	return buildLedgerIndex(events).get(goalId)?.oracle.get(fingerprint) ?? { failedAttempts: 0, followupAttempted: false };
+}
 
 function goal(): ReturnType<typeof createGoal> {
 	return createGoal({ objective: "Ship the risky migration.", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 23, 9, 0, 0));

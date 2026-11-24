@@ -40,7 +40,3 @@ export function deriveTasksFromObjective(objective: string): GoalTask[] | null {
 	return tasks;
 }
 
-/** Human-readable summary of the derived proposal (guidance text). */
-export function derivedTaskCount(objective: string): number {
-	return deriveTasksFromObjective(objective)?.length ?? 0;
-}

@@ -3,15 +3,15 @@
  * validation, id-stable merging, and the update_goal_task discriminated union.
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createExtensionHarness } from "./support/extension-harness.ts";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../extensions/goal.ts";
-import { convertFlatTasks, countTasks, mergeTasksWithExisting, type FlatTaskInput } from "../extensions/goal-task-tools.ts";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { convertFlatTasks, countTasks, mergeTasksWithExisting } from "../extensions/goal-task-tools.ts";
 import { createGoal, goalFocusDetails, type GoalTask } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../extensions/goal-ledger.ts";
@@ -93,45 +93,7 @@ test("mergeTasksWithExisting preserves status and evidence for matching ids", ()
 // ── Tool execution harness ───────────────────────────────────────────────────
 
 function createHarness(cwd: string, sessionEntries: unknown[]) {
-	const handlers = new Map<string, Function>();
-	const tools = new Map<string, ToolDefinition>();
-	let activeTools = ["read", "bash", "edit", "write"];
-	const pi = {
-		registerTool: (def: ToolDefinition) => { tools.set(def.name, def); },
-		registerCommand: () => {},
-		on: (event: string, handler: Function) => { handlers.set(event, handler); },
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendMessage: () => {},
-		getActiveTools: () => [...activeTools],
-		setActiveTools: (names: string[]) => { activeTools = [...names]; },
-		hasUI: false,
-	};
-	const ctx = {
-		cwd,
-		hasUI: false,
-		sessionManager: {
-			getBranch: () => sessionEntries,
-			getCwd: () => cwd,
-			getSessionId: () => "task-tools-session",
-			getRoot: () => cwd,
-		},
-		ui: {
-			notify: () => {},
-			setStatus: () => {},
-			setWidget: () => {},
-			onTerminalInput: () => () => {},
-			select: async () => undefined,
-			confirm: async () => false,
-			custom: async () => undefined,
-		},
-		getSystemPrompt: () => "base",
-		isIdle: () => true,
-		hasPendingMessages: () => false,
-		abort: () => {},
-	} as unknown as ExtensionContext;
-	goalExtension(pi as any, {});
-	return { handlers, tools, ctx };
+	return createExtensionHarness({ cwd, sessionEntries, sessionId: "task-tools-session" });
 }
 
 function fixtureWithTasks(tasks: Array<Record<string, unknown>>) {
@@ -507,50 +469,50 @@ test("update_goal_task(pending) writes a task_reopened ledger event", async () =
 	}
 });
 
- test("task approval supports RPC, absent custom UI, and explicit headless approval", async () => {
- const old = process.env.PI_GOAL_AUTO_CONFIRM;
- delete process.env.PI_GOAL_AUTO_CONFIRM;
- try {
- for (const mode of ["rpc", "interactive"] as const) {
- for (const answer of ["Confirm task list", "Keep current tasks", undefined]) {
- let shown = false;
- const ctx = { hasUI: true, mode, ui: {
- custom: async () => { assert.notEqual(mode, "rpc"); return undefined; },
- select: async (title: string) => { shown = true; assert.ok(title.includes("probe: Inspect sample")); return answer; }
- } } as unknown as ExtensionContext;
- assert.deepEqual(await showTaskConfirmation(ctx, "probe: Inspect sample"), { decision: answer === "Confirm task list" ? "confirm" : "cancel" });
- assert.equal(shown, true);
- }
- }
- const headless = { hasUI: false } as ExtensionContext;
- assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "confirm" });
- process.env.PI_GOAL_AUTO_CONFIRM = "0";
- assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "cancel" });
- process.env.PI_GOAL_AUTO_CONFIRM = "1";
- assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "confirm" });
- } finally {
- if (old === undefined) delete process.env.PI_GOAL_AUTO_CONFIRM; else process.env.PI_GOAL_AUTO_CONFIRM = old;
- }
- });
+test("task approval supports RPC, absent custom UI, and explicit headless approval", async () => {
+	const old = process.env.PI_GOAL_AUTO_CONFIRM;
+	delete process.env.PI_GOAL_AUTO_CONFIRM;
+	try {
+		for (const mode of ["rpc", "interactive"] as const) {
+			for (const answer of ["Confirm task list", "Keep current tasks", undefined]) {
+				let shown = false;
+				const ctx = { hasUI: true, mode, ui: {
+					custom: async () => { assert.notEqual(mode, "rpc"); return undefined; },
+					select: async (title: string) => { shown = true; assert.ok(title.includes("probe: Inspect sample")); return answer; }
+					} } as unknown as ExtensionContext;
+				assert.deepEqual(await showTaskConfirmation(ctx, "probe: Inspect sample"), { decision: answer === "Confirm task list" ? "confirm" : "cancel" });
+				assert.equal(shown, true);
+			}
+		}
+		const headless = { hasUI: false } as ExtensionContext;
+		assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "confirm" });
+		process.env.PI_GOAL_AUTO_CONFIRM = "0";
+		assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "cancel" });
+		process.env.PI_GOAL_AUTO_CONFIRM = "1";
+		assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "confirm" });
+	} finally {
+		if (old === undefined) delete process.env.PI_GOAL_AUTO_CONFIRM; else process.env.PI_GOAL_AUTO_CONFIRM = old;
+	}
+});
 
 test("RPC cancellation preserves the persisted task list", async () => {
- const f = fixtureWithTasks([{ id: "original", title: "Original task", status: "pending" }]);
- const old = process.env.PI_GOAL_AUTO_CONFIRM;
- delete process.env.PI_GOAL_AUTO_CONFIRM;
- try {
- const h = createHarness(f.cwd, f.sessionEntries);
- await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
- await h.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, h.ctx);
- const ctx = { ...h.ctx, hasUI: true, mode: "rpc", ui: { ...h.ctx.ui,
- custom: async () => { throw new Error("RPC must not open terminal UI"); },
- select: async (title: string) => { assert.ok(title.includes("Replacement task")); return undefined; }
- } } as unknown as ExtensionContext;
- const result = await (h.tools.get("set_goal_tasks")!.execute as any)("rpc-cancel", { tasks: [{ id: "replacement", title: "Replacement task" }] }, undefined, undefined, ctx);
- assert.notEqual(result.isError, true);
- assert.equal(activeGoal(f.cwd)?.taskList?.tasks[0]?.id, "original");
- assert.equal(ledgerEvents(f.cwd).some(e => e.type === "task_list_set"), false);
- } finally {
- if (old === undefined) delete process.env.PI_GOAL_AUTO_CONFIRM; else process.env.PI_GOAL_AUTO_CONFIRM = old;
- f.cleanup();
- }
+	const f = fixtureWithTasks([{ id: "original", title: "Original task", status: "pending" }]);
+	const old = process.env.PI_GOAL_AUTO_CONFIRM;
+	delete process.env.PI_GOAL_AUTO_CONFIRM;
+	try {
+		const h = createHarness(f.cwd, f.sessionEntries);
+		await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
+		await h.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, h.ctx);
+		const ctx = { ...h.ctx, hasUI: true, mode: "rpc", ui: { ...h.ctx.ui,
+			custom: async () => { throw new Error("RPC must not open terminal UI"); },
+			select: async (title: string) => { assert.ok(title.includes("Replacement task")); return undefined; }
+			} } as unknown as ExtensionContext;
+		const result = await (h.tools.get("set_goal_tasks")!.execute as any)("rpc-cancel", { tasks: [{ id: "replacement", title: "Replacement task" }] }, undefined, undefined, ctx);
+		assert.notEqual(result.isError, true);
+		assert.equal(activeGoal(f.cwd)?.taskList?.tasks[0]?.id, "original");
+		assert.equal(ledgerEvents(f.cwd).some(e => e.type === "task_list_set"), false);
+	} finally {
+		if (old === undefined) delete process.env.PI_GOAL_AUTO_CONFIRM; else process.env.PI_GOAL_AUTO_CONFIRM = old;
+		f.cleanup();
+	}
 });

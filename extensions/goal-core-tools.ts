@@ -4,13 +4,13 @@ import { schedulerSummary } from "./goal-scheduler-state.ts";
 import { goalDetailPage, type GoalDetailSection } from "./goal-detail.ts";
 import { taskIndex } from "./goal-task-index.ts";
 import { StringEnum, Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentToolResult, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { defineTool, type AgentToolResult, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { formatDuration, formatTokenValue, statusLabel, truncateText } from "./goal-core.ts";
+import { formatDuration, formatTokenValue, statusLabel, truncateText } from "./goal-display.ts";
 import { extractVerificationContract } from "./goal-contract.ts";
 import { detailedSummary, goalDetails, renderGoalResult } from "./goal-format.ts";
 import { modelBudgetLine } from "./goal-accounting.ts";
-import { buildGoalCreatedReport, buildTaskSummary, findTaskInTree, validateGoalAgentPause, validateGoalBlock } from "./goal-policy.ts";
+import { buildGoalCreatedReport, buildTaskSummary, validateGoalAgentPause, validateGoalBlock } from "./goal-policy.ts";
 import { buildUnfocusedOpenGoalsSummary, otherOpenGoalCount } from "./goal-pool.ts";
 import { readGoalLedger, goalOracleState } from "./goal-ledger.ts";
 import { loadGoalSettings } from "./goal-settings.ts";
@@ -55,9 +55,9 @@ pi.registerTool(defineTool({
 	promptSnippet: "Inspect goal state or retrieve omitted requirements.",
 	promptGuidelines: [],
 	parameters: Type.Object({
-  section: Type.Optional(StringEnum(["summary", "objective", "tasks", "history"] as const)),
-  task_id: Type.Optional(Type.String({description: "With section=tasks, retrieve one task."})),
-  cursor: Type.Optional(Type.String({maxLength: 256, description: "Next page; repeat section/task."})),
+		section: Type.Optional(StringEnum(["summary", "objective", "tasks", "history"] as const)),
+		task_id: Type.Optional(Type.String({description: "With section=tasks, retrieve one task."})),
+		cursor: Type.Optional(Type.String({maxLength: 256, description: "Next page; repeat section/task."})),
 		verbose: Type.Optional(Type.Boolean({ description: "Full detail mode." })),
 		include_history: Type.Optional(Type.Boolean()),
 	}, { additionalProperties: false }),
@@ -82,13 +82,13 @@ pi.registerTool(defineTool({
 				details: goalDetails(view),
 			};
 		}
-  if (params.section && params.section !== "summary") {
-   if (!["objective", "tasks", "history"].includes(params.section)) return {content: [{type: "text", text: "Unknown goal section."}], details: goalDetails(view)};
-   const history = params.section === "history" ? readGoalLedger(ctx) : undefined;
-   const page = goalDetailPage(view, {section: params.section, task_id: taskId, cursor: params.cursor}, history?.events, history?.revision);
-   return {content: [{type: "text", text: page.text}], details: {...goalDetails(view), ...(page.ok ? {page: {content: page.content, nextCursor: page.nextCursor, totalChars: page.totalChars}} : {})}};
-  }
-  if (params.cursor || taskId) return {content: [{type: "text", text: "Use section=objective, tasks, or history for detail retrieval; task_id requires tasks."}], details: goalDetails(view)};
+		if (params.section && params.section !== "summary") {
+			if (!["objective", "tasks", "history"].includes(params.section)) return {content: [{type: "text", text: "Unknown goal section."}], details: goalDetails(view)};
+			const history = params.section === "history" ? readGoalLedger(ctx) : undefined;
+			const page = goalDetailPage(view, {section: params.section, task_id: taskId, cursor: params.cursor}, history?.events, history?.revision);
+			return {content: [{type: "text", text: page.text}], details: {...goalDetails(view), ...(page.ok ? {page: {content: page.content, nextCursor: page.nextCursor, totalChars: page.totalChars}} : {})}};
+		}
+		if (params.cursor || taskId) return {content: [{type: "text", text: "Use section=objective, tasks, or history for detail retrieval; task_id requires tasks."}], details: goalDetails(view)};
 		if (verbose && !params.section) {
 			const lines: string[] = [`Goal ${view.id}: ${statusLabel(view)}, ${view.sisyphus ? "sisyphus" : "regular"}`, schedulerSummary(view.scheduler, loadGoalSettings(ctx.cwd).maxAutonomousRuns, loadGoalSettings(ctx.cwd).showAutonomousRuns, loadGoalSettings(ctx.cwd).idleContinuationBackoff === true, core.loadedCommands)];
 			lines.push(`Objective: ${view.objective}`, "");
@@ -153,10 +153,10 @@ pi.registerTool(defineTool({
 		if ((view.status === "paused" || view.status === "blocked") && view.pauseReason) {
 			lines.push(`Blocker: ${view.pauseReason}`);
 		}
-  if (params.include_history) {
-   const history = buildGoalHistoryBlock(view, readGoalLedger(ctx).events);
-   if (history) lines.push(history);
-  }
+		if (params.include_history) {
+			const history = buildGoalHistoryBlock(view, readGoalLedger(ctx).events);
+			if (history) lines.push(history);
+		}
 		return {
 			content: [{ type: "text", text: lines.join("\n") }],
 			details: goalDetails(view),
@@ -528,16 +528,16 @@ pi.registerTool(defineTool({
 	}, { additionalProperties: false }),
 	executionMode: "sequential",
 	async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-  const planned = planUpdateGoal(params);
-  if (!planned.ok) return {isError: true, content: [{type: "text", text: planned.message}], details: {}, terminate: false};
-  core.flushGoalTransaction(ctx);
-  const plan = planned.plan;
-  switch (plan.action) {
-   case "continuation": return core.scheduler.declare(ctx, plan.continuation);
-   case "blocked": return runGoalBlockedFlow(ctx, plan.reason, plan.attemptedActions);
-   case "paused": return runGoalAgentPauseFlow(ctx, plan.reason, plan.suggestedAction);
-   case "complete": return deps.runGoalCompletionFlow(core, ctx, plan.completionSummary);
-  }
+		const planned = planUpdateGoal(params);
+		if (!planned.ok) return {isError: true, content: [{type: "text", text: planned.message}], details: {}, terminate: false};
+		core.flushGoalTransaction(ctx);
+		const plan = planned.plan;
+		switch (plan.action) {
+			case "continuation": return core.scheduler.declare(ctx, plan.continuation);
+			case "blocked": return runGoalBlockedFlow(ctx, plan.reason, plan.attemptedActions);
+			case "paused": return runGoalAgentPauseFlow(ctx, plan.reason, plan.suggestedAction);
+			case "complete": return deps.runGoalCompletionFlow(core, ctx, plan.completionSummary);
+		}
 	},
 	renderCall(args, theme) {
 		return new Text(theme.fg("toolTitle", "update_goal ") + theme.fg("muted", args?.status ?? ""), 0, 0);

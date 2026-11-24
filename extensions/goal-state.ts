@@ -1,10 +1,10 @@
 import { GoalInterruption } from "./goal-interruption.ts";
 import { commandHint, type GoalCommandId, type GoalCommands } from "./goal-controls.ts";
 import * as path from "node:path";
-import { goalStorageContext, goalStorageRoot } from "./storage/goal-root.ts";
+import { goalStorageContext } from "./storage/goal-root.ts";
 import { type AgentToolResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { FOCUS_ENTRY, STATE_ENTRY, GOAL_EVENT_ENTRY, goalDetails } from "./goal-format.ts";
-import { loadGoalSettings, loadGoalSettingsFileConfig } from "./goal-settings.ts";
+import { loadGoalSettings } from "./goal-settings.ts";
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
 	DRAFTING_GOAL_TOOLS,
@@ -59,9 +59,9 @@ import { runGoalCompletionAuditor } from "./goal-auditor.ts";
  * goal, assigning replaces it in the pool and updates the focus.
  */
 export interface ActiveGoalAudit {
- controller: AbortController;
- phase: "running" | "awaiting-choice" | "settling" | "settled";
- cancel(reason: string): void;
+	controller: AbortController;
+	phase: "running" | "awaiting-choice" | "settling" | "settled";
+	cancel(reason: string): void;
 }
 
 export interface GoalCore {
@@ -84,10 +84,9 @@ export interface GoalCore {
 	goalModalDepth: number;
 	enterGoalModal(): void;
 	exitGoalModal(): void;
- invalidateSession(): void;
+	invalidateSession(): void;
 	goalWorkToolCalledThisTurn: boolean;
 	tasksEnabled: boolean;
-	debugMode: boolean;
 	terminalInputUnsubscribe: (() => void) | null;
 	goalWidgetComponentRef: { current: GoalWidgetComponent | null };
 	goalService: GoalService;
@@ -162,11 +161,11 @@ export function createGoalCore(
 
 	function assignFocusedGoalId(next: string | null): void {
 		if (focusedGoalId !== next) {
-   focusRevision += 1;
-   activeAudit?.cancel("Goal focus changed during completion audit.");
-  }
+			focusRevision += 1;
+			activeAudit?.cancel("Goal focus changed during completion audit.");
+		}
 		focusedGoalId = next;
-  if (profileInitialized && !draftingProfile) installGoalToolProfile(tasksEnabled);
+		if (profileInitialized && !draftingProfile) installGoalToolProfile(tasksEnabled);
 	}
 
 	function focusedOperationToken(goalId: string): { goalId: string; revision: number } {
@@ -269,13 +268,12 @@ export function createGoalCore(
 		auditResult = null;
 	}
 	let activeAudit: ActiveGoalAudit | null = null;
- function invalidateSession(): void {
-  focusRevision += 1;
-  activeAudit?.cancel("Session replaced or shut down during completion audit.");
- }
+	function invalidateSession(): void {
+		focusRevision += 1;
+		activeAudit?.cancel("Session replaced or shut down during completion audit.");
+	}
 
 	let goalModalDepth = 0;
-	let debugMode = false;
 	// §10: unified dashboard expansion state (compact vs expanded task view),
 	// owned by the core so it survives host-side widget re-instantiation.
 	let dashboardExpanded = false;
@@ -313,8 +311,8 @@ export function createGoalCore(
 	// Whether the task tools are advertised, decided once at session start from
 	// settings (disableTasks). Stage 4 replaces them with the two task tools.
 	let tasksEnabled = true;
- let profileInitialized = false;
- let draftingProfile = false;
+	let profileInitialized = false;
+	let draftingProfile = false;
 
 	// Transient runtime state: set when the user aborts a running audit via
 	// Escape. No ledger event is appended from the low-level abort callback;
@@ -332,8 +330,8 @@ export function createGoalCore(
 	 * menu to detect repeated disableTasks toggles across one menu session).
 	 */
 	function installGoalToolProfile(tasksEnabledArg: boolean): void {
-  profileInitialized = true;
-  draftingProfile = false;
+		profileInitialized = true;
+		draftingProfile = false;
 		try {
 			const current = new Set(pi.getActiveTools());
 			for (const knownGoalTool of ALL_REGISTERED_GOAL_TOOLS) current.delete(knownGoalTool);
@@ -357,7 +355,7 @@ export function createGoalCore(
 	 * by an explicit user drafting command and is removed on confirm/cancel.
 	 */
 	function installDraftingToolProfile(): void {
-  draftingProfile = true;
+		draftingProfile = true;
 		try {
 			const current = new Set(pi.getActiveTools());
 			for (const knownGoalTool of ALL_REGISTERED_GOAL_TOOLS) current.delete(knownGoalTool);
@@ -380,13 +378,13 @@ export function createGoalCore(
 	}
 
 	function abortAudit(_ctx: ExtensionContext): void {
-  if (!activeAudit || activeAudit.phase !== "running") return;
-  activeAudit.phase = "awaiting-choice";
-  activeAudit.controller.abort();
-  stopAuditAnimation();
-  auditProgress = null;
-  goalWidgetComponentRef.current?.invalidate();
- }
+		if (!activeAudit || activeAudit.phase !== "running") return;
+		activeAudit.phase = "awaiting-choice";
+		activeAudit.controller.abort();
+		stopAuditAnimation();
+		auditProgress = null;
+		goalWidgetComponentRef.current?.invalidate();
+	}
 
 	function clearContinuationTimer(): void {
 		runtime.clearContinuationTimer();
@@ -589,14 +587,14 @@ export function createGoalCore(
 	let widgetRegistered = false;
 
 	function clearGoalWidget(ctx: ExtensionContext): void {
-  lastUiCtx = null;
-  widgetRegistered = false;
-  goalWidgetComponentRef.current = null;
-  if (ctx.hasUI) {
-   ctx.ui.setStatus("goal", undefined);
-   ctx.ui.setWidget(GOAL_WIDGET_KEY, undefined);
-  }
- }
+		lastUiCtx = null;
+		widgetRegistered = false;
+		goalWidgetComponentRef.current = null;
+		if (ctx.hasUI) {
+			ctx.ui.setStatus("goal", undefined);
+			ctx.ui.setWidget(GOAL_WIDGET_KEY, undefined);
+		}
+	}
 
 	/**
 	 * Live above-editor widget for the active goal. Inspired by rpiv-todo's
@@ -698,7 +696,6 @@ export function createGoalCore(
 						getOpenGoalCount: () => otherOpenGoalCount(goalsById, null),
 						getAuditorProgress: () => auditProgress,
 						getSettings: () => ({ ...loadGoalSettings(goalCwd), commands: core.loadedCommands }),
-						getDebugMode: () => debugMode,
 						getStalled: () => stallNotified,
 						getExpanded: () => dashboardExpanded,
 						getLedgerEvents: () => state.goal ? goalActivityEvents(storage, state.goal.id) : [],
@@ -729,7 +726,6 @@ export function createGoalCore(
 					getOpenGoalCount: () => otherOpenGoalCount(goalsById, null),
 					getAuditorProgress: () => auditProgress,
 					getSettings: () => ({ ...loadGoalSettings(goalCwd), commands: core.loadedCommands }),
-					getDebugMode: () => debugMode,
 					getStalled: () => stallNotified,
 					getExpanded: () => dashboardExpanded,
 					getLedgerEvents: () => state.goal ? goalActivityEvents(storage, state.goal.id) : [],
@@ -745,17 +741,17 @@ export function createGoalCore(
 	}
 
 	async function loadState(ctx: ExtensionContext): Promise<void> {
-  const revision = ++focusRevision;
-  const storage = goalStorageContext(ctx);
-  const entries = ctx.sessionManager.getBranch();
-  const settings = loadGoalSettings(storage.cwd);
-  const pool = await readActiveGoalPoolAsync(storage);
-  if (revision !== focusRevision) return;
-  // The host may invalidate a context while disk I/O is pending.
-  ctx.sessionManager.getSessionId?.();
-  focusStorageRoot = storage.goalStorageRoot;
-  externalFocusRoot = focusStorageRoot !== path.resolve(storage.cwd, ".pi/goals");
-  goalsById = pool;
+		const revision = ++focusRevision;
+		const storage = goalStorageContext(ctx);
+		const entries = ctx.sessionManager.getBranch();
+		const settings = loadGoalSettings(storage.cwd);
+		const pool = await readActiveGoalPoolAsync(storage);
+		if (revision !== focusRevision) return;
+		// The host may invalidate a context while disk I/O is pending.
+		ctx.sessionManager.getSessionId?.();
+		focusStorageRoot = storage.goalStorageRoot;
+		externalFocusRoot = focusStorageRoot !== path.resolve(storage.cwd, ".pi/goals");
+		goalsById = pool;
 		tasksEnabled = !loadGoalSettings(ctx.cwd).disableTasks;
 		assignFocusedGoalId(null);
 		hasExplicitSessionFocus = false;
@@ -862,7 +858,6 @@ export function createGoalCore(
 
 	function pauseActiveGoal(ctx: ExtensionContext): void {
 		if (!state.goal || state.goal.status !== "active") return;
-		const pausedGoalId = state.goal.id;
 		// User-initiated pause (Esc / aborted turn). Clear any stale agent pause reason.
 		state.goal = { ...state.goal, autoContinue: false, pauseReason: undefined, pauseSuggestedAction: undefined };
 		stopActiveGoal("paused", "user", ctx);
@@ -997,18 +992,18 @@ export function createGoalCore(
 			auditAnimationTimer = value;
 		},
 		get activeAudit() {
-   return activeAudit;
-  },
-  set activeAudit(value: ActiveGoalAudit | null) {
-   activeAudit = value;
-  },
+			return activeAudit;
+		},
+		set activeAudit(value: ActiveGoalAudit | null) {
+			activeAudit = value;
+		},
 		get goalModalDepth() {
 			return goalModalDepth;
 		},
 		set goalModalDepth(value: number) {
 			goalModalDepth = value;
 		},
-  invalidateSession,
+		invalidateSession,
 
 		get goalWorkToolCalledThisTurn() {
 			return goalWorkToolCalledThisTurn;
@@ -1021,12 +1016,6 @@ export function createGoalCore(
 		},
 		set tasksEnabled(value: boolean) {
 			tasksEnabled = value;
-		},
-		get debugMode() {
-			return debugMode;
-		},
-		set debugMode(value: boolean) {
-			debugMode = value;
 		},
 		get terminalInputUnsubscribe() {
 			return terminalInputUnsubscribe;

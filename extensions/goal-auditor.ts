@@ -1,12 +1,7 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import type { Static } from "@earendil-works/pi-ai";
-import { Type } from "@earendil-works/pi-ai";
 import type { Model } from "@earendil-works/pi-ai";
 import {
 	createAgentSession,
 	createExtensionRuntime,
-	defineTool,
 	SessionManager,
 	SettingsManager,
 	type ExtensionContext,
@@ -15,8 +10,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { GoalRecord, GoalTask, GoalTaskList } from "./goal-record.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
-import { GOAL_THINKING_LEVELS, loadGoalSettings, type GoalSettings, type ThinkingLevel } from "./goal-settings.ts";
-import { statusLabel } from "./goal-core.ts";
+import { loadGoalSettings, type GoalSettings, type ThinkingLevel } from "./goal-settings.ts";
+import { statusLabel } from "./goal-display.ts";
 
 export interface AuditorProgress {
 	/** Current tool being executed by the auditor, if any */
@@ -48,19 +43,6 @@ export interface GoalAuditorResult {
 	error?: string;
 }
 
-const THINKING_LEVELS = new Set<string>(GOAL_THINKING_LEVELS);
-
-function asNonEmptyString(value: unknown): string | undefined {
-	return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function asThinkingLevel(value: unknown): ThinkingLevel | undefined {
-	const text = asNonEmptyString(value);
-	return text && THINKING_LEVELS.has(text) ? text as ThinkingLevel : undefined;
-}
-
-
-
 export function parseAuditorDecision(output: string): { approved: boolean; disapproved: boolean } {
 	// The prompt contract: the verdict marker must be the FINAL line of the
 	// report. Matching anywhere lets a prose mention of the marker (e.g. "I
@@ -68,13 +50,6 @@ export function parseAuditorDecision(output: string): { approved: boolean; disap
 	const lines = output.split("\n").map((l) => l.trim()).filter(Boolean);
 	const marker = lines[lines.length - 1];
 	return { approved: marker === "<approved/>", disapproved: marker === "<disapproved/>" };
-}
-
-export interface AuditorVerificationEvidence {
-	/** The agent's verification summary describing what was checked. */
-	summary: string;
-	/** The goal's verification contract (what the agent was required to verify), if any. */
-	contract?: string;
 }
 
 function renderAuditorTaskTree(tasks: GoalTask[], indent: number): string[] {
@@ -447,7 +422,7 @@ export async function runGoalCompletionAuditor(args: {
 			progress.percentage = 100;
 			emitProgress();
 			unsubscribe();
-   session.dispose?.();
+			session.dispose?.();
 		}
 		// session.abort() does NOT throw — the agent loop returns normally with
 		// whatever output was captured before the abort. Check the signal after

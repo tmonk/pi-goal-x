@@ -4,58 +4,19 @@
  * goal_budget_limited ledger event, and arms one-time wrap-up steering.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createExtensionHarness } from "./support/extension-harness.ts";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../extensions/goal.ts";
 import { createGoal, goalFocusDetails } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../extensions/goal-ledger.ts";
 
 function createHarness(cwd: string, sessionEntries: unknown[]) {
-	const handlers = new Map<string, Function>();
-	const commands = new Map<string, any>();
-	let activeTools = ["read", "bash", "edit", "write"];
-	const pi = {
-		registerTool: () => {},
-		registerCommand: (name: string, def: any) => { commands.set(name, def); },
-		on: (event: string, handler: Function) => { handlers.set(event, handler); },
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendMessage: () => {},
-		getActiveTools: () => [...activeTools],
-		setActiveTools: (names: string[]) => { activeTools = [...names]; },
-		hasUI: false,
-	};
-	const ctx = {
-		cwd,
-		hasUI: false,
-		sessionManager: {
-			getBranch: () => sessionEntries,
-			getCwd: () => cwd,
-			getSessionId: () => "budget-test-session",
-			getRoot: () => cwd,
-		},
-		ui: {
-			notify: () => {},
-			setStatus: () => {},
-			setWidget: () => {},
-			onTerminalInput: () => () => {},
-			select: async () => undefined,
-			confirm: async () => false,
-			custom: async () => undefined,
-		},
-		getSystemPrompt: () => "base prompt",
-		isIdle: () => true,
-		hasPendingMessages: () => false,
-		abort: () => {},
-	} as unknown as ExtensionContext;
-	goalExtension(pi as any, {});
-	return { handlers, commands, ctx, core: (pi as any)._goalCore };
+	return createExtensionHarness({ cwd, sessionEntries, sessionId: "budget-test-session", systemPrompt: "base prompt" });
 }
 
 function fixture() {
@@ -151,7 +112,7 @@ test("goal without a budget never transitions", async () => {
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const goal = createGoal({ objective: "No budget", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 3, 10, 0, 0));
-		const written = writeActiveGoalFile({ cwd }, goal);
+		void writeActiveGoalFile({ cwd }, goal);
 		const sessionEntries = [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") }];
 		const { handlers, ctx } = createHarness(cwd, sessionEntries);
 		await handlers.get("session_start")?.({ reason: "start" }, ctx);
@@ -167,19 +128,19 @@ test("goal without a budget never transitions", async () => {
 	}
 });
 
- test("one accounting update coalesces crossed thresholds and changed budgets warn afresh", async t => {
- const f=fixture();const h=createHarness(f.cwd,f.sessionEntries);
- const notices:string[]=[];h.ctx.ui.notify=(text:string)=>{notices.push(text);};
- t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(f.cwd,{recursive:true,force:true});});
- await h.handlers.get("session_start")?.({reason:"start"},h.ctx);
- h.core.accountProgress(h.ctx,{completedTurnTokens:15}); // 80 -> 95 crosses all three
- assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,1);
- assert.equal(notices.filter(n=>n.startsWith("Token budget")).length,1);
- h.core.accountProgress(h.ctx,{completedTurnTokens:1});
- assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,1);
- h.core.goalService.apply(h.ctx,{mutate:(g:any)=>({...g,tokenBudget:120})});
- h.core.accountProgress(h.ctx,{completedTurnTokens:1});
- assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,2);
- h.core.accountProgress(h.ctx,{completedTurnTokens:12});
- assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,3);
- });
+test("one accounting update coalesces crossed thresholds and changed budgets warn afresh", async t => {
+	const f=fixture();const h=createHarness(f.cwd,f.sessionEntries);
+	const notices:string[]=[];h.ctx.ui.notify=(text:string)=>{notices.push(text);};
+	t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(f.cwd,{recursive:true,force:true});});
+	await h.handlers.get("session_start")?.({reason:"start"},h.ctx);
+	h.core.accountProgress(h.ctx,{completedTurnTokens:15}); // 80 -> 95 crosses all three
+	assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,1);
+	assert.equal(notices.filter(n=>n.startsWith("Token budget")).length,1);
+	h.core.accountProgress(h.ctx,{completedTurnTokens:1});
+	assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,1);
+	h.core.goalService.apply(h.ctx,{mutate:(g:any)=>({...g,tokenBudget:120})});
+	h.core.accountProgress(h.ctx,{completedTurnTokens:1});
+	assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,2);
+	h.core.accountProgress(h.ctx,{completedTurnTokens:12});
+	assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,3);
+});

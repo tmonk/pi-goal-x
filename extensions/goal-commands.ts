@@ -2,7 +2,6 @@ import { GOAL_COMMANDS, commandHint, commandPaths, commandProblems, commandRoute
 import { showGoalControls } from "./widgets/goal-controls-dialog.ts";
 import { goalStoragePath, goalStorageRoot } from "./storage/goal-root.ts";
 import { existsSync } from "node:fs";
-import path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { extractVerificationContract, sisyphusObjectiveSufficient } from "./goal-contract.ts";
 import { detailedSummary, oneLineSummary } from "./goal-format.ts";
@@ -12,7 +11,6 @@ import {
 	loadGoalSettings,
 	loadSettingsSnapshot,
 	mutateSettingsLayer,
-	readSettingsLayer,
 	envOverrideFor,
 	type GoalSettings,
 	type SettingsMutation,
@@ -24,11 +22,11 @@ import {
 	goalSelectorLabel,
 	otherOpenGoalCount,
 } from "./goal-pool.ts";
-import { clearGoalCommandMessage, validateResumeGoal } from "./goal-policy.ts";
+import { clearGoalCommandMessage } from "./goal-policy.ts";
 import { invalidateGoalLedgerCache, readGoalLedger } from "./goal-ledger.ts";
 import { buildGoalStatusText } from "./goal-status.ts";
 import { effectiveSettingsReport, invalidateGoalSettingsCache, loadGoalSettingsFileConfig } from "./goal-settings.ts";
-import { invalidateGoalPoolCache, mergeGoalPromptFromDisk, readActiveGoalPool } from "./storage/goal-files.ts";
+import { invalidateGoalPoolCache, readActiveGoalPool } from "./storage/goal-files.ts";
 import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
 import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "./goal-drafting.ts";
 import { formatRecoveryReport, runRecoveryReport, runRecoveryRepair } from "./goal-recovery.ts";
@@ -420,10 +418,6 @@ export function registerGoalCommands(core: GoalCore): void {
 		if (key === "keybindings") return config.keybindings ? `${config.keybindings.dashboard.toggleExpand}, ${config.keybindings.dashboard.scrollUp}, ${config.keybindings.dashboard.scrollDown}` : "(default)";
 		const value = (config as Record<string, unknown>)[key];
 		return typeof value === "string" ? value : "(default)";
-	}
-
-	function settingsLines(config: GoalSettings): string[] {
-		return SETTING_ROWS.map((row) => `${row.label}: ${settingsValue(config, row.key)}`);
 	}
 
 	async function handleSettingsMenu(ctx: ExtensionContext): Promise<void> {

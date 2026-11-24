@@ -374,20 +374,20 @@ test("explicit resume during an execution waits for settlement and dispatches ki
 
 // Default policy preserves immediate reasoning-only and final-task wrap-up runs.
 test("implicit executions continue without tools through task completion and wrap-up", async t => {
- const h = await fixture(t, undefined, "owner", undefined, false);
- t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
- h.core.goalService.apply(h.ctx, {mutate: g => ({...g, taskList: {proposedAt: new Date().toISOString(), tasks: [{id: "one", title: "One", status: "pending"}, {id: "two", title: "Two", status: "pending"}], blockCompletion: false}})});
- h.begin();
- for (const id of [undefined, "one", "two", undefined]) {
-  if (id) await h.tools.get("update_goal_task").execute("test", {task_id: id, status: "complete"}, undefined, undefined, h.ctx);
-  h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
-  assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "ready");
-  assert.equal(h.core.state.goal?.status, "active");
-  h.admit();
- }
- assert.equal(h.sent.length, 4);
- assert.equal(h.core.state.goal?.scheduler?.used, 4);
- assert.ok(h.core.state.goal?.taskList?.tasks.every(task => task.status === "complete"));
+	const h = await fixture(t, undefined, "owner", undefined, false);
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	h.core.goalService.apply(h.ctx, {mutate: g => ({...g, taskList: {proposedAt: new Date().toISOString(), tasks: [{id: "one", title: "One", status: "pending"}, {id: "two", title: "Two", status: "pending"}], blockCompletion: false}})});
+	h.begin();
+	for (const id of [undefined, "one", "two", undefined]) {
+		if (id) await h.tools.get("update_goal_task").execute("test", {task_id: id, status: "complete"}, undefined, undefined, h.ctx);
+		h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
+		assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "ready");
+		assert.equal(h.core.state.goal?.status, "active");
+		h.admit();
+	}
+	assert.equal(h.sent.length, 4);
+	assert.equal(h.core.state.goal?.scheduler?.used, 4);
+	assert.ok(h.core.state.goal?.taskList?.tasks.every(task => task.status === "complete"));
 });
 
 test("default continuation does not inspect goal content or delay reasoning/custom tools", async t => {
@@ -631,80 +631,80 @@ test("pacing metadata is optional, round-trips and rejects corrupt idle state", 
 });
 
 test("default rejects new waits without terminating or mutating; optional ready succeeds", async t => {
- const h = await fixture(t, 4, "owner", undefined, false);
- h.begin();
- const before = structuredClone(h.core.state.goal);
- const result = h.wait();
- assert.equal(result.terminate, false);
- assert.match(JSON.stringify(result.content), /strictExecutionContract=true/);
- assert.deepEqual(h.core.state.goal, before);
- assert.equal(h.ready().terminate, true);
+	const h = await fixture(t, 4, "owner", undefined, false);
+	h.begin();
+	const before = structuredClone(h.core.state.goal);
+	const result = h.wait();
+	assert.equal(result.terminate, false);
+	assert.match(JSON.stringify(result.content), /strictExecutionContract=true/);
+	assert.deepEqual(h.core.state.goal, before);
+	assert.equal(h.ready().terminate, true);
 });
 
 for (const stage of ["schedule", "claim"] as const) {
- test(`disabling strict mode converts queued repair at ${stage} without renewing allowance`, async t => {
-  const h = await fixture(t, 5);
-  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
-  h.begin(); h.core.scheduler.settled(h.ctx);
-  assert.equal(h.core.state.goal?.scheduler?.decision?.kind, "ready");
-  saveGoalSettingsFileConfig(h.cwd, {maxAutonomousRuns: 5, strictExecutionContract: false});
-  if (stage === "schedule") h.core.scheduler.schedule(h.ctx);
-  t.mock.timers.tick(1);
-  assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "ready");
-  assert.equal(h.core.state.goal?.scheduler?.used, 1);
-  assert.doesNotMatch(JSON.stringify(h.core.state.goal?.scheduler?.decision), /repair prompt/);
-  h.admit(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
-  assert.equal(h.core.state.goal?.scheduler?.used, 2);
- });
+	test(`disabling strict mode converts queued repair at ${stage} without renewing allowance`, async t => {
+		const h = await fixture(t, 5);
+		t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+		h.begin(); h.core.scheduler.settled(h.ctx);
+		assert.equal(h.core.state.goal?.scheduler?.decision?.kind, "ready");
+		saveGoalSettingsFileConfig(h.cwd, {maxAutonomousRuns: 5, strictExecutionContract: false});
+		if (stage === "schedule") h.core.scheduler.schedule(h.ctx);
+		t.mock.timers.tick(1);
+		assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "ready");
+		assert.equal(h.core.state.goal?.scheduler?.used, 1);
+		assert.doesNotMatch(JSON.stringify(h.core.state.goal?.scheduler?.decision), /repair prompt/);
+		h.admit(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
+		assert.equal(h.core.state.goal?.scheduler?.used, 2);
+	});
 }
 
 test("existing waits keep identity, deadline and repair bounds after opt-out", async t => {
- const h = await fixture(t, 8);
- t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
- h.begin(); h.wait();
- const wait = structuredClone(h.core.state.goal!.scheduler!.wait!);
- saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: false, maxAutonomousRuns: 8});
- h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1001); h.admit();
- assert.equal(h.core.scheduler.declare(h.ctx, {kind: "wait", wait_id: wait.id, reason: wait.reason, deadline: new Date(wait.deadline).toISOString()}).terminate, true);
- assert.equal(h.core.state.goal?.scheduler?.wait?.remainingChecks, 1);
- assert.equal(h.core.state.goal?.scheduler?.wait?.deadline, wait.deadline);
- h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1001); h.admit();
- h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
- assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "repair");
- h.admit(); h.core.scheduler.settled(h.ctx);
- assert.equal(h.core.state.goal?.status, "paused");
- assert.match(h.core.state.goal?.pauseReason ?? "", /No execution disposition/);
+	const h = await fixture(t, 8);
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	h.begin(); h.wait();
+	const wait = structuredClone(h.core.state.goal!.scheduler!.wait!);
+	saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: false, maxAutonomousRuns: 8});
+	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1001); h.admit();
+	assert.equal(h.core.scheduler.declare(h.ctx, {kind: "wait", wait_id: wait.id, reason: wait.reason, deadline: new Date(wait.deadline).toISOString()}).terminate, true);
+	assert.equal(h.core.state.goal?.scheduler?.wait?.remainingChecks, 1);
+	assert.equal(h.core.state.goal?.scheduler?.wait?.deadline, wait.deadline);
+	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1001); h.admit();
+	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
+	assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "repair");
+	h.admit(); h.core.scheduler.settled(h.ctx);
+	assert.equal(h.core.state.goal?.status, "paused");
+	assert.match(h.core.state.goal?.pauseReason ?? "", /No execution disposition/);
 });
 
 test("enabling strict mode at settlement requires a disposition without resetting usage", async t => {
- const h = await fixture(t, 5, "owner", undefined, false);
- t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
- h.begin(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); h.admit();
- saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: true, maxAutonomousRuns: 5});
- h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
- assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "repair");
- assert.equal(h.core.state.goal?.scheduler?.used, 2);
- h.admit(); h.core.scheduler.settled(h.ctx);
- assert.equal(h.core.state.goal?.status, "paused");
- saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: false});
- h.core.scheduler.restore(h.ctx); t.mock.timers.tick(1000);
- assert.equal(h.core.state.goal?.status, "paused");
- assert.equal(h.sent.length, 2);
+	const h = await fixture(t, 5, "owner", undefined, false);
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	h.begin(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); h.admit();
+	saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: true, maxAutonomousRuns: 5});
+	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
+	assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "repair");
+	assert.equal(h.core.state.goal?.scheduler?.used, 2);
+	h.admit(); h.core.scheduler.settled(h.ctx);
+	assert.equal(h.core.state.goal?.status, "paused");
+	saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: false});
+	h.core.scheduler.restore(h.ctx); t.mock.timers.tick(1000);
+	assert.equal(h.core.state.goal?.status, "paused");
+	assert.equal(h.sent.length, 2);
 });
 
 test("default settings inherit strict mode with explicit false overriding global true", async t => {
- const h = await fixture(t, undefined, "owner", undefined, false);
- saveGoalSettingsFileConfig(h.cwd, {});
- assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, false);
- writeFileSync(process.env.PI_GOAL_GLOBAL_SETTINGS_FILE!, JSON.stringify({strictExecutionContract: true}));
- invalidateGoalSettingsCache();
- assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, true);
- saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: false});
- assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, false);
- saveGoalSettingsFileConfig(h.cwd, {});
- assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, true);
- assert.deepEqual(parseGoalSettings({strictExecutionContract: false}), {strictExecutionContract: false});
- assert.equal(parseGoalSettings({strictExecutionContract: "invalid"}).strictExecutionContract, undefined);
+	const h = await fixture(t, undefined, "owner", undefined, false);
+	saveGoalSettingsFileConfig(h.cwd, {});
+	assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, false);
+	writeFileSync(process.env.PI_GOAL_GLOBAL_SETTINGS_FILE!, JSON.stringify({strictExecutionContract: true}));
+	invalidateGoalSettingsCache();
+	assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, true);
+	saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: false});
+	assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, false);
+	saveGoalSettingsFileConfig(h.cwd, {});
+	assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, true);
+	assert.deepEqual(parseGoalSettings({strictExecutionContract: false}), {strictExecutionContract: false});
+	assert.equal(parseGoalSettings({strictExecutionContract: "invalid"}).strictExecutionContract, undefined);
 });
 
 test("showAutonomousRuns is a layered boolean that defaults to on", async t => {
@@ -788,59 +788,59 @@ test("a goal saved with decision.nextAction loads and strips the field", () => {
 });
 
 test("prompt cache: normal and custom runs preserve history while refreshing all live goal state", async t => {
- const h = await fixture(t);
- const history: any[] = [{role: "user", content: "Work on the goal", timestamp: 1}];
- const original = structuredClone(history);
- const request = async () => (await h.handlers.context_with_system!({messages: history}, h.ctx)).messages;
- const preflight = await h.handlers.before_agent_start!({prompt: "continue", systemPrompt: "host policy"}, h.ctx);
- assert.equal(preflight, undefined, "goal state never rewrites the system prefix");
- const first = await request();
- assert.deepEqual(first.slice(0, -2), original, "stable policy and volatile counters ride as two request-only tails");
- assert.equal(first.filter((m: any) => m.customType === "pi-goal-live-context").length, 2);
- assert.match(first.at(-2).content, /PI GOAL ACTIVE/);
- assert.match(first.at(-1).content, /Goal snapshot:/);
- const wire: any = {messages: [{role: "user", content: "Work on the goal"}, {role: "user", content: [{type: "text", text: first.at(-2).content}]}, {role: "user", content: [{type: "text", text: first.at(-1).content, cache_control: {type: "ephemeral"}}]}]};
- await h.handlers.before_provider_request!({payload: wire}, h.ctx);
- assert.equal(wire.messages[0].content[0].cache_control.type, "ephemeral", "registered provider hook places the breakpoint on history");
- assert.equal(wire.messages[1].content[0].cache_control, undefined, "stable tail is transient");
- assert.equal(wire.messages[2].content[0].cache_control, undefined, "volatile tail is transient");
- h.core.state.goal!.usage.tokensUsed = 12345;
- h.core.state.goal!.scheduler = { ...newGoalScheduler("owner"), used: 7 };
- const toolCall = {role: "assistant", content: [{type: "toolCall", id: "call-1", name: "read", arguments: {path: "README.md"}}], timestamp: 2};
- const toolResult = {role: "toolResult", toolCallId: "call-1", toolName: "read", content: [{type: "text", text: "file contents"}], isError: false, timestamp: 3};
- history.push(toolCall, toolResult);
- const second = await request();
- assert.deepEqual(second.slice(0, first.length), first, "the advanced request literally extends the previous one");
- assert.deepEqual(second.slice(3, 5), [toolCall, toolResult], "tool call and result stay adjacent");
- assert.match(second[1].content, /PI GOAL ACTIVE/);
- assert.equal(second.filter((m: any) => m.customType === "pi-goal-live-context").length, 3, "changed counters append one small tail; the policy block is retained, not resent");
- assert.match(second.at(-1).content, /12345 tokens/);
- assert.doesNotMatch(second.at(-1).content, /Autonomous runs/, "an unlimited allowance reports no runs line");
- // An objective edit changes the stable policy block: retention resets once so no
- // stale objective lingers mid-history, and the fresh pair anchors the new prefix.
- h.core.state.goal!.objective = "Changed objective";
- const third = await request();
- assert.equal(third.filter((m: any) => m.customType === "pi-goal-live-context").length, 2);
- assert.deepEqual(third.slice(0, 3), history);
- assert.match(third.at(-2).content, /Changed objective/);
- assert.match(third.at(-1).content, /Goal snapshot:/);
- h.core.scheduler.begin(h.ctx); // Custom-message run bypassing preflight.
- for (let i = 0; i < 4; i++) {
-  history.push({role: "custom", customType: "pi-goal-event", content: "legacy full prompt", details: {goalId: h.core.state.goal!.id, kind: "checkpoint"}, timestamp: i + 4});
-  const current = await request();
-  assert.deepEqual(current.slice(0, third.length - 1), third.slice(0, -1));
-  assert.equal(current.filter((m: any) => m.customType === "pi-goal-live-context").length, 2, "retained tails are re-sent in place, never duplicated per request");
-  const before = current.slice(0, -1);
-  const again = await request();
-  assert.deepEqual(again.slice(0, -1), before);
- }
- assert.deepEqual(history[0], original[0], "request transforms never mutate stored history");
- for (const status of ["paused", "blocked", "budget_limited"] as const) {
-  h.core.state.goal!.status = status;
-  const stopped = await request();
-  assert.match(stopped.at(-1).content, new RegExp(status.replace("_", " ").toUpperCase()));
-  assert.doesNotMatch(stopped.at(-1).content, /PI GOAL ACTIVE/);
- }
+	const h = await fixture(t);
+	const history: any[] = [{role: "user", content: "Work on the goal", timestamp: 1}];
+	const original = structuredClone(history);
+	const request = async () => (await h.handlers.context_with_system!({messages: history}, h.ctx)).messages;
+	const preflight = await h.handlers.before_agent_start!({prompt: "continue", systemPrompt: "host policy"}, h.ctx);
+	assert.equal(preflight, undefined, "goal state never rewrites the system prefix");
+	const first = await request();
+	assert.deepEqual(first.slice(0, -2), original, "stable policy and volatile counters ride as two request-only tails");
+	assert.equal(first.filter((m: any) => m.customType === "pi-goal-live-context").length, 2);
+	assert.match(first.at(-2).content, /PI GOAL ACTIVE/);
+	assert.match(first.at(-1).content, /Goal snapshot:/);
+	const wire: any = {messages: [{role: "user", content: "Work on the goal"}, {role: "user", content: [{type: "text", text: first.at(-2).content}]}, {role: "user", content: [{type: "text", text: first.at(-1).content, cache_control: {type: "ephemeral"}}]}]};
+	await h.handlers.before_provider_request!({payload: wire}, h.ctx);
+	assert.equal(wire.messages[0].content[0].cache_control.type, "ephemeral", "registered provider hook places the breakpoint on history");
+	assert.equal(wire.messages[1].content[0].cache_control, undefined, "stable tail is transient");
+	assert.equal(wire.messages[2].content[0].cache_control, undefined, "volatile tail is transient");
+	h.core.state.goal!.usage.tokensUsed = 12345;
+	h.core.state.goal!.scheduler = { ...newGoalScheduler("owner"), used: 7 };
+	const toolCall = {role: "assistant", content: [{type: "toolCall", id: "call-1", name: "read", arguments: {path: "README.md"}}], timestamp: 2};
+	const toolResult = {role: "toolResult", toolCallId: "call-1", toolName: "read", content: [{type: "text", text: "file contents"}], isError: false, timestamp: 3};
+	history.push(toolCall, toolResult);
+	const second = await request();
+	assert.deepEqual(second.slice(0, first.length), first, "the advanced request literally extends the previous one");
+	assert.deepEqual(second.slice(3, 5), [toolCall, toolResult], "tool call and result stay adjacent");
+	assert.match(second[1].content, /PI GOAL ACTIVE/);
+	assert.equal(second.filter((m: any) => m.customType === "pi-goal-live-context").length, 3, "changed counters append one small tail; the policy block is retained, not resent");
+	assert.match(second.at(-1).content, /12345 tokens/);
+	assert.doesNotMatch(second.at(-1).content, /Autonomous runs/, "an unlimited allowance reports no runs line");
+	// An objective edit changes the stable policy block: retention resets once so no
+	// stale objective lingers mid-history, and the fresh pair anchors the new prefix.
+	h.core.state.goal!.objective = "Changed objective";
+	const third = await request();
+	assert.equal(third.filter((m: any) => m.customType === "pi-goal-live-context").length, 2);
+	assert.deepEqual(third.slice(0, 3), history);
+	assert.match(third.at(-2).content, /Changed objective/);
+	assert.match(third.at(-1).content, /Goal snapshot:/);
+	h.core.scheduler.begin(h.ctx); // Custom-message run bypassing preflight.
+	for (let i = 0; i < 4; i++) {
+		history.push({role: "custom", customType: "pi-goal-event", content: "legacy full prompt", details: {goalId: h.core.state.goal!.id, kind: "checkpoint"}, timestamp: i + 4});
+		const current = await request();
+		assert.deepEqual(current.slice(0, third.length - 1), third.slice(0, -1));
+		assert.equal(current.filter((m: any) => m.customType === "pi-goal-live-context").length, 2, "retained tails are re-sent in place, never duplicated per request");
+		const before = current.slice(0, -1);
+		const again = await request();
+		assert.deepEqual(again.slice(0, -1), before);
+	}
+	assert.deepEqual(history[0], original[0], "request transforms never mutate stored history");
+	for (const status of ["paused", "blocked", "budget_limited"] as const) {
+		h.core.state.goal!.status = status;
+		const stopped = await request();
+		assert.match(stopped.at(-1).content, new RegExp(status.replace("_", " ").toUpperCase()));
+		assert.doesNotMatch(stopped.at(-1).content, /PI GOAL ACTIVE/);
+	}
 });
 
 test("prompt cache: interleaved sessions keep per-session transient sets", async t => {
@@ -875,107 +875,107 @@ test("prompt cache: cleared scheduling instructions vanish from retained history
 
 
 test("prompt cache: model changes and missing identities cannot replay another request's counters", async t => {
- const h = await fixture(t);
- await h.handlers.session_start!({}, h.ctx);
- const history = [{role: "user", content: "inspect", timestamp: 1}];
- const request = async (ctx: ExtensionContext) => (await h.handlers.context_with_system!({messages: history}, ctx)).messages as any[];
- const initial = {...h.ctx, model: {provider: "provider-a", id: "model-a"}} as ExtensionContext;
- await request(initial);
- h.core.state.goal!.usage.tokensUsed = 123456;
- for (const model of [{provider: "provider-a", id: "model-b"}, {provider: "provider-b", id: "model-b"}]) {
-  const out = await request({...h.ctx, model} as ExtensionContext);
-  assert.equal(out.filter(m => m.customType === "pi-goal-live-context").length, 2);
-  assert.match(out.at(-1).content, /123456 tokens/);
- }
- const unknown = {...h.ctx, sessionManager: {...h.ctx.sessionManager, getSessionId: () => undefined}} as unknown as ExtensionContext;
- await h.handlers.session_start!({}, unknown);
- await request(unknown);
- h.core.state.goal!.usage.tokensUsed = 234567;
- const next = await request(unknown);
- assert.equal(next.filter(m => m.customType === "pi-goal-live-context").length, 2);
- assert.ok(!JSON.stringify(next).includes("123456 tokens"));
- await h.handlers.session_shutdown!({}, unknown);
- await h.handlers.session_start!({}, initial);
- const restarted = await request(initial);
- assert.equal(restarted.filter(m => m.customType === "pi-goal-live-context").length, 2);
- assert.match(restarted.at(-1).content, /234567 tokens/);
+	const h = await fixture(t);
+	await h.handlers.session_start!({}, h.ctx);
+	const history = [{role: "user", content: "inspect", timestamp: 1}];
+	const request = async (ctx: ExtensionContext) => (await h.handlers.context_with_system!({messages: history}, ctx)).messages as any[];
+	const initial = {...h.ctx, model: {provider: "provider-a", id: "model-a"}} as ExtensionContext;
+	await request(initial);
+	h.core.state.goal!.usage.tokensUsed = 123456;
+	for (const model of [{provider: "provider-a", id: "model-b"}, {provider: "provider-b", id: "model-b"}]) {
+		const out = await request({...h.ctx, model} as ExtensionContext);
+		assert.equal(out.filter(m => m.customType === "pi-goal-live-context").length, 2);
+		assert.match(out.at(-1).content, /123456 tokens/);
+	}
+	const unknown = {...h.ctx, sessionManager: {...h.ctx.sessionManager, getSessionId: () => undefined}} as unknown as ExtensionContext;
+	await h.handlers.session_start!({}, unknown);
+	await request(unknown);
+	h.core.state.goal!.usage.tokensUsed = 234567;
+	const next = await request(unknown);
+	assert.equal(next.filter(m => m.customType === "pi-goal-live-context").length, 2);
+	assert.ok(!JSON.stringify(next).includes("123456 tokens"));
+	await h.handlers.session_shutdown!({}, unknown);
+	await h.handlers.session_start!({}, initial);
+	const restarted = await request(initial);
+	assert.equal(restarted.filter(m => m.customType === "pi-goal-live-context").length, 2);
+	assert.match(restarted.at(-1).content, /234567 tokens/);
 });
 
 for (const order of ['prepare-first', 'agent-first']) test(`rejected checkpoints preserve a replacement goal through ${order} startup and cancellation`, async t => {
- const h=await fixture(t,10);
- const before=readFileSync(path.join(h.cwd,h.core.state.goal!.activePath!),'utf8');
- const ctx={...h.ctx,signal:AbortSignal.abort()};
- h.core.runningGoalId='previous-goal';
- if(order==='agent-first')h.begin();
- await h.handlers.before_agent_start!({prompt:'<pi_goal_continuation goal_id="previous-goal" kind="checkpoint"/>',systemPrompt:'base',systemPromptOptions:{}},ctx);
- if(order==='prepare-first')h.begin();
- assert.equal(h.core.runningGoalId,null,'rejected startup does not bind to the replacement goal');
- assert.equal((await h.handlers.tool_call!({toolName:'write',input:{path:'wrong'}},ctx)).block,true);
- await h.handlers.turn_start!({},ctx);
- const message={role:'assistant',stopReason:'aborted',usage:{input:50,output:50,totalTokens:100}};
- await h.handlers.message_end!({message},ctx);
- await h.handlers.turn_end!({message},ctx);
- await h.handlers.agent_end!({messages:[message]},ctx);
- await h.handlers.agent_settled!({aborted:true},ctx);
- assert.equal(h.core.scheduler.isDenied(),false);
- assert.equal(h.core.state.goal?.status,'active');
- assert.equal(readFileSync(path.join(h.cwd,h.core.state.goal!.activePath!),'utf8'),before,'no pause, accounting or scheduler changes leak into the replacement');
- await h.handlers.before_agent_start!({prompt:'Continue the current goal',systemPrompt:'base',systemPromptOptions:{}},h.ctx);
- h.begin();
- assert.equal(h.core.runningGoalId,h.core.state.goal?.id,'the next legitimate run binds normally');
+	const h=await fixture(t,10);
+	const before=readFileSync(path.join(h.cwd,h.core.state.goal!.activePath!),'utf8');
+	const ctx={...h.ctx,signal:AbortSignal.abort()};
+	h.core.runningGoalId='previous-goal';
+	if(order==='agent-first')h.begin();
+	await h.handlers.before_agent_start!({prompt:'<pi_goal_continuation goal_id="previous-goal" kind="checkpoint"/>',systemPrompt:'base',systemPromptOptions:{}},ctx);
+	if(order==='prepare-first')h.begin();
+	assert.equal(h.core.runningGoalId,null,'rejected startup does not bind to the replacement goal');
+	assert.equal((await h.handlers.tool_call!({toolName:'write',input:{path:'wrong'}},ctx)).block,true);
+	await h.handlers.turn_start!({},ctx);
+	const message={role:'assistant',stopReason:'aborted',usage:{input:50,output:50,totalTokens:100}};
+	await h.handlers.message_end!({message},ctx);
+	await h.handlers.turn_end!({message},ctx);
+	await h.handlers.agent_end!({messages:[message]},ctx);
+	await h.handlers.agent_settled!({aborted:true},ctx);
+	assert.equal(h.core.scheduler.isDenied(),false);
+	assert.equal(h.core.state.goal?.status,'active');
+	assert.equal(readFileSync(path.join(h.cwd,h.core.state.goal!.activePath!),'utf8'),before,'no pause, accounting or scheduler changes leak into the replacement');
+	await h.handlers.before_agent_start!({prompt:'Continue the current goal',systemPrompt:'base',systemPromptOptions:{}},h.ctx);
+	h.begin();
+	assert.equal(h.core.runningGoalId,h.core.state.goal?.id,'the next legitimate run binds normally');
 });
 
 test('rejection cancels timers without losing the replacement goal\'s saved dispatch', async t => {
- const h=await fixture(t,10);
- t.mock.timers.enable({apis:['setTimeout','Date']});
- assert.equal(h.core.scheduler.resume(h.ctx),true);
- const before=JSON.stringify(h.core.state.goal?.scheduler);
- h.core.scheduler.rejectCheckpoint(h.ctx);
- h.begin();
- h.core.scheduler.schedule(h.ctx);
- t.mock.timers.tick(1000);
- assert.equal(h.sent.length,0);
- assert.equal(JSON.stringify(h.core.state.goal?.scheduler),before);
- await h.handlers.agent_settled!({aborted:true},h.ctx);
- t.mock.timers.tick(1);
- assert.equal(h.sent.length,1,'existing intent dispatches once after the rejection settles');
- assert.equal(h.core.state.goal?.scheduler?.used,1);
+	const h=await fixture(t,10);
+	t.mock.timers.enable({apis:['setTimeout','Date']});
+	assert.equal(h.core.scheduler.resume(h.ctx),true);
+	const before=JSON.stringify(h.core.state.goal?.scheduler);
+	h.core.scheduler.rejectCheckpoint(h.ctx);
+	h.begin();
+	h.core.scheduler.schedule(h.ctx);
+	t.mock.timers.tick(1000);
+	assert.equal(h.sent.length,0);
+	assert.equal(JSON.stringify(h.core.state.goal?.scheduler),before);
+	await h.handlers.agent_settled!({aborted:true},h.ctx);
+	t.mock.timers.tick(1);
+	assert.equal(h.sent.length,1,'existing intent dispatches once after the rejection settles');
+	assert.equal(h.core.state.goal?.scheduler?.used,1);
 });
 
 test('a rejected dispatch cannot release a user turn hold or renew its allowance', async t => {
- const h=await fixture(t,10);
- saveGoalSettingsFileConfig(h.cwd,{pauseOrder:'turn-first'});
- h.core.interruption.pause(h.ctx);
- const before=JSON.stringify(h.core.state.goal?.scheduler);
- h.core.scheduler.rejectCheckpoint(h.ctx);
- h.begin();
- await h.handlers.agent_settled!({aborted:true},h.ctx);
- assert.equal(h.core.interruption.isHeld(),true);
- assert.equal(JSON.stringify(h.core.state.goal?.scheduler),before);
- assert.equal(h.sent.length,0);
+	const h=await fixture(t,10);
+	saveGoalSettingsFileConfig(h.cwd,{pauseOrder:'turn-first'});
+	h.core.interruption.pause(h.ctx);
+	const before=JSON.stringify(h.core.state.goal?.scheduler);
+	h.core.scheduler.rejectCheckpoint(h.ctx);
+	h.begin();
+	await h.handlers.agent_settled!({aborted:true},h.ctx);
+	assert.equal(h.core.interruption.isHeld(),true);
+	assert.equal(JSON.stringify(h.core.state.goal?.scheduler),before);
+	assert.equal(h.sent.length,0);
 });
 
 test('native retries retain the original run while a replacement waits for its own kickoff', async t => {
- const h=await fixture(t,10);
- t.mock.timers.enable({apis:['setTimeout','Date']});
- const original=h.core.state.goal!.id;
- h.begin();
- h.core.replaceGoal({objective:'Replacement work',autoContinue:true,sisyphus:false},h.ctx);
- const replacement=h.core.state.goal!.id;
- assert.notEqual(replacement,original);
- h.core.accountProgress(h.ctx,{completedTurnTokens:128});
- assert.equal(h.core.state.goal?.usage.tokensUsed,0,'an old run cannot charge the replacement');
- assert.equal(h.core.accounting.goalId,null,'replacement time starts with its own run');
- assert.deepEqual(h.core.state.goal?.scheduler?.decision,{kind:'ready',purpose:'kickoff'});
- h.core.runningGoalId=replacement; // before_agent_start can run again during host retry
- h.begin();
- assert.equal(h.core.runningGoalId,original);
- t.mock.timers.tick(1000);
- assert.equal(h.sent.length,0,'replacement work waits for the original execution to settle');
- h.core.scheduler.settled(h.ctx,false);
- t.mock.timers.tick(1);
- assert.equal(h.sent.length,1,'saved creation intent starts a fresh run');
- h.admit();
- assert.equal(h.core.runningGoalId,replacement);
- assert.equal(h.core.state.goal?.scheduler?.used,1);
+	const h=await fixture(t,10);
+	t.mock.timers.enable({apis:['setTimeout','Date']});
+	const original=h.core.state.goal!.id;
+	h.begin();
+	h.core.replaceGoal({objective:'Replacement work',autoContinue:true,sisyphus:false},h.ctx);
+	const replacement=h.core.state.goal!.id;
+	assert.notEqual(replacement,original);
+	h.core.accountProgress(h.ctx,{completedTurnTokens:128});
+	assert.equal(h.core.state.goal?.usage.tokensUsed,0,'an old run cannot charge the replacement');
+	assert.equal(h.core.accounting.goalId,null,'replacement time starts with its own run');
+	assert.deepEqual(h.core.state.goal?.scheduler?.decision,{kind:'ready',purpose:'kickoff'});
+	h.core.runningGoalId=replacement; // before_agent_start can run again during host retry
+	h.begin();
+	assert.equal(h.core.runningGoalId,original);
+	t.mock.timers.tick(1000);
+	assert.equal(h.sent.length,0,'replacement work waits for the original execution to settle');
+	h.core.scheduler.settled(h.ctx,false);
+	t.mock.timers.tick(1);
+	assert.equal(h.sent.length,1,'saved creation intent starts a fresh run');
+	h.admit();
+	assert.equal(h.core.runningGoalId,replacement);
+	assert.equal(h.core.state.goal?.scheduler?.used,1);
 });

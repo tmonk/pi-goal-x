@@ -44,7 +44,13 @@ try {
 }
 
 const byId = (rows) => new Map(rows.map((r) => [r.id, r]));
-const beforeMap = byId(before.rows);
+// Rows whose code was deliberately deleted. A reference run from an older base
+// still produces them, so their absence afterwards is expected, not a regression.
+const RETIRED_ROWS = new Set([
+	"B7.render.taskOverlay", // widgets/task-list-overlay.ts removed in the 2026-11-24 cleanup
+	"B7.policy.validateTasks", // validateTaskListProposal had no production caller; removed in the same cleanup
+]);
+const beforeMap = byId(before.rows.filter((r) => !RETIRED_ROWS.has(r.id)));
 const afterMap = byId(after.rows);
 
 const failures = [];
@@ -112,6 +118,7 @@ const headroomMisses = [];
 const opsRegressions = [];
 if (campaign === "naf") {
 	for (const row of classifyRows(before)) {
+		if (RETIRED_ROWS.has(row.id)) continue;
 		const aRow = afterMap.get(row.id);
 		if (!aRow) {
 			failures.push(`${row.id}: missing in after run`);

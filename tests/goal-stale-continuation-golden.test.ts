@@ -20,7 +20,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import piGoalExtension from "../extensions/goal.ts";
 import {
@@ -29,7 +29,6 @@ import {
 	type GoalRecord,
 	type GoalStateEntry,
 } from "../extensions/goal-record.ts";
-import { writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 
 const FIXTURE_GOAL = readFileSync(new URL("./fixtures/goals/active_goal_fixture.md", import.meta.url), "utf8");
 

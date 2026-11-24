@@ -21,7 +21,6 @@ import {
 	saveGoalSettingsFileConfig,
 	effectiveSettingsReport,
 	formatGoalKeybinding,
-	type GoalSettings,
 } from "../extensions/goal-settings.ts";
 
 // ── parseGoalSettings ───────────────────────────────────────────────────
@@ -368,7 +367,6 @@ test("effectiveSettingsReport: objectiveMaxChars row shows the effective value a
 
 import {
 	goalPrompt,
-	continuationPrompt,
 	taskListBlock,
 	verificationContractBlock,
 } from "../extensions/prompts/goal-prompts.ts";
@@ -438,19 +436,6 @@ test("goalPrompt: contract block shown when settings undefined (backward compat)
 	const g = goalWithTaskList({ verificationContract: "Must verify X" });
 	const prompt = goalPrompt(g);
 	assert.ok(prompt.includes("VERIFICATION CONTRACT"), "contract shown when no settings");
-});
-
-test("continuationPrompt: contract block suppressed when disableContracts is true", () => {
-	const g = goalWithTaskList({ verificationContract: "Must verify X" });
-	const prompt = continuationPrompt(g, { disableContracts: true });
-	assert.ok(!prompt.includes("VERIFICATION CONTRACT"), "contract section suppressed from continuationPrompt");
-});
-
-test("continuationPrompt: task list suppressed when disableTasks is true", () => {
-	const g = goalWithTaskList();
-	g.taskList = { tasks: [{ id: "t1", title: "Task 1", status: "pending" }], blockCompletion: false, proposedAt: new Date().toISOString() };
-	const prompt = continuationPrompt(g, { disableTasks: true });
-	assert.ok(!prompt.includes("TASK LIST"), "task list suppressed from continuationPrompt");
 });
 
 // ── subtaskDepth ────────────────────────────────────────────────────────

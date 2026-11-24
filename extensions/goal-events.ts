@@ -14,10 +14,10 @@ import {
 	isErrorAssistantMessage,
 	isMeaningfulProgressToolCall,
 } from "./goal-format.ts";
-import { buildCompactionSummary, buildPostCompactionGoalDelta } from "./goal-compaction.ts";
+import { buildPostCompactionGoalDelta } from "./goal-compaction.ts";
 import { latestAuditorResultForGoal, readGoalLedger, goalRuntimeEvents, invalidateGoalLedgerCache } from "./goal-ledger.ts";
 import { shouldArmPostCompactReminder, shouldInjectPostCompactReminder } from "./goal-policy.ts";
-import { formatTokenValue } from "./goal-core.ts";
+import { formatTokenValue } from "./goal-display.ts";
 import { loadGoalSettings, invalidateGoalSettingsCache } from "./goal-settings.ts";
 import { modelBudgetLine, budgetRemaining } from "./goal-accounting.ts";
 import { asRecord, nowIso, type AssistantMessageLike, type GoalRecord } from "./goal-record.ts";
@@ -33,7 +33,7 @@ import {
 	untrustedObjectiveBlock,
 } from "./prompts/goal-prompts.ts";
 import { hasActiveDraft, rehydrateDraft } from "./goal-drafting.ts";
-import { syncTerminalInputPause } from "./goal-widget.ts";
+import { syncTerminalInputPause } from "./goal-terminal-input.ts";
 import type { GoalCore } from "./goal-state.ts";
 import { filterGoalSessionContext, isStaleExtensionContextError } from "./goal-session-safety.ts";
 import { registerGoalContext } from "./goal-context.ts";
@@ -41,19 +41,19 @@ import type { GoalMutationOutcome } from "./goal-service.ts";
 
 /** Normalize checkpoints independently: deleting old markers shifts the cached prefix. */
 export function compactGoalCheckpointContext(
- messages: readonly unknown[],
- _currentGoal: GoalRecord | null,
+	messages: readonly unknown[],
+	_currentGoal: GoalRecord | null,
 ): unknown[] | null {
- let output: unknown[] | null = null;
- for (let i = 0; i < messages.length; i++) {
-  const message = messages[i] as { customType?: string; details?: unknown; content?: unknown };
-  const id = goalEventMessageId(message);
-  if (id === null) { output?.push(message); continue; }
-  output ??= messages.slice(0, i);
-  output.push({ ...message, content: checkpointTriggerPrompt(id), display: false,
-   details: { version: 2, kind: "checkpoint", goalId: id } });
- }
- return output;
+	let output: unknown[] | null = null;
+	for (let i = 0; i < messages.length; i++) {
+		const message = messages[i] as { customType?: string; details?: unknown; content?: unknown };
+		const id = goalEventMessageId(message);
+		if (id === null) { output?.push(message); continue; }
+		output ??= messages.slice(0, i);
+		output.push({ ...message, content: checkpointTriggerPrompt(id), display: false,
+			details: { version: 2, kind: "checkpoint", goalId: id } });
+	}
+	return output;
 }
 
 /**
@@ -70,18 +70,18 @@ export function registerGoalEvents(core: GoalCore): void {
 	const liveRetention = new LiveTailRetention();
 	const sessionKeyFor = (ctx?: ExtensionContext): string =>
 		ctx?.sessionManager?.getSessionId?.() ? JSON.stringify([ctx.sessionManager.getSessionId(), ctx.model?.provider, ctx.model?.id]) : "unidentified";
- type SessionOwner = {ctx: ExtensionContext; manager: ExtensionContext["sessionManager"]; storage: GoalStorageContext; keys: Set<string>};
- let session: SessionOwner | undefined;
- const contexts = new WeakMap<object, SessionOwner>();
- const leases = new Map<string, SessionOwner>();
- pi.on("before_provider_request", (event, ctx) => {
-  if (ctx && contexts.has(ctx) && contexts.get(ctx) !== session) return;
-  try {
-   if (session && ctx && ctx.sessionManager !== session.manager) return;
-   return cacheGoalHistory(event.payload, liveRetention.contents(sessionKeyFor(ctx)));
-  }
-  catch (error) { if (!isStaleExtensionContextError(error)) throw error; }
- });
+	type SessionOwner = {ctx: ExtensionContext; manager: ExtensionContext["sessionManager"]; storage: GoalStorageContext; keys: Set<string>};
+	let session: SessionOwner | undefined;
+	const contexts = new WeakMap<object, SessionOwner>();
+	const leases = new Map<string, SessionOwner>();
+	pi.on("before_provider_request", (event, ctx) => {
+		if (ctx && contexts.has(ctx) && contexts.get(ctx) !== session) return;
+		try {
+			if (session && ctx && ctx.sessionManager !== session.manager) return;
+			return cacheGoalHistory(event.payload, liveRetention.contents(sessionKeyFor(ctx)));
+		}
+		catch (error) { if (!isStaleExtensionContextError(error)) throw error; }
+	});
 	let continuationAfterSettleFor: string | null = null;
 	let networkErrorRecoveryAfterSettleFor: string | null = null;
 
@@ -89,19 +89,19 @@ export function registerGoalEvents(core: GoalCore): void {
 		const filtered = filterGoalSessionContext(input);
 		const messages = compactGoalCheckpointContext(filtered ?? input, core.state.goal) ?? filtered;
 		const base = messages ?? input;
-  if (contexts.has(ctx) && contexts.get(ctx) !== session) return messages;
-  try {if (session && ctx.sessionManager !== session.manager) return messages;}
-  catch (error) {if (isStaleExtensionContextError(error)) return messages; throw error;}
-  // Reassert startup rejection only for the current host's provider boundary.
-  if (core.scheduler.isDenied()) ctx.abort?.();
-  if (session) contexts.set(ctx, session);
+		if (contexts.has(ctx) && contexts.get(ctx) !== session) return messages;
+		try {if (session && ctx.sessionManager !== session.manager) return messages;}
+		catch (error) {if (isStaleExtensionContextError(error)) return messages; throw error;}
+		// Reassert startup rejection only for the current host's provider boundary.
+		if (core.scheduler.isDenied()) ctx.abort?.();
+		if (session) contexts.set(ctx, session);
 		const sessionKey = sessionKeyFor(ctx);
-  if (session) {
-   leases.set(sessionKey, session);
-   session.keys.add(sessionKey);
-   if (leases.size > 16) leases.delete(leases.keys().next().value!);
-   if (session.keys.size > 16) session.keys.delete(session.keys.values().next().value!);
-  }
+		if (session) {
+			leases.set(sessionKey, session);
+			session.keys.add(sessionKey);
+			if (leases.size > 16) leases.delete(leases.keys().next().value!);
+			if (session.keys.size > 16) session.keys.delete(session.keys.values().next().value!);
+		}
 		if (sessionKey === "unidentified") liveRetention.clear(sessionKey);
 		const parts = currentGoalContextParts(ctx);
 		if (parts) {
@@ -292,59 +292,59 @@ export function registerGoalEvents(core: GoalCore): void {
 		}
 	});
 
- /** Detach first; every local cleanup runs even when host or persistence throws. */
- function teardown(ctx: ExtensionContext): void {
-  const outgoing = session;
-  session = undefined;
-  core.sessionOwner = null;
-  let failure: unknown;
-  const run = (action: () => void) => {
-   try {action();} catch (error) {if (!isStaleExtensionContextError(error)) failure ??= error;}
-  };
-  run(() => core.invalidateSession());
-  continuationAfterSettleFor = null;
-  networkErrorRecoveryAfterSettleFor = null;
-  run(() => core.interruption.settled());
-  run(() => core.interruption.reset());
-  run(() => core.auditMessages.clear());
-  run(() => core.scheduler.shutdown());
-  if (outgoing) run(() => core.accountProgress(outgoing.ctx));
-  run(() => core.goalService.endSession(outgoing?.storage));
-  run(() => core.clearContinuationState());
-  run(() => core.clearActiveAccounting());
-  run(() => core.stopAuditAnimation());
-  run(() => core.clearAuditResult());
-  core.auditProgress = null;
-  core.goalModalDepth = 0;
-  const unsubscribe = core.terminalInputUnsubscribe;
-  core.terminalInputUnsubscribe = null;
-  run(() => unsubscribe?.());
-  if (outgoing && core.state.goal) run(() => {core.goalService.persist(outgoing.storage);});
-  run(() => core.clearGoalWidget(outgoing?.ctx ?? ctx));
-  if (outgoing) for (const key of outgoing.keys) {
-   if (leases.get(key) !== outgoing) continue;
-   liveRetention.clear(key);
-   leases.delete(key);
-  }
-  if (failure) throw failure;
- }
+	/** Detach first; every local cleanup runs even when host or persistence throws. */
+	function teardown(ctx: ExtensionContext): void {
+		const outgoing = session;
+		session = undefined;
+		core.sessionOwner = null;
+		let failure: unknown;
+		const run = (action: () => void) => {
+			try {action();} catch (error) {if (!isStaleExtensionContextError(error)) failure ??= error;}
+		};
+		run(() => core.invalidateSession());
+		continuationAfterSettleFor = null;
+		networkErrorRecoveryAfterSettleFor = null;
+		run(() => core.interruption.settled());
+		run(() => core.interruption.reset());
+		run(() => core.auditMessages.clear());
+		run(() => core.scheduler.shutdown());
+		if (outgoing) run(() => core.accountProgress(outgoing.ctx));
+		run(() => core.goalService.endSession(outgoing?.storage));
+		run(() => core.clearContinuationState());
+		run(() => core.clearActiveAccounting());
+		run(() => core.stopAuditAnimation());
+		run(() => core.clearAuditResult());
+		core.auditProgress = null;
+		core.goalModalDepth = 0;
+		const unsubscribe = core.terminalInputUnsubscribe;
+		core.terminalInputUnsubscribe = null;
+		run(() => unsubscribe?.());
+		if (outgoing && core.state.goal) run(() => {core.goalService.persist(outgoing.storage);});
+		run(() => core.clearGoalWidget(outgoing?.ctx ?? ctx));
+		if (outgoing) for (const key of outgoing.keys) {
+			if (leases.get(key) !== outgoing) continue;
+			liveRetention.clear(key);
+			leases.delete(key);
+		}
+		if (failure) throw failure;
+	}
 
- async function startSession(event: {reason?: string}, ctx: ExtensionContext): Promise<void> {
-  teardown(ctx);
-  try {
-   const owner: SessionOwner = {ctx, manager: ctx.sessionManager, storage: goalStorageContext(ctx), keys: new Set()};
-   session = owner;
-   core.sessionOwner = owner;
-   contexts.set(ctx, owner);
-   invalidateGoalSettingsCache();
-   invalidateGoalPoolCache();
-   invalidateGoalLedgerCache();
-   await core.loadState(ctx);
-   if (session !== owner) return;
-   if (ctx.hasUI) ctx.ui.setStatus("goal-interrupt", undefined);
-   if (core.controlWarnings?.length) ctx.ui.notify(`Goal command settings were not applied: ${core.controlWarnings.join(" ")} Open /goal-settings controls to correct them.`, "warning");
-   rehydrateDraft(core, ctx);
-   syncTerminalInputPause(core, ctx);
+	async function startSession(event: {reason?: string}, ctx: ExtensionContext): Promise<void> {
+		teardown(ctx);
+		try {
+			const owner: SessionOwner = {ctx, manager: ctx.sessionManager, storage: goalStorageContext(ctx), keys: new Set()};
+			session = owner;
+			core.sessionOwner = owner;
+			contexts.set(ctx, owner);
+			invalidateGoalSettingsCache();
+			invalidateGoalPoolCache();
+			invalidateGoalLedgerCache();
+			await core.loadState(ctx);
+			if (session !== owner) return;
+			if (ctx.hasUI) ctx.ui.setStatus("goal-interrupt", undefined);
+			if (core.controlWarnings?.length) ctx.ui.notify(`Goal command settings were not applied: ${core.controlWarnings.join(" ")} Open /goal-settings controls to correct them.`, "warning");
+			rehydrateDraft(core, ctx);
+			syncTerminalInputPause(core, ctx);
 		if (event.reason === "resume" && !core.state.goal && !core.hasExplicitSessionFocus && otherOpenGoalCount(core.goalsById, null) > 1 && ctx.hasUI) {
 			// Prompt the user to pick which open goal to focus (mirrors /goal-focus).
 			const open = core.openGoals();
@@ -371,12 +371,12 @@ export function registerGoalEvents(core: GoalCore): void {
 				core.scheduler.resume(ctx);
 			}
 		}
-   if (session !== owner) return;
-   core.beginAccounting();
-   core.scheduler.restore(ctx);
-  } catch (error) {if (!isStaleExtensionContextError(error)) throw error;}
- }
- pi.on("session_start", startSession);
+			if (session !== owner) return;
+			core.beginAccounting();
+			core.scheduler.restore(ctx);
+		} catch (error) {if (!isStaleExtensionContextError(error)) throw error;}
+	}
+	pi.on("session_start", startSession);
 
 	pi.on("session_before_compact", async (_event, ctx) => {
 		core.accountProgress(ctx);
@@ -409,11 +409,11 @@ export function registerGoalEvents(core: GoalCore): void {
 		);
 	});
 
- pi.on("session_tree", (_event, ctx) => startSession({}, ctx));
+	pi.on("session_tree", (_event, ctx) => startSession({}, ctx));
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		core.advanceTurnSeq();
-  if (!hasActiveDraft(core)) core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
+		if (!hasActiveDraft(core)) core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
 		const incomingGoalId = event.messageType === "custom"
 			? goalEventMessageId(event.message) : extractGoalIdFromInjectedMessage(event.prompt ?? "");
 		if (event.messageType !== "custom" && !incomingGoalId) core.interruption.continueWithUser(ctx);
@@ -514,10 +514,10 @@ export function registerGoalEvents(core: GoalCore): void {
 				: "";
 		return { state: `[PI GOAL BUDGET LIMITED goalId=${limitedGoal.id}]\n${untrustedObjectiveBlock(limitedGoal)}${budgetText ? `\n${budgetText}` : ""}${reminder}` };
 		}
-  if (core.state.goal.status === "blocked") {
-   const blocked = core.state.goal;
-   return { state: `[PI GOAL BLOCKED goalId=${blocked.id}]\n${untrustedObjectiveBlock(blocked)}\nBlocker: ${blocked.pauseReason ?? "unspecified"}\nThe goal is blocked; the user must run ${commandHint("goal-resume", core.loadedCommands)} before goal work continues.` };
-  }
+		if (core.state.goal.status === "blocked") {
+			const blocked = core.state.goal;
+			return { state: `[PI GOAL BLOCKED goalId=${blocked.id}]\n${untrustedObjectiveBlock(blocked)}\nBlocker: ${blocked.pauseReason ?? "unspecified"}\nThe goal is blocked; the user must run ${commandHint("goal-resume", core.loadedCommands)} before goal work continues.` };
+		}
 		const activeGoal = core.state.goal;
 		const settings = loadGoalSettings(ctx.cwd);
 		const { state: policy, counters } = goalPromptParts(activeGoal, { ...settings, commands: core.loadedCommands }, ctx.getContextUsage?.());
@@ -659,18 +659,18 @@ export function registerGoalEvents(core: GoalCore): void {
 		);
 	});
 
- pi.on("session_shutdown", async (_event, ctx) => {
-  // A delayed shutdown of a previously observed owner cannot touch its successor.
-  if (contexts.has(ctx) && contexts.get(ctx) !== session) return;
-  try {if (session && ctx.sessionManager !== session.manager) return;}
-  catch (error) {
-   if (!isStaleExtensionContextError(error)) throw error;
-   if (session && contexts.get(ctx) !== session) {
-    // An unseen stale callback cannot retire an owner whose host is still live.
-    try {session.ctx.sessionManager; return;}
-    catch (ownerError) {if (!isStaleExtensionContextError(ownerError)) throw ownerError;}
-   }
-  }
-  teardown(ctx);
- });
+	pi.on("session_shutdown", async (_event, ctx) => {
+		// A delayed shutdown of a previously observed owner cannot touch its successor.
+		if (contexts.has(ctx) && contexts.get(ctx) !== session) return;
+		try {if (session && ctx.sessionManager !== session.manager) return;}
+		catch (error) {
+			if (!isStaleExtensionContextError(error)) throw error;
+			if (session && contexts.get(ctx) !== session) {
+				// An unseen stale callback cannot retire an owner whose host is still live.
+				try {session.ctx.sessionManager; return;}
+				catch (ownerError) {if (!isStaleExtensionContextError(ownerError)) throw ownerError;}
+			}
+		}
+		teardown(ctx);
+	});
 }

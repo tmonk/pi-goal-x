@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createGoalCore } from "../extensions/goal-state.ts";
-import { syncTerminalInputPause } from "../extensions/goal-widget.ts";
+import { syncTerminalInputPause } from "../extensions/goal-terminal-input.ts";
 import { mutateSettingsLayer } from "../extensions/goal-settings.ts";
 import { createGoal, goalFocusDetails } from "../extensions/goal-record.ts";
 import { writeActiveGoalFile } from "../extensions/storage/goal-files.ts";

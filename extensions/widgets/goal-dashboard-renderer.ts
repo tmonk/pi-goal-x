@@ -28,7 +28,7 @@ import {
 	type TaskListViewport,
 } from "./goal-dashboard-model.ts";
 import type { GoalActivityItem } from "../goal-activity.ts";
-import { truncateText } from "../goal-core.ts";
+import { truncateText } from "../goal-display.ts";
 import { DEFAULT_GOAL_KEYBINDINGS, formatGoalKeybinding, type GoalDashboardKeybindings } from "../goal-settings.ts";
 
 // mdLink is deliberately excluded: the chrome must stay neutral gray, not
@@ -75,10 +75,6 @@ function boxLine(theme: Theme, width: number, content: string): string {
 	const contentFit = fit(content, inner - 1);
 	const pad = Math.max(0, inner - 1 - visibleWidth(contentFit));
 	return `${frame(theme, V)} ${contentFit}${" ".repeat(pad)}${frame(theme, V)}`;
-}
-
-function boxRule(theme: Theme, width: number): string {
-	return frame(theme, `├${H.repeat(Math.max(1, width - 2))}┤`);
 }
 
 /** Section separator with a label and optional right-side content:
@@ -613,7 +609,7 @@ const CHECK_COLOR = { passed: "success", running: "accent", pending: "muted", fa
  * Structured audit dashboard (§15.3): five check stages, a progress bar, and
  * the elapsed duration, using the same visual system as the goal dashboard.
  * Raw tools and recent output appear only when showToolDetails is set
- * (expanded/debug audit mode) or when the audit finished with a failure.
+ * (expanded audit mode) or when the audit finished with a failure.
  */
 export function renderAuditorDashboard(
 	model: AuditorDashboardModel,

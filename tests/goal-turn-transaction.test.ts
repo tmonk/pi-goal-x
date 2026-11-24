@@ -10,9 +10,9 @@
  *     auditor (a separate session) reads fresh task state.
  */
 
+import { createExtensionHarness } from "./support/extension-harness.ts";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
@@ -20,32 +20,9 @@ import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { createGoal, goalFocusDetails } from "../extensions/goal-record.ts";
-import goalExtension from "../extensions/goal.ts";
 
 function makeHarness(cwd: string, runCompletionAuditor?: (...args: any[]) => Promise<any>, sessionEntries: unknown[] = []) {
-	const handlers = new Map();
-	const tools = new Map();
-	const notifies: Array<{ msg: string; level: string }> = [];
-	let activeTools = ["read", "bash", "edit", "write"];
-	const pi = {
-		registerTool: (def: { name: string }) => tools.set(def.name, def),
-		registerCommand: () => {},
-		on: (event: string, handler: unknown) => handlers.set(event, handler),
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendMessage: () => {},
-		getActiveTools: () => [...activeTools],
-		setActiveTools: (next: string[]) => { activeTools = [...next]; },
-		hasUI: false,
-	};
-	const ctx = {
-		cwd, hasUI: false,
-		sessionManager: { getBranch: () => sessionEntries, getCwd: () => cwd, getSessionId: () => "s", getRoot: () => cwd },
-		ui: { notify: (msg: string, level: string) => notifies.push({ msg, level }), setStatus: () => {}, setWidget: () => {}, onTerminalInput: () => () => {}, select: async () => undefined, input: async () => undefined, confirm: async () => true, custom: async () => undefined },
-		getSystemPrompt: () => "", isIdle: () => true, hasPendingMessages: () => false, abort: () => {},
-	};
-	goalExtension(pi as any, runCompletionAuditor ? { runCompletionAuditor } : {});
-	return { handlers, tools, ctx, notifies };
+	return createExtensionHarness({ cwd, sessionEntries, sessionId: "s", systemPrompt: "", runCompletionAuditor, ui: { confirm: async () => true } });
 }
 
 function fixture(): { cwd: string; goal: { activePath?: string; id: string }; sessionEntries: unknown[]; cleanup: () => void } {

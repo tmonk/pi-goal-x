@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildCompletionReport, findSubtaskDepthViolation, validateTaskListProposal } from "../extensions/goal-policy.ts";
+import { buildCompletionReport, findSubtaskDepthViolation } from "../extensions/goal-policy.ts";
 import { createGoal } from "../extensions/goal-record.ts";
 import {
 	archiveGoalFile,
@@ -247,11 +247,10 @@ test("tweak persist path: task validation rejects deep subtasks", () => {
 	const ctx = tempCtx();
 	try {
 		const goal = makeGoal({ objective: "Test validation" });
-		const active = writeActiveGoalFile(ctx, goal);
+		void writeActiveGoalFile(ctx, goal);
 
 		// Tasks with subtask depth > 1 (default max) — this is what the
 		// handler's findSubtaskDepthViolation call would catch at confirm time.
-		// We verify the goal can be written but that validateTaskListProposal
 		const deepTasks = [{
 			id: "t1", title: "Parent", status: "pending" as const,
 			subtasks: [{
@@ -267,20 +266,10 @@ test("tweak persist path: task validation rejects deep subtasks", () => {
 		assert.ok(depthViolation, "must reject tasks with subtask depth > 1");
 		assert.ok(depthViolation.includes("subtask nesting depth"),
 			`must mention depth violation. Got: ${depthViolation}`);
-
-		// Also verify that validateTaskListProposal rejects it
-		const proposalResult = validateTaskListProposal({ goal: tweakedRecord(active), tasks: deepTasks });
-		assert.equal(proposalResult.ok, false, "must reject deep subtasks");
-		assert.ok(proposalResult.message.includes("depth"),
-			`must mention depth. Got: ${proposalResult.message}`);
 	} finally {
 		cleanup(ctx);
 	}
 });
-
-function tweakedRecord(g: GoalRecord): GoalRecord {
-	return { ...g, status: "active" as const, autoContinue: true };
-}
 
 // ─── prompt evolution instruction ────────────────────────────────────────────
 

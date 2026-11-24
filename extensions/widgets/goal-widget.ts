@@ -1,18 +1,11 @@
 import type { GoalKeybinding, GoalCommands } from "../goal-controls.ts";
-import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import { truncateToWidth } from "./text-cache.ts";
 import {
-	displayObjectiveTitle,
-	formatDuration,
-	formatTokenValue,
-	truncateText,
 	type GoalDisplayRecordLike,
-} from "../goal-core.ts";
-import type { GoalRecord, GoalTask, GoalTaskList, TaskStatus } from "../goal-record.ts";
+} from "../goal-display.ts";
+import type { GoalRecord, GoalTaskList } from "../goal-record.ts";
 import type { GoalDashboardKeybindings, GoalSettings } from "../goal-settings.ts";
-import { sisyphusStepProgress } from "../goal-policy.ts";
 import type { GoalLedgerEvent } from "../goal-ledger.ts";
 import {
 	anchoredScrollOffset,
@@ -34,8 +27,6 @@ import {
 	renderUnfocusedDashboard,
 } from "./goal-dashboard-renderer.ts";
 import { deriveAuditResultCard, deriveAuditorDashboardModel } from "./auditor-dashboard-model.ts";
-
-type GoalWidgetColor = Extract<ThemeColor, "accent" | "warning" | "success" | "error" | "dim" | "muted" | "text">;
 
 export interface GoalWidgetRecord extends GoalDisplayRecordLike {
 	id: string;
@@ -78,7 +69,6 @@ export function makeGoalWidgetFactory(opts: {
 	getOpenGoalCount: () => number;
 	getAuditorProgress: () => AuditorWidgetProgress | null;
 	getSettings: () => GoalSettings;
-	getDebugMode: () => boolean;
 	getStalled: () => boolean;
 	getExpanded?: () => boolean;
 	getLedgerEvents?: () => GoalLedgerEvent[];
@@ -94,7 +84,6 @@ export function makeGoalWidgetFactory(opts: {
 			getOpenGoalCount: opts.getOpenGoalCount,
 			getAuditorProgress: opts.getAuditorProgress,
 			getSettings: opts.getSettings,
-			getDebugMode: opts.getDebugMode,
 			getStalled: opts.getStalled,
 			getExpanded: opts.getExpanded,
 			getLedgerEvents: opts.getLedgerEvents,
@@ -127,7 +116,6 @@ export interface GoalWidgetOptions {
 	getOpenGoalCount?: () => number;
 	getAuditorProgress?: () => AuditorWidgetProgress | null;
 	getSettings?: () => GoalSettings;
-	getDebugMode?: () => boolean;
 	/** F5: stalled badge (active auto-continue goal with no recent activity). */
 	getStalled?: () => boolean;
 	/** §10: dashboard expansion state (compact vs expanded task view). */
@@ -136,10 +124,6 @@ export interface GoalWidgetOptions {
 	getLedgerEvents?: () => GoalLedgerEvent[];
 	/** §15.4: finished audit result card (cleared after a short display). */
 	getAuditResult?: () => AuditResultView | null;
-}
-
-function fit(value: string, width: number): string {
-	return visibleWidth(value) > width ? truncateToWidth(value, width, "…") : value;
 }
 
 // ── terminal-height bound (spec 2026-08-10-widget-height-bound-scrollback-fix) ──
@@ -199,7 +183,7 @@ export function boundWidgetRenderLines(lines: string[], terminalRows: number | u
  *   min(natural, newCap): growing the terminal reveals more of the widget,
  *   shrinking re-caps;
  * - a regime change (goal id/status, widget state kind, compact↔expanded,
- *   debug mode, tasks disabled, first task appearing) clears the latch so the
+ *   tasks disabled, first task appearing) clears the latch so the
  *   new mode starts from its own natural height.
  *
  * Pure given the persisted latch state: deterministic, no timers, no
@@ -257,32 +241,6 @@ export function applyStableHeightBound(
 	return lines;
 }
 
-function heading(theme: Theme, width: number, left: string, right = ""): string {
-	if (!right) return fit(left, width);
-	const rightPart = ` ${right}`;
-	const fill = Math.max(1, width - visibleWidth(left) - visibleWidth(rightPart));
-	return fit(`${left}${theme.fg("dim", " ".repeat(fill))}${rightPart}`, width);
-}
-
-function branchLine(theme: Theme, width: number, isLast: boolean, content: string): string {
-	const prefix = isLast ? "└─" : "├─";
-	return fit(`${theme.fg("dim", prefix)} ${content}`, width);
-}
-
-function progressBar(pct: number, barWidth: number, theme: Theme): string {
-	const safeBar = Math.max(3, barWidth);
-	const filled = Math.min(safeBar, Math.max(0, Math.round((pct / 100) * safeBar)));
-	const empty = safeBar - filled;
-	return `[${theme.fg("accent", "█".repeat(filled))}${theme.fg("dim", "░".repeat(empty))}]`;
-}
-
-
-const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-function spinnerFrame(): string {
-	return SPINNER[Math.floor(Date.now() / 80) % SPINNER.length]!;
-}
-
 export interface AuditResultView {
 	verdict: "approved" | "disapproved" | "error";
 	report: string;
@@ -291,7 +249,7 @@ export interface AuditResultView {
 /**
  * Structured audit dashboard (§15): five check stages, elapsed duration, and a
  * progress bar, derived from the raw auditor progress stream. Raw tools and
- * recent output appear only with showToolDetails (expanded/debug audit mode)
+ * recent output appear only with showToolDetails (expanded audit mode)
  * or after a failed audit.
  */
 export function renderAuditorWidgetLines(
@@ -313,12 +271,12 @@ export function renderAuditResultCardView(
 	return renderAuditResultCard(deriveAuditResultCard(view.verdict, view.report), theme, width);
 }
 
-export function renderGoalWidgetLines(goal: GoalWidgetRecord | null, theme: Theme, width: number, options: { commands?: GoalCommands; openGoalCount?: number; auditorProgress?: AuditorWidgetProgress | null; disableTasks?: boolean; stalled?: boolean; ledgerEvents?: GoalLedgerEvent[]; expanded?: boolean; debug?: boolean; model?: GoalDashboardModel | null; compactScrollOffset?: number; expandedScrollOffset?: number; expandedTaskRows?: number; keybindings?: GoalDashboardKeybindings; auditorKey?: GoalKeybinding; interruptAuditKey?: GoalKeybinding; /** Terminal-height bound (see boundWidgetRenderLines); undefined = unbounded. */ terminalRows?: number } = {}): string[] {
+export function renderGoalWidgetLines(goal: GoalWidgetRecord | null, theme: Theme, width: number, options: { commands?: GoalCommands; openGoalCount?: number; auditorProgress?: AuditorWidgetProgress | null; disableTasks?: boolean; stalled?: boolean; ledgerEvents?: GoalLedgerEvent[]; expanded?: boolean; model?: GoalDashboardModel | null; compactScrollOffset?: number; expandedScrollOffset?: number; expandedTaskRows?: number; keybindings?: GoalDashboardKeybindings; auditorKey?: GoalKeybinding; interruptAuditKey?: GoalKeybinding; /** Terminal-height bound (see boundWidgetRenderLines); undefined = unbounded. */ terminalRows?: number } = {}): string[] {
 	// When auditor progress is active, show the structured audit dashboard
 	// instead of the normal goal widget (§15.3).
 	if (options.auditorProgress) {
 		return boundWidgetRenderLines(renderAuditorWidgetLines(options.auditorProgress, theme, width, {
-			showToolDetails: options.expanded === true || options.debug === true,
+			showToolDetails: options.expanded === true,
 			interruptKey: options.interruptAuditKey,
 		}), options.terminalRows);
 	}
@@ -350,7 +308,6 @@ export class GoalWidgetComponent implements Component {
 	private getOpenGoalCount: () => number;
 	private getAuditorProgress: () => AuditorWidgetProgress | null;
 	private getSettings: () => GoalSettings;
-	private getDebugMode: () => boolean;
 	private getStalled: () => boolean;
 	private getExpanded: () => boolean;
 	private getLedgerEvents: () => GoalLedgerEvent[];
@@ -385,7 +342,6 @@ export class GoalWidgetComponent implements Component {
 		this.getOpenGoalCount = options.getOpenGoalCount ?? (() => (this.getGoal() ? 1 : 0));
 		this.getAuditorProgress = options.getAuditorProgress ?? (() => null);
 		this.getSettings = options.getSettings ?? (() => ({}));
-		this.getDebugMode = options.getDebugMode ?? (() => false);
 		this.getStalled = options.getStalled ?? (() => false);
 		this.getExpanded = options.getExpanded ?? (() => false);
 		this.getLedgerEvents = options.getLedgerEvents ?? (() => []);
@@ -412,60 +368,7 @@ export class GoalWidgetComponent implements Component {
 		this.tui.requestRender();
 	}
 
-	/** Render debug info panel when debug mode is active */
-	private renderDebugPanel(width: number): string[] {
-		const t = this.theme;
-		const lines: string[] = [];
-		const safeWidth = Math.max(20, width);
-
-		// Divider
-		lines.push(t.fg("dim", "─".repeat(safeWidth)));
-		lines.push(t.fg("warning", "⊙ [DEBUG MODE]"));
-		lines.push("");
-
-		const goal = this.getGoal();
-		if (goal) {
-			lines.push(t.fg("dim", `  id: ${goal.id}`));
-			lines.push(t.fg("dim", `  status: ${goal.status}`));
-			lines.push(t.fg("dim", `  objective: ${truncateText(goal.objective, 80)}`));
-			lines.push(t.fg("dim", `  sisyphus: ${goal.sisyphus}`));
-			lines.push(t.fg("dim", `  autoContinue: ${goal.autoContinue}`));
-			lines.push(t.fg("dim", `  tokens: ${goal.usage.tokensUsed}`));
-			lines.push(t.fg("dim", `  activeSeconds: ${goal.usage.activeSeconds}`));
-			lines.push(t.fg("dim", `  createdAt: ${goal.createdAt}`));
-			lines.push(t.fg("dim", `  updatedAt: ${goal.updatedAt}`));
-			if (goal.pauseReason) lines.push(t.fg("dim", `  pauseReason: ${goal.pauseReason}`));
-			if (goal.pauseSuggestedAction) lines.push(t.fg("dim", `  pauseSuggestedAction: ${goal.pauseSuggestedAction}`));
-			if (goal.stopReason) lines.push(t.fg("dim", `  stopReason: ${goal.stopReason}`));
-			if (goal.activePath) lines.push(t.fg("dim", `  activePath: ${goal.activePath}`));
-			if (goal.archivedPath) lines.push(t.fg("dim", `  archivedPath: ${goal.archivedPath}`));
-			if (goal.verificationContract) lines.push(t.fg("dim", `  vContract: ${truncateText(goal.verificationContract, 60)}`));
-
-			// Task tree summary (from the shared dashboard model).
-			const model = deriveGoalDashboardModel(goal as GoalRecord | null, { focused: true, otherOpenGoals: 0 });
-			if (model?.taskProgress) {
-				lines.push(t.fg("dim", `  tasks: ${model.taskProgress.completed}/${model.taskProgress.total}`));
-			}
-			if (model?.currentTask) {
-				lines.push(t.fg("dim", `  next: ${model.currentTask.id} (${truncateText(model.currentTask.title, 40)})`));
-			}
-		} else {
-			lines.push(t.fg("dim", "  (no goal)"));
-		}
-
-		lines.push("");
-		lines.push(t.fg("dim", "── Debug keybindings ──"));
-		lines.push(t.fg("dim", "  Ctrl+Shift+X  Toggle debug mode"));
-		lines.push(t.fg("dim", "  Ctrl+Shift+N  Create test goal"));
-		lines.push(t.fg("dim", "  Ctrl+Shift+T  Inject sample tasks"));
-		lines.push(t.fg("dim", "  Ctrl+Shift+R  Mock audit animation"));
-		lines.push(t.fg("dim", "  Ctrl+Shift+O  Open proposal dialog"));
-
-		return lines;
-	}
-
 	render(width: number): string[] {
-		const settings = this.getSettings();
 		this.lastRenderWidth = Math.max(1, width);
 		// Terminal-height bound (spec 2026-08-10): read pi's terminal rows at
 		// render time so the widget never fills the terminal — the chat/editor
@@ -580,7 +483,6 @@ export class GoalWidgetComponent implements Component {
 			stalled: this.getStalled(),
 			expanded: this.getExpanded(),
 			ledgerEvents: this.getLedgerEvents(),
-			debug: this.getDebugMode(),
 			model,
 			compactScrollOffset: this.compactScrollOffset,
 			expandedScrollOffset: this.expandedScrollOffset,
@@ -590,16 +492,13 @@ export class GoalWidgetComponent implements Component {
 			commands: settings.commands,
 			interruptAuditKey: settings.keybindings?.interruptAudit,
 		});
-		if (this.getDebugMode()) {
-			lines.push(...this.renderDebugPanel(width));
-		}
 		return clampLinesToWidth(lines, width);
 	}
 
 	/**
 	 * Stable-height regime key: the latch belongs to one goal, goal status,
 	 * widget state kind (focused / audit / result / unfocused / none),
-	 * expansion mode, debug mode, task setting, and task presence — a change
+	 * expansion mode, task setting, and task presence — a change
 	 * clears the latch so the new mode starts from its own natural height.
 	 * Task presence re-latches a structurally empty goal (0 tasks → tiny
 	 * dashboard) when its first task appears — a rare structural jump, not
@@ -614,7 +513,7 @@ export class GoalWidgetComponent implements Component {
 		else if (goal) stateKind = "focused";
 		else stateKind = this.getOpenGoalCount() > 0 ? "unfocused" : "none";
 		const hasTasks = (goal?.taskList?.tasks?.length ?? 0) > 0;
-		return [goal?.id ?? "∅", goal?.status ?? "∅", stateKind, String(this.getExpanded()), String(this.getDebugMode()), String(settings.disableTasks === true), String(hasTasks)].join("|");
+		return [goal?.id ?? "∅", goal?.status ?? "∅", stateKind, String(this.getExpanded()), String(settings.disableTasks === true), String(hasTasks)].join("|");
 	}
 
 	/**

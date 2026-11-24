@@ -10,7 +10,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
@@ -61,8 +61,8 @@ function runCli(args: string[], options?: { expectFailure?: boolean }): string {
 		return execFileSync(process.execPath, [CLI, ...args], { encoding: "utf8" });
 	} catch (error) {
 		if (options?.expectFailure) {
-		 const err = error as { stdout?: string; stderr?: string; status?: number };
-		 return `__exit_${err.status}__\n${err.stdout ?? ""}${err.stderr ?? ""}`;
+			const err = error as { stdout?: string; stderr?: string; status?: number };
+			return `__exit_${err.status}__\n${err.stdout ?? ""}${err.stderr ?? ""}`;
 		}
 		throw error;
 	}

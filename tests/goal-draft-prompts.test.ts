@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { extractVerificationContract, promptSafeObjective, sisyphusObjectiveSufficient } from "../extensions/goal-contract.ts";
-import { goalDraftingPrompt } from "../extensions/goal-draft.ts";
+import { goalDraftingPrompt } from "../extensions/prompts/goal-draft-prompts.ts";
 import { renderConfirmationTasks } from "../extensions/goal-task-confirmation.ts";
 
 test("extractVerificationContract splits contract line from objective", () => {

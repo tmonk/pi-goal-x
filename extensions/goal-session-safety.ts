@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { GOAL_AUDIT_ENTRY, goalEventMessageId } from "./goal-format.ts";
 
 export function isStaleExtensionContextError(error: unknown): boolean {
- return error instanceof Error && error.message.startsWith("This extension ctx is stale after session replacement or reload.");
+	return error instanceof Error && error.message.startsWith("This extension ctx is stale after session replacement or reload.");
 }
 
 /** pi-subagents marks fresh, forked, resumed and nested worker processes. */

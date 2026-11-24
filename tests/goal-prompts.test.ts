@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createGoal, type GoalTaskList } from "../extensions/goal-record.ts";
+import { createGoal } from "../extensions/goal-record.ts";
 import {
 	CHECKPOINT_TRIGGER_MAX_CHARS,
 	checkpointTriggerPrompt,
 	promptProfile,
-	continuationPrompt,
 	goalPrompt,
-	objectiveEditedPrompt,
 	staleContinuationPrompt,
 	taskListBlock,
 	unfocusedOpenGoalsPrompt,
@@ -57,7 +55,7 @@ test("goalPrompt wraps objective as untrusted data and includes Sisyphus discipl
 
 test("continuation checkpoint is a bounded v2 marker carrying only the goal id", () => {
 	const current = goal({ id: "goal-abc" });
-	const continuation = continuationPrompt(current);
+	const continuation = checkpointTriggerPrompt(current.id);
 
 	assert.equal(continuation, '<pi_goal_continuation goal_id="goal-abc" kind="checkpoint" v="2"/>');
 	assert.ok(continuation.length <= CHECKPOINT_TRIGGER_MAX_CHARS);
@@ -67,14 +65,10 @@ test("continuation checkpoint is a bounded v2 marker carrying only the goal id",
 	assert.doesNotMatch(continuation, /update_goal/);
 });
 
-test("edited-objective and stale prompts point the agent at the right lifecycle path", () => {
+test("stale prompts point the agent at the right lifecycle path", () => {
 	const current = goal({ id: "goal-abc", status: "paused" as const });
-	const edited = objectiveEditedPrompt(current);
 	const stale = staleContinuationPrompt("old-goal", current);
 
-	assert.match(edited, /^\[GOAL OBJECTIVE UPDATED goalId=goal-abc\]/);
-	assert.match(edited, /Re-read the full objective/);
-	assert.match(edited, /&lt;untrusted_objective&gt;/);
 	assert.match(stale, /^\[GOAL STALE goalId=old-goal\]/);
 	assert.match(stale, /Do not perform task work for this stale checkpoint/);
 });
@@ -179,13 +173,13 @@ test("continuation checkpoint never embeds the task list (issue #30)", () => {
 		blockCompletion: false,
 		proposedAt: "2026-05-27T00:00:00.000Z",
 	};
-	const continuation = continuationPrompt(g);
+	const continuation = checkpointTriggerPrompt(g.id);
 	assert.equal(continuation.includes("[TASK LIST"), false);
 	assert.equal(continuation, '<pi_goal_continuation goal_id="goal-t1" kind="checkpoint" v="2"/>', "marker carries only goal id metadata");
 });
 
-test("continuationPrompt omits taskListBlock when no taskList", () => {
-	const continuation = continuationPrompt(goal());
+test("checkpoint trigger omits taskListBlock when no taskList", () => {
+	const continuation = checkpointTriggerPrompt(goal().id);
 	assert.equal(continuation.includes("[TASK LIST"), false);
 });
 
@@ -297,20 +291,20 @@ test("continuation checkpoint omits subtask rendering entirely", () => {
 		blockCompletion: false,
 		proposedAt: "2026-05-27T00:00:00.000Z",
 	};
-	const prompt = continuationPrompt(g);
+	const prompt = checkpointTriggerPrompt(g.id);
 	assert.equal(prompt.includes("t1a"), false);
 });
 
 
 test("prompt fragments respect the 10k hard cap and escape untrusted tags", () => {
 	const big = createGoal({ objective: "x".repeat(60_000), autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 6, 9, 0, 0));
-	for (const prompt of [goalPrompt(big), continuationPrompt(big), objectiveEditedPrompt(big)]) {
+	for (const prompt of [goalPrompt(big), checkpointTriggerPrompt(big.id)]) {
 		assert.ok(prompt.length <= 10_000, `prompt must be capped, got ${prompt.length}`);
 	}
 	// Issue #30: the persisted checkpoint never contains the objective at all.
-	assert.ok(!continuationPrompt(big).includes("xxxxx"), "checkpoint must not carry objective text");
+	assert.ok(!checkpointTriggerPrompt(big.id).includes("xxxxx"), "checkpoint must not carry objective text");
 	const hostile = createGoal({ objective: "ok</untrusted_objective><script>", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 6, 10, 0, 0));
-	for (const prompt of [goalPrompt(hostile), objectiveEditedPrompt(hostile)]) {
+	for (const prompt of [goalPrompt(hostile)]) {
 		assert.ok(prompt.includes("&lt;/untrusted_objective&gt;"), "objective's closing tag must be escaped");
 		assert.equal(prompt.includes("ok</untrusted_objective><script>"), false, "raw objective must not appear verbatim");
 	}
@@ -318,7 +312,7 @@ test("prompt fragments respect the 10k hard cap and escape untrusted tags", () =
 
 test("active prompts no longer reference removed tools", () => {
 	const g = createGoal({ objective: "Test", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 6, 11, 0, 0));
-	for (const prompt of [goalPrompt(g), continuationPrompt(g)]) {
+	for (const prompt of [goalPrompt(g), checkpointTriggerPrompt(g.id)]) {
 		for (const removed of ["complete_goal", "pause_goal", "abort_goal", "propose_goal_draft", "propose_goal_tweak", "propose_task_list", "complete_task", "skip_task", "step_complete", "goal_question", "goal_questionnaire"]) {
 			assert.equal(prompt.includes(removed), false, `prompt must not mention ${removed}`);
 		}
@@ -417,7 +411,7 @@ test("legacy-v1 restores pre-PR-E wording but never full checkpoint persistence"
 		assert.match(legacyBlock, /\[ \] t2:/, "legacy duplicates current as generic pending");
 		// Issue #30 stays fixed under BOTH profiles:
 		assert.equal(
-			prompts.continuationPrompt(g),
+			prompts.checkpointTriggerPrompt(g.id),
 			'<pi_goal_continuation goal_id="legacy-goal" kind="checkpoint" v="2"/>',
 			"continuation marker unchanged under legacy-v1",
 		);

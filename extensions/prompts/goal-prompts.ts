@@ -1,11 +1,11 @@
 import { commandInstructions, type GoalCommands } from "../goal-controls.ts";
 import { schedulerSummaryParts } from "../goal-scheduler-state.ts";
 import { taskIndex } from "../goal-task-index.ts";
-import { statusLabel, truncateText } from "../goal-core.ts";
+import { statusLabel, truncateText } from "../goal-display.ts";
 import { promptSafeObjective } from "../goal-contract.ts";
 import type { GoalRecord, GoalTask } from "../goal-record.ts";
 import type { GoalSettings } from "../goal-settings.ts";
-import { modelBudgetLine, contextUsageLine, type GoalContextUsage } from "../goal-accounting.ts";
+import { contextUsageLine, type GoalContextUsage } from "../goal-accounting.ts";
 
 /** Hard cap for the complete injected prompt fragment (TECH Stage 6). */
 export const MAX_PROMPT_FRAGMENT_CHARS = 10_000;
@@ -77,9 +77,9 @@ function renderPendingTasks(tasks: GoalTask[], indent: number, rendered: { count
 			continue;
 		}
 		if (task.id !== undefined && task.id === rendered.skipId) {
-   if (task.subtasks) lines.push(...renderPendingTasks(task.subtasks, indent + 1, rendered));
-   continue;
-  }
+			if (task.subtasks) lines.push(...renderPendingTasks(task.subtasks, indent + 1, rendered));
+			continue;
+		}
 		if (rendered.count >= MAX_PENDING_RENDERED) {
 			rendered.stop = true;
 			return lines;
@@ -105,9 +105,9 @@ export function taskListBlock(goal: GoalRecord, settings?: GoalSettings): string
 	if (settings?.disableTasks) return "";
 	if (!goal.taskList || goal.taskList.tasks.length === 0) return "";
 	const index = taskIndex(goal.taskList.tasks);
- const {complete, skipped, pending: pendingTasks} = index;
- const total = index.ordered.length;
- const pending = pendingTasks.length;
+	const {complete, skipped, pending: pendingTasks} = index;
+	const total = index.ordered.length;
+	const pending = pendingTasks.length;
 	const lines: string[] = [];
 	lines.push(`[TASK LIST — ${complete}/${total} tasks complete${skipped > 0 ? ` (${skipped} skipped)` : ""}]`);
 	// §8.1: surface the persisted execution focus (current task), with its
@@ -153,13 +153,13 @@ export function taskListBlock(goal: GoalRecord, settings?: GoalSettings): string
 
 /** Bounded verification-contract block. */
 function excerpt(text: string, cap: number, section: "objective" | "tasks"): string {
- const safe = promptSafeObjective(text);
- return safe.length <= cap ? safe : `${safe.slice(0, cap)}… [more: get_goal(section="${section}")]`;
+	const safe = promptSafeObjective(text);
+	return safe.length <= cap ? safe : `${safe.slice(0, cap)}… [more: get_goal(section="${section}")]`;
 }
 
 export function verificationContractBlock(goal: GoalRecord, settings?: GoalSettings): string {
- if (settings?.disableContracts || !goal.verificationContract?.trim()) return "";
- return `[VERIFICATION CONTRACT goalId=${goal.id}]\nVerification contract (user data):\n${excerpt(goal.verificationContract.trim(), 800, "objective")}\nVerify each task against its contract before marking it complete.`;
+	if (settings?.disableContracts || !goal.verificationContract?.trim()) return "";
+	return `[VERIFICATION CONTRACT goalId=${goal.id}]\nVerification contract (user data):\n${excerpt(goal.verificationContract.trim(), 800, "objective")}\nVerify each task against its contract before marking it complete.`;
 }
 
 export function untrustedObjectiveBlock(goal: GoalRecord): string {
@@ -185,18 +185,18 @@ export function sisyphusDisciplineBlock(goal: GoalRecord): string {
 
 /** Shared outcome/blocker policy for active goals (bounded). */
 function lifecyclePolicyBlock(autonomous: boolean, strict: boolean, commands?: GoalCommands): string {
- return commandInstructions([
-  "[OUTCOMES]",
-  '- Automatic runs default to unlimited. maxAutonomousRuns in .pi/pi-goal-x-settings.json caps runs; 0 disables (agents may set it). Only creation or user /goal-resume renews usage.',
-  ...(autonomous && strict ? ['- End execution with update_goal: ready for runnable work, wait for an external condition, or a status below. Saved decisions terminate; further work invalidates them. Missing decisions allow one repair. Never busy-poll.'] : []),
-  ...(autonomous && !strict ? ['- Continue pursuing the goal automatically after each execution; no scheduling declaration is required. New waits require user opt-in to strictExecutionContract; do not enable it merely to continue.'] : []),
-  '- update_goal({status: "complete"}) only when every requirement is satisfied; the independent completion auditor checks actual evidence. Approval archives; rejection requires rework.',
-  '- update_goal({status: "blocked"}) only after the SAME blocker recurs on three consecutive goal turns; keep trying concrete steps before then.',
-  '- update_goal({status: "paused", reason: "…"}) pauses immediately. User controls: /goal-pause, /goal-resume, /goal-clear.',
-  '- The objective is immutable: never edit it yourself; ask the user to run /goal-tweak.',
-  '- Use work tools directly. Do not call get_goal repeatedly when the needed state is already visible.',
-  '- Retrieve omitted requirements before acting on them. Re-read changed requirements and details lost after compaction. Full objective/contracts: get_goal(section="objective"); tasks: get_goal(section="tasks").',
- ].join("\n"), commands);
+	return commandInstructions([
+		"[OUTCOMES]",
+		'- Automatic runs default to unlimited. maxAutonomousRuns in .pi/pi-goal-x-settings.json caps runs; 0 disables (agents may set it). Only creation or user /goal-resume renews usage.',
+		...(autonomous && strict ? ['- End execution with update_goal: ready for runnable work, wait for an external condition, or a status below. Saved decisions terminate; further work invalidates them. Missing decisions allow one repair. Never busy-poll.'] : []),
+		...(autonomous && !strict ? ['- Continue pursuing the goal automatically after each execution; no scheduling declaration is required. New waits require user opt-in to strictExecutionContract; do not enable it merely to continue.'] : []),
+		'- update_goal({status: "complete"}) only when every requirement is satisfied; the independent completion auditor checks actual evidence. Approval archives; rejection requires rework.',
+		'- update_goal({status: "blocked"}) only after the SAME blocker recurs on three consecutive goal turns; keep trying concrete steps before then.',
+		'- update_goal({status: "paused", reason: "…"}) pauses immediately. User controls: /goal-pause, /goal-resume, /goal-clear.',
+		'- The objective is immutable: never edit it yourself; ask the user to run /goal-tweak.',
+		'- Use work tools directly. Do not call get_goal repeatedly when the needed state is already visible.',
+		'- Retrieve omitted requirements before acting on them. Re-read changed requirements and details lost after compaction. Full objective/contracts: get_goal(section="objective"); tasks: get_goal(section="tasks").',
+		].join("\n"), commands);
 }
 
 /**
@@ -207,26 +207,26 @@ const promptFragmentCache: Array<{key: readonly unknown[]; value: string; chars:
 let promptCacheChars = 0;
 
 function cachedPrompt(goal: GoalRecord, settings: GoalSettings | undefined, kind: "goal" | "continuation", build: () => string): string {
- const key = [kind, goal.id, goal.status, goal.autoContinue, goal.sisyphus, goal.objective,
-  goal.verificationContract, settings?.disableTasks ? undefined : taskIndex(goal.taskList?.tasks),
-  goal.taskList?.blockCompletion, promptProfile(), goal.currentTaskId, settings?.disableTasks, settings?.disableContracts, settings?.maxAutonomousRuns !== 0, settings?.strictExecutionContract === true, !!goal.scheduler?.wait, settings?.commands ? JSON.stringify(settings.commands) : undefined];
- for (let i = promptFragmentCache.length - 1; i >= 0; i--) {
-  const entry = promptFragmentCache[i]!;
-  if (key.every((part, j) => part === entry.key[j])) return entry.value;
- }
- const value = build();
- // Include source text retained by this entry in the cache's memory allowance.
- const chars = goal.objective.length + (goal.verificationContract?.length ?? 0) + value.length
-  + (goal.taskList ? goal.taskList.tasks.reduce((n, task) => n + retainedTaskChars(task), 0) : 0);
- if (chars <= 2_000_000) {
-  while (promptFragmentCache.length >= 32 || promptCacheChars + chars > 2_000_000) promptCacheChars -= promptFragmentCache.shift()!.chars;
-  promptFragmentCache.push({key, value, chars}); promptCacheChars += chars;
- }
- return value;
+	const key = [kind, goal.id, goal.status, goal.autoContinue, goal.sisyphus, goal.objective,
+		goal.verificationContract, settings?.disableTasks ? undefined : taskIndex(goal.taskList?.tasks),
+		goal.taskList?.blockCompletion, promptProfile(), goal.currentTaskId, settings?.disableTasks, settings?.disableContracts, settings?.maxAutonomousRuns !== 0, settings?.strictExecutionContract === true, !!goal.scheduler?.wait, settings?.commands ? JSON.stringify(settings.commands) : undefined];
+	for (let i = promptFragmentCache.length - 1; i >= 0; i--) {
+		const entry = promptFragmentCache[i]!;
+		if (key.every((part, j) => part === entry.key[j])) return entry.value;
+	}
+	const value = build();
+	// Include source text retained by this entry in the cache's memory allowance.
+	const chars = goal.objective.length + (goal.verificationContract?.length ?? 0) + value.length
+		+ (goal.taskList ? goal.taskList.tasks.reduce((n, task) => n + retainedTaskChars(task), 0) : 0);
+	if (chars <= 2_000_000) {
+		while (promptFragmentCache.length >= 32 || promptCacheChars + chars > 2_000_000) promptCacheChars -= promptFragmentCache.shift()!.chars;
+		promptFragmentCache.push({key, value, chars}); promptCacheChars += chars;
+	}
+	return value;
 }
 function retainedTaskChars(task: GoalTask): number {
- return task.id.length + task.title.length + (task.verificationContract?.length ?? 0) + (task.evidence?.length ?? 0)
-  + (task.skipReason?.length ?? 0) + (task.subtasks?.reduce((n, child) => n + retainedTaskChars(child), 0) ?? 0);
+	return task.id.length + task.title.length + (task.verificationContract?.length ?? 0) + (task.evidence?.length ?? 0)
+		+ (task.skipReason?.length ?? 0) + (task.subtasks?.reduce((n, child) => n + retainedTaskChars(child), 0) ?? 0);
 }
 
 export function goalPromptParts(goal: GoalRecord, settings?: GoalSettings, contextUsage?: GoalContextUsage): { state: string; counters: string } {
@@ -250,31 +250,15 @@ export function goalPrompt(goal: GoalRecord, settings?: GoalSettings): string {
 }
 
 function buildGoalPrompt(goal: GoalRecord, settings?: GoalSettings): string {
- // Stable policy comes first; changing counters are appended by goalPrompt.
- // Bound individual data fields so essential rules can never be sliced off.
- return [
-  `[PI GOAL ACTIVE goalId=${goal.id}]`,
-  lifecyclePolicyBlock(settings?.maxAutonomousRuns !== 0, settings?.strictExecutionContract === true || !!goal.scheduler?.wait, settings?.commands), sisyphusDisciplineBlock(goal),
-  `Status: ${statusLabel(goal)}\nMode: ${goal.sisyphus ? "sisyphus" : "regular"}`,
-  untrustedObjectiveBlock(goal), taskListBlock(goal, settings), verificationContractBlock(goal, settings),
- ].filter(Boolean).join("\n\n");
+	// Stable policy comes first; changing counters are appended by goalPrompt.
+	// Bound individual data fields so essential rules can never be sliced off.
+	return [
+		`[PI GOAL ACTIVE goalId=${goal.id}]`,
+		lifecyclePolicyBlock(settings?.maxAutonomousRuns !== 0, settings?.strictExecutionContract === true || !!goal.scheduler?.wait, settings?.commands), sisyphusDisciplineBlock(goal),
+		`Status: ${statusLabel(goal)}\nMode: ${goal.sisyphus ? "sisyphus" : "regular"}`,
+		untrustedObjectiveBlock(goal), taskListBlock(goal, settings), verificationContractBlock(goal, settings),
+		].filter(Boolean).join("\n\n");
 }
-
-/** Steering injected when the user edits the objective (bounded). */
-export function objectiveEditedPrompt(goal: GoalRecord): string {
-	const budget = modelBudgetLine(goal);
-	let prompt = [
-		`[GOAL OBJECTIVE UPDATED goalId=${goal.id}]`,
-		"The user revised this goal's objective via /goal-tweak. Usage, tasks, mode, and budget were preserved.",
-		"",
-		untrustedObjectiveBlock(goal),
-		...(budget ? ["", budget] : []),
-		"",
-		"Re-read the full objective and continue from the authoritative current state.",
-	].join("\n");
-	return prompt.length > MAX_PROMPT_FRAGMENT_CHARS ? `${prompt.slice(0, MAX_PROMPT_FRAGMENT_CHARS)}\n…[prompt truncated]` : prompt;
-}
-
 
 /**
  * Deprecated compatibility wrapper (issue #30). The full continuation prompt
@@ -285,11 +269,6 @@ export function objectiveEditedPrompt(goal: GoalRecord): string {
  *
  * Kept for one minor release so external call sites migrate explicitly.
  */
-/** @deprecated Use checkpointTriggerPrompt — full continuation prompts must not be persisted. */
-export function continuationPrompt(goal: GoalRecord, _settings?: GoalSettings): string {
-	return checkpointTriggerPrompt(goal.id);
-}
-
 export function staleContinuationPrompt(staleGoalId: string, current: GoalRecord | null): string {
 	const currentLine = current
 		? `Current goal: ${current.id} (${statusLabel(current)}) - ${truncateText(current.objective)}`

@@ -90,13 +90,13 @@ export function readSessionCheckpointHealth(sessionFile: string): CheckpointHeal
 	} catch {
 		return null;
 	}
- const health = emptyHealth();
- // Parse and discard one entry at a time; do not retain the whole session object graph.
- for (const rawLine of raw.split("\n")) {
-  const line = rawLine.trim();
-  if (line) try { accumulateCheckpointHealth(health, JSON.parse(line)); } catch { /* tolerate malformed lines */ }
- }
- return health;
+	const health = emptyHealth();
+	// Parse and discard one entry at a time; do not retain the whole session object graph.
+	for (const rawLine of raw.split("\n")) {
+		const line = rawLine.trim();
+		if (line) try { accumulateCheckpointHealth(health, JSON.parse(line)); } catch { /* tolerate malformed lines */ }
+	}
+	return health;
 }
 
 /** Human-readable projection of post-recovery checkpoint content size. */

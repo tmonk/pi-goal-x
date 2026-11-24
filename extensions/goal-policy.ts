@@ -1,10 +1,8 @@
-import { statusLabel, type GoalDisplayRecordLike } from "./goal-core.ts";
-import type { GoalTask, GoalTaskList, TaskStatus } from "./goal-record.ts";
+import { statusLabel, type GoalDisplayRecordLike } from "./goal-display.ts";
+import type { GoalTask, GoalTaskList } from "./goal-record.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
 
 export type GoalStatusLike = "active" | "paused" | "blocked" | "budget_limited" | "complete";
-export type StopReasonLike = "user" | "agent";
-
 export interface GoalPolicyRecordLike extends GoalDisplayRecordLike {
 	id: string;
 	status: GoalStatusLike;
@@ -98,39 +96,6 @@ export function taskCompletionBlockWarning(taskList: GoalTaskList): string | nul
 }
 
 /**
- * Validate a task completion transition (evidence requirement is enforced by
- * the update_goal_task handler against the task's verification contract).
- */
-export function validateTaskCompletion(args: {
-	goal: GoalPolicyRecordLike | null;
-	taskId: string;
-}): PolicyValidation {
-	if (!args.goal) return { ok: false, message: "No goal is set." };
-	if (!args.goal.taskList) return { ok: false, message: "Goal has no task list." };
-	const task = findTaskInTree(args.goal.taskList.tasks, args.taskId);
-	if (!task) return { ok: false, message: `Task "${args.taskId}" not found.` };
-	if (task.status === "complete") return { ok: false, message: `Task "${args.taskId}" is already complete.` };
-	if (task.status === "skipped") return { ok: false, message: `Task "${args.taskId}" was already skipped.` };
-	return { ok: true };
-}
-
-export function validateTaskSkip(args: {
-	goal: GoalPolicyRecordLike | null;
-	taskId: string;
-	reason: string;
-}): PolicyValidation {
-	if (!args.goal) return { ok: false, message: "No goal is set." };
-	if (!args.goal.taskList) return { ok: false, message: "Goal has no task list." };
-	const task = findTaskInTree(args.goal.taskList.tasks, args.taskId);
-	if (!task) return { ok: false, message: `Task "${args.taskId}" not found.` };
-	if (task.status === "complete") return { ok: false, message: `Task "${args.taskId}" is already complete.` };
-	// Skipped tasks toggle via the executor; reason is only required for first-time skips.
-	if (task.status === "skipped") return { ok: true };
-	if (!args.reason.trim()) return { ok: false, message: "Skipping requires a non-empty reason." };
-	return { ok: true };
-}
-
-/**
  * Count the maximum nesting depth of a task's subtask tree.
  * Root level = 0. Returns the deepest nesting depth found.
  */
@@ -161,46 +126,6 @@ export function findSubtaskDepthViolation(tasks: GoalTask[], maxDepth: number): 
 		}
 	}
 	return undefined;
-}
-
-function checkDuplicateTaskIds(tasks: GoalTask[], ids: Set<string>): string | undefined {
-	for (const t of tasks) {
-		const id = t.id.trim();
-		if (!id) return "All tasks must have a non-empty id.";
-		if (ids.has(id)) return `Duplicate task id: "${id}".`;
-		ids.add(id);
-		if (t.subtasks) {
-			const childErr = checkDuplicateTaskIds(t.subtasks, ids);
-			if (childErr) return childErr;
-		}
-	}
-	return undefined;
-}
-
-export function validateTaskListProposal(args: {
-	goal: GoalPolicyRecordLike | null;
-	tasks: GoalTask[];
-	maxSubtaskDepth?: number;
-}): PolicyValidation {
-	if (!args.goal) return { ok: false, message: "No goal is set." };
-	if (args.tasks.length > 50) return { ok: false, message: "Task list cannot exceed 50 tasks." };
-	const ids = new Set<string>();
-	for (const t of args.tasks) {
-		if (!t.id.trim()) return { ok: false, message: "All tasks must have a non-empty id." };
-		if (!t.title.trim()) return { ok: false, message: `Task "${t.id}" must have a non-empty title.` };
-		if (ids.has(t.id)) return { ok: false, message: `Duplicate task id: "${t.id}".` };
-		ids.add(t.id);
-		// Recursively check subtask ids against the same global set
-		if (t.subtasks && t.subtasks.length > 0) {
-			const childErr = checkDuplicateTaskIds(t.subtasks, ids);
-			if (childErr) return { ok: false, message: childErr };
-		}
-	}
-	// Check subtask depth limit
-	const maxDepth = args.maxSubtaskDepth ?? 1;
-	const depthViolation = findSubtaskDepthViolation(args.tasks, maxDepth);
-	if (depthViolation) return { ok: false, message: depthViolation };
-	return { ok: true };
 }
 
 /**
@@ -355,11 +280,6 @@ export function sisyphusStepProgress(goal: { sisyphus: boolean; objective: strin
 	}
 	return { current, total };
 }
-
-export function shouldQueueContinuation(goal: Pick<GoalPolicyRecordLike, "status" | "autoContinue"> | null): boolean {
-	return !!goal && goal.status === "active" && goal.autoContinue;
-}
-
 
 export function shouldArmPostCompactReminder(goal: Pick<GoalPolicyRecordLike, "sisyphus" | "status"> | null): boolean {
 	return !!goal && isRunnableStatus(goal.status);

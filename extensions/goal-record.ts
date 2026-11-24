@@ -9,22 +9,22 @@ export type GoalFocusReason = "created" | "selected" | "unfocused" | "resumed" |
 export type TaskStatus = "pending" | "complete" | "skipped";
 
 export interface GoalTask {
-  id: string;
-  title: string;
-  status: TaskStatus;
-  completedAt?: string;
-  skippedAt?: string;
-  evidence?: string;
-  skipReason?: string;
-  verificationContract?: string;
-  lightweightSubtasks?: boolean;
-  subtasks?: GoalTask[];
+	id: string;
+	title: string;
+	status: TaskStatus;
+	completedAt?: string;
+	skippedAt?: string;
+	evidence?: string;
+	skipReason?: string;
+	verificationContract?: string;
+	lightweightSubtasks?: boolean;
+	subtasks?: GoalTask[];
 }
 
 export interface GoalTaskList {
-  tasks: GoalTask[];
-  blockCompletion: boolean;
-  proposedAt: string;
+	tasks: GoalTask[];
+	blockCompletion: boolean;
+	proposedAt: string;
 }
 
 export interface GoalUsage {
@@ -127,8 +127,6 @@ export interface GoalCheckpointDetailsV3 extends Omit<GoalCheckpointDetailsV2, "
 	generation: string;
 	dispatchId: string;
 }
-
-export type GoalEventEntryDetails = GoalCheckpointDetailsV3 | GoalCheckpointDetailsV2 | LegacyGoalEventDetails | GoalStaleDetails;
 
 /**
  * Legacy normalized renderer shape. Kept as the stable contract for

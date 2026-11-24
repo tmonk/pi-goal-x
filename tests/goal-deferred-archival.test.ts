@@ -8,7 +8,6 @@ import { buildCompletionReport } from "../extensions/goal-policy.ts";
 import { createGoal } from "../extensions/goal-record.ts";
 import {
 	archiveGoalFile,
-	readActiveGoalFiles,
 	readActiveGoalPool,
 	writeActiveGoalFile,
 } from "../extensions/storage/goal-files.ts";
@@ -82,7 +81,7 @@ test("deferred archival lifecycle via writeActiveGoalFile then archiveGoalFile",
 
 		// Step 2b: Verify the goal is NOT in readActiveGoalPool (it filters out complete goals)
 		const poolDeferred = readActiveGoalPool(ctx);
-		assert.equal(poolDeferred.has(goal.id), false, "complete goal should NOT be in active pool (readActiveGoalFiles filters complete)");
+		assert.equal(poolDeferred.has(goal.id), false, "complete goal should NOT be in active pool (the active goal pool filters complete)");
 
 		// Step 2c: Verify the goal is NOT in the archive directory
 		const archiveDir = path.join(ctx.cwd, ".pi", "goals", "archived");
@@ -102,8 +101,8 @@ test("deferred archival lifecycle via writeActiveGoalFile then archiveGoalFile",
 		assert.ok(fileExists(path.join(ctx.cwd, archived.archivedPath ?? "missing")),
 			"archived file should exist on disk");
 
-		// Step 3d: Verify the goal is NOT in readActiveGoalFiles at all (filtered out regardless)
-		const activeFiles = readActiveGoalFiles(ctx);
+		// Step 3d: Verify the goal is NOT in the active goal pool at all (filtered out regardless)
+		const activeFiles = [...readActiveGoalPool(ctx).values()];
 		const ids = activeFiles.map((g) => g.id);
 		assert.equal(ids.includes(goal.id), false, "goal should not appear in active files after archival");
 	} finally {
@@ -159,7 +158,6 @@ test("Esc-skip path: buildCompletionReport includes Esc-abort reason", () => {
  * underlying buildCompletionReport function.
  */
 test("all three paths produce distinct tool output text", () => {
-	const baseSummary = "Goal: Distinct output test\nStatus: active";
 	const commonDetailed = "Goal: Distinct output test\nStatus: active";
 
 	const approval = buildCompletionReport({
@@ -191,11 +189,11 @@ test("all three paths produce distinct tool output text", () => {
 });
 
 /**
- * Verify that readActiveGoalFiles filters out complete goals (even if archivedPath
+ * Verify that the active goal pool filters out complete goals (even if archivedPath
  * is not set — deferred state). This ensures the completion flow returns but the goal
  * not yet archived' state is handled correctly by the pool.
  */
-test("readActiveGoalFiles filters complete goals regardless of archivedPath", () => {
+test("the active goal pool filters complete goals regardless of archivedPath", () => {
 	const ctx = tempCtx();
 	try {
 		// Write an active goal

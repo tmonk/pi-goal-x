@@ -137,4 +137,4 @@ their meaning. For example:
 
 Use `/goal-refresh` after external key or pause-order edits, and `/reload` after
 external command edits. Verbose goal status reports the effective controls and
-their sources. Developer-only `PI_GOAL_DEBUG` shortcuts are unchanged.
+their sources.

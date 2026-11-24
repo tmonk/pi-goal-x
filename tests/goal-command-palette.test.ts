@@ -3,14 +3,13 @@
  * explicit immediate-creation escape hatch.
  */
 
+import { createExtensionHarness } from "./support/extension-harness.ts";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../extensions/goal.ts";
 import { parseGoalFile } from "../extensions/storage/goal-files.ts";
 
 const CURATED_COMMANDS = [
@@ -21,49 +20,8 @@ const CURATED_COMMANDS = [
 const REMOVED_COMMANDS = ["goals", "goals-set", "sisyphus-set", "goal-abort"];
 
 function createHarness(cwd: string) {
-	const handlers = new Map<string, Function>();
-	const commands = new Map<string, any>();
-	const notifications: string[] = [];
-	const messages: string[] = [];
-	const tools = new Map<string, any>();
-	let activeTools = ["read", "bash", "edit", "write"];
-	const pi = {
-		registerTool: (def: any) => { tools.set(def.name, def); },
-		registerCommand: (name: string, def: any) => { commands.set(name, def); },
-		on: (event: string, handler: Function) => { handlers.set(event, handler); },
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendUserMessage: (message: string) => { messages.push(message); },
-		sendMessage: () => {},
-		getActiveTools: () => [...activeTools],
-		setActiveTools: (names: string[]) => { activeTools = [...names]; },
-		hasUI: false,
-	};
-	const ctx = {
-		cwd,
-		hasUI: false,
-		sessionManager: {
-			getBranch: () => [] as unknown[],
-			getCwd: () => cwd,
-			getSessionId: () => "palette-session",
-			getRoot: () => cwd,
-		},
-		ui: {
-			notify: (message: string) => { notifications.push(message); },
-			setStatus: () => {},
-			setWidget: () => {},
-			onTerminalInput: () => () => {},
-			select: async () => undefined,
-			confirm: async () => false,
-			custom: async () => undefined,
-		},
-		getSystemPrompt: () => "base",
-		isIdle: () => true,
-		hasPendingMessages: () => false,
-		abort: () => {},
-	} as unknown as ExtensionContext;
-	goalExtension(pi as any, {});
-	return { handlers, commands, ctx, notifications, messages, tools, getActiveTools: () => [...activeTools] };
+	const h = createExtensionHarness({ cwd, sessionEntries: [], sessionId: "palette-session" });
+	return Object.assign(h, { messages: h.userMessages as string[], getActiveTools: () => h.activeTools });
 }
 
 function activeGoalFiles(cwd: string): string[] {
@@ -348,23 +306,23 @@ function readFileSyncSafe(p: string): string | null {
 }
 
 for (const [key, label] of [["strictExecutionContract", "explicit execution contracts (opt-in)"], ["idleContinuationBackoff", "slow repeated idle replies (opt-in)"]] as const) test(`goal-settings: ${key} can be set and removed through the menu`, async () => {
- const cwd = mkdtempSync(path.join(tmpdir(), "goal-settings-contract-"));
- mkdirSync(path.join(cwd, ".pi"), {recursive: true});
- const h = createHarness(cwd);
- try {
-  (h.ctx as {hasUI: boolean}).hasUI = true;
-  const ui = h.ctx.ui as unknown as {select: (title: string, options: string[]) => Promise<string | undefined>};
-  for (const action of ["Set project override to true", "Set project override to false", "Use inherited value"]) {
-   let step = 0;
-   ui.select = async (_title, options) => {
-    step++;
-    if (step === 1) return options.find(option => option.includes(`${label}:`));
-    if (step === 2) { assert.ok(options.includes(action)); return action; }
-    return "Done";
-   };
-   await h.commands.get("goal-settings")!.handler("", h.ctx);
-   const saved = JSON.parse(readFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), "utf8"));
-   assert.equal(saved[key], action === "Use inherited value" ? undefined : action.endsWith("true"));
-  }
- } finally { rmSync(cwd, {recursive: true, force: true}); }
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-settings-contract-"));
+	mkdirSync(path.join(cwd, ".pi"), {recursive: true});
+	const h = createHarness(cwd);
+	try {
+		(h.ctx as {hasUI: boolean}).hasUI = true;
+		const ui = h.ctx.ui as unknown as {select: (title: string, options: string[]) => Promise<string | undefined>};
+		for (const action of ["Set project override to true", "Set project override to false", "Use inherited value"]) {
+			let step = 0;
+			ui.select = async (_title, options) => {
+				step++;
+				if (step === 1) return options.find(option => option.includes(`${label}:`));
+				if (step === 2) { assert.ok(options.includes(action)); return action; }
+				return "Done";
+			};
+			await h.commands.get("goal-settings")!.handler("", h.ctx);
+			const saved = JSON.parse(readFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), "utf8"));
+			assert.equal(saved[key], action === "Use inherited value" ? undefined : action.endsWith("true"));
+		}
+	} finally { rmSync(cwd, {recursive: true, force: true}); }
 });

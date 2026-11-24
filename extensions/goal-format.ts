@@ -6,7 +6,7 @@ import {
 	formatTokenValue,
 	statusLabel,
 	truncateText,
-} from "./goal-core.ts";
+} from "./goal-display.ts";
 import { buildTaskSummary } from "./goal-policy.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
 import { latestAuditorResultForGoal, latestAuditForGoal, latestEventsForGoal, type GoalLedgerEvent } from "./goal-ledger.ts";
@@ -27,7 +27,6 @@ export const STATE_ENTRY = "pi-goal-state";
 export const FOCUS_ENTRY = "pi-goal-focus";
 export const GOAL_EVENT_ENTRY = "pi-goal-event";
 export const GOAL_AUDIT_ENTRY = "pi-goal-audit-event";
-export const COMPLETE_STATUS = "complete";
 /**
  * Tools that count as "real work" toward the active goal. If a non-tool-use
  * turn ends without any of these having been called, we DO NOT queue the next
@@ -280,11 +279,6 @@ export function isNetworkErrorAssistantMessage(message: unknown): boolean {
 	return TRANSIENT_PROVIDER_ERROR_RE.test(details);
 }
 
-export function isToolUseAssistantMessage(message: unknown): boolean {
-	const raw = asRecord(message);
-	return raw?.role === "assistant" && raw.stopReason === "toolUse";
-}
-
 export function hasAbortedAssistantMessage(messages: unknown[]): boolean {
 	return messages.some(isAbortedAssistantMessage);
 }
@@ -331,7 +325,7 @@ export function buildGoalHistoryBlock(goal: GoalRecord | null, ledgerEvents: Goa
 	if (!goal) return "";
 	const lines: string[] = [];
 	const audit = latestAuditorResultForGoal(ledgerEvents, goal.id);
- if (latestAuditForGoal(ledgerEvents, goal.id)?.type === "audit_started") lines.push("Latest audit: no recorded result.");
+	if (latestAuditForGoal(ledgerEvents, goal.id)?.type === "audit_started") lines.push("Latest audit: no recorded result.");
 	if (audit) {
 		lines.push(`Last audit: ${audit.verdict} (${audit.at.slice(0, 10)}) — ${truncateText(audit.report, 90)}`);
 	}

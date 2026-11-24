@@ -8,6 +8,7 @@
  * `npm run test:integration`.
  */
 
+import { skipWhenRoot } from "../support/permissions.ts";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, appendFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -102,7 +103,6 @@ async function start(h: Harness): Promise<void> {
 }
 
 const HOST_TOOLS = ["read", "bash", "edit", "write"];
-const FIVE = ["create_goal", "get_goal", "update_goal", "set_goal_tasks", "update_goal_task"];
 const THREE = ["create_goal", "get_goal", "update_goal"];
 
 /** The installed profile (from captured setActiveTools calls) contains these names. */
@@ -574,7 +574,6 @@ describe("five-tool handler integration", () => {
 				const saved = readSettings(f.cwd);
 				assert.equal(saved.thinking_level, "max", "all seven levels accepted in sequence");
 				// Unknown value is rejected with a warning and nothing is persisted.
-				const notifiesBefore = h.notifies.length;
 				const selects2 = ["  thinking_level: max (project override)", "bogus", "Done"];
 				const inputs2 = ["bogus"];
 				const h2 = createHarness({
@@ -884,7 +883,7 @@ describe("confirmation and audit UX (follow-up Stage 2)", () => {
 });
 
 describe("completion transaction hardening (follow-up Stage 3)", () => {
-	it("completion commit write failure never reports success and never clears focus", async () => {
+	it("completion commit write failure never reports success and never clears focus", skipWhenRoot, async () => {
 		const f = fixture();
 		const goalsDir = path.join(f.cwd, ".pi", "goals");
 		try {

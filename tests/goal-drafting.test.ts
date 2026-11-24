@@ -6,14 +6,14 @@
  * guided refinement under focus races, and headless auto-confirm semantics.
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createExtensionHarness } from "./support/extension-harness.ts";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../extensions/goal.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { readGoalLedger } from "../extensions/goal-ledger.ts";
 import { goalSettingsPath } from "../extensions/goal-settings.ts";
@@ -21,85 +21,25 @@ import { proposalText, DRAFT_ENTRY, type ActiveGoalDraft } from "../extensions/g
 import { createGoal, type GoalRecord } from "../extensions/goal-record.ts";
 import { createMockTheme } from "./tui-test-utils.ts";
 
-interface Harness {
-	ctx: ExtensionContext;
-	commands: Map<string, any>;
-	tools: Map<string, any>;
-	messages: string[];
-	notifications: string[];
-	activeTools(): string[];
-	toolHistory(): string[][];
-	dialogResult(result: unknown): void;
-	hasDialog: () => boolean;
-	selectResult(result: string | undefined): void;
-	sessionStart(): Promise<void>;
-	sessionTree(): Promise<void>;
-	entries(): unknown[];
-}
+type Harness = ReturnType<typeof createHarness>;
 
-function createHarness(cwd: string, opts: { hasUI?: boolean } = {}): Harness {
-	const handlers = new Map<string, Function>();
-	const commands = new Map<string, any>();
-	const notifications: string[] = [];
-	const messages: string[] = [];
-	const tools = new Map<string, any>();
-	const toolHistory: string[][] = [];
-	const entries: unknown[] = [];
-	let activeTools = ["read", "bash", "edit", "write"];
-	let dialogResolve: ((result: any) => void) | null = null;
-	let hasDialogPending = false;
+function createHarness(cwd: string, opts: { hasUI?: boolean } = {}) {
 	let selectAnswer: string | undefined;
-	const hasUI = opts.hasUI ?? false;
-	const pi = {
-		registerTool: (def: any) => { tools.set(def.name, def); },
-		registerCommand: (name: string, def: any) => { commands.set(name, def); },
-		on: (event: string, handler: Function) => { handlers.set(event, handler); },
-		appendEntry: (customType: string, data: unknown) => { entries.push({ type: "custom", customType, data }); },
-		registerMessageRenderer: () => {},
-		sendUserMessage: (message: string) => { messages.push(message); },
-		sendMessage: () => {},
-		getActiveTools: () => [...activeTools],
-		setActiveTools: (names: string[]) => { activeTools = [...names]; toolHistory.push([...names]); },
-		hasUI,
-	};
-	const ctx = {
-		cwd,
-		hasUI,
-		sessionManager: {
-			getBranch: () => [...entries],
-			getCwd: () => cwd,
-			getSessionId: () => "draft-session",
-			getRoot: () => cwd,
-		},
-		ui: {
-			notify: (message: string) => { notifications.push(message); },
-			setStatus: () => {},
-			setWidget: () => {},
-			onTerminalInput: () => () => {},
-			select: async () => selectAnswer,
-			confirm: async () => false,
-			custom: async () => new Promise((resolve) => { dialogResolve = resolve; hasDialogPending = true; }),
-		},
-		getSystemPrompt: () => "base",
-		isIdle: () => true,
-		hasPendingMessages: () => false,
-		abort: () => {},
-	} as unknown as ExtensionContext;
-	goalExtension(pi as any, {});
+	const h = createExtensionHarness({ cwd, hasUI: opts.hasUI, sessionId: "draft-session", custom: "dialog", ui: { select: async () => selectAnswer } });
 	return {
-		ctx,
-		commands,
-		tools,
-		messages,
-		notifications,
-		activeTools: () => [...activeTools],
-		toolHistory: () => toolHistory.map((t) => [...t]),
-		dialogResult: (result: unknown) => { hasDialogPending = false; dialogResolve?.(result); },
-		hasDialog: () => hasDialogPending,
+		ctx: h.ctx,
+		commands: h.commands,
+		tools: h.tools,
+		messages: h.userMessages as string[],
+		get notifications() { return h.notifications; },
+		activeTools: () => h.activeTools,
+		toolHistory: () => h.toolHistory.map((names) => [...names]),
+		dialogResult: h.resolveDialog,
+		hasDialog: h.hasDialog,
 		selectResult: (result: string | undefined) => { selectAnswer = result; },
-		sessionStart: async () => { await handlers.get("session_start")?.({ reason: "start" }, ctx); },
-		sessionTree: async () => { await handlers.get("session_tree")?.({}, ctx); },
-		entries: () => [...entries],
+		sessionStart: async () => { await h.sessionStart(); },
+		sessionTree: async () => { await h.emit("session_tree"); },
+		entries: () => [...h.entries],
 	};
 }
 
@@ -466,7 +406,7 @@ test("tasks-disabled settings reject task proposals and confirm without a task l
 		await h.commands.get("goal")!.handler("Write a guide", h.ctx);
 		const withTasks = await runProposal(h, proposalParams("Write a guide.", { tasks: [{ id: "a", title: "A" }] }));
 		assert.match(withTasks.content[0].text, /disabled by settings/);
-		const ok = await runProposal(h, proposalParams("Write a guide."));
+		await runProposal(h, proposalParams("Write a guide."));
 		assert.equal(activeGoalFiles(cwd).length, 1, "task-free proposal confirms");
 		const goal = firstGoal(cwd);
 		assert.equal(goal.taskList, undefined, "no task list created when tasks disabled");

@@ -25,18 +25,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-import piGoalExtension from "../../extensions/goal.ts";
-import {
-	createGoal,
-	goalFocusDetails,
-	type GoalRecord,
-	type GoalStateEntry,
-} from "../../extensions/goal-record.ts";
-import {
-	readActiveGoalPool,
-	writeActiveGoalFile,
-} from "../../extensions/storage/goal-files.ts";
-import type { ToolDefinition, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const DIR = import.meta.dirname!;
 const EXT_PATH = path.resolve(DIR, "..", "..", "extensions", "goal.ts");
