@@ -197,11 +197,11 @@ export function readGoalLedger(ctx: GoalLedgerContext): GoalLedgerReadResult {
 		// (non-extension) edits to the ledger go stale mid-session (documented).
 		return { events: cached.events, malformed: cached.malformed, revision: cached.revision };
 	}
-	return readGoalLedgerCold(ctx, filePath);
+	return readGoalLedgerCold(filePath);
 }
 
 /** Cold read: full file read + parse, populating the zero-op cache. */
-function readGoalLedgerCold(ctx: GoalLedgerContext, filePath: string): GoalLedgerReadResult {
+function readGoalLedgerCold(filePath: string): GoalLedgerReadResult {
 	let content: string;
 	try {
 		content = fs.readFileSync(filePath, "utf8");
@@ -669,7 +669,7 @@ export function loadLedgerState(ctx: GoalLedgerContext): LedgerStateReadResult {
 	}
 	// Full fallback: missing/corrupt checkpoint, version mismatch, or the ledger
 	// was rewritten to be smaller than the checkpoint's coverage.
-	const full = readGoalLedgerCold(ctx, filePath);
+	const full = readGoalLedgerCold(filePath);
 	const fresh = buildCheckpointFromEvents(full.events, size);
 	checkpointCache.set(filePath, fresh);
 	writeLedgerCheckpointAtomic(filePath, fresh);

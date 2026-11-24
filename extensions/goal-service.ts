@@ -118,10 +118,9 @@ export interface GoalTaskUpdateSpec {
 	/** Transform the FRESH task. A failure aborts; only this task's path changes. */
 	update(task: GoalTask): GoalTask | { ok: false; message: string };
 	/**
-	 * §8.1: explicit execution focus — set the persisted currentTaskId to this
-	 * task id (start). Replaces any previous current task. Otherwise focus is
-	 * cleared automatically when the updated task becomes terminal
-	 * (complete/skipped) and was the current task (§8.2/§8.3).
+	 * Explicit execution focus (start): set the persisted currentTaskId to this
+	 * task, replacing any previous one. Otherwise focus is cleared when the
+	 * current task becomes terminal (complete or skipped).
 	 */
 	setCurrentTaskId?: string;
 	/** Ledger events appended best-effort AFTER the authoritative file write. */
@@ -130,11 +129,6 @@ export interface GoalTaskUpdateSpec {
 
 type GoalTaskUpdateOutcome = { ok: true; goal: GoalRecord; task: GoalTask } | { ok: false; message: string };
 
-/**
- * §8 execution-focus resolution for a task update: an explicit start sets the
- * currentTaskId (replacing any previous); otherwise completing or skipping the
- * current task clears it; otherwise focus is untouched.
- */
 /** Find the spec's task, validate it and apply its update, without touching the goal. */
 function applyTaskUpdate(tasks: GoalTask[], spec: GoalTaskUpdateSpec): { ok: false; message: string } | { ok: true; updatedTask: GoalTask; updatedTasks: GoalTask[] } {
 	const task = findTaskInTree(tasks, spec.taskId);
@@ -565,7 +559,7 @@ export class GoalService {
 			const mutated = sanitizeGoalPaths(ctx, {
 				...current,
 				taskList: { ...current.taskList, tasks: updatedTasks },
-				// Execution focus (§8): start sets it explicitly; completing or
+				// Execution focus: start sets it explicitly; completing or
 				// skipping the current task clears it.
 				currentTaskId: resolveUpdatedCurrentTaskId(spec, current.currentTaskId, updatedTask),
 				updatedAt: nowIso(),

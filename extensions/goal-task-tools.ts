@@ -343,7 +343,7 @@ pi.registerTool(defineTool({
 			// requested operation changes the same task.
 			mutate: (g) => {
 				const merged = mergeTasksWithExisting(g.taskList?.tasks, converted.tasks);
-				// §7.5: preserve currentTaskId only when the same id remains pending;
+				// Keep currentTaskId only when the same id remains pending;
 				// otherwise clear it. Dashboard state recomputes on the next render.
 				const currentTaskId =
 					g.currentTaskId && currentTaskIdIsPending(merged, g.currentTaskId) ? g.currentTaskId : undefined;
@@ -455,7 +455,7 @@ pi.registerTool(defineTool({
 					return { ok: true };
 				},
 				update: (task) => task,
-				// §8.1: set explicit execution focus; a later start replaces it, and
+				// Set explicit execution focus; a later start replaces it, and
 				// completing/skipping this task clears it.
 				setCurrentTaskId: params.task_id,
 				ledger: (written) => [{
@@ -469,7 +469,7 @@ pi.registerTool(defineTool({
 				return { content: [{ type: "text", text: result.message }], details: goalDetails(core.state.goal) };
 			}
 			core.updateUI(ctx);
-			// §8.1: surface the task contract so the next continuation prompt and
+			// Surface the task contract so the next continuation prompt and
 			// the dashboard can show what starting this task requires.
 			const started = findTaskInTree(core.state.goal.taskList?.tasks ?? [], params.task_id);
 			const contract = started?.verificationContract ? ` Contract: ${started.verificationContract}` : "";
