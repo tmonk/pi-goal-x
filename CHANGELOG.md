@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+## [0.35.1] — 2026-11-24
+
+Includes #161.
+
 ### Changed
 
 - Prompt caching is tighter. A pause, resume, or change to limits or settings no longer resets the cached prompt: the new goal policy is appended and marked as the one that applies. The task list no longer resets every 32 changes. Usage, run counts, waits and one-shot reminders now go at the end of each request and are never kept, so they cannot go stale. In simulated sessions uncached input tokens fall by 23% to 41%. Thanks to @xulongwu4 for the report and @chem for the analysis (#108).
