@@ -22,7 +22,7 @@ import {
 import { loadGoalSettings } from "../../extensions/goal-settings.ts";
 import { readActiveGoalPool } from "../../extensions/storage/goal-files.ts";
 import { readGoalLedger } from "../../extensions/goal-ledger.ts";
-import { continuationPrompt } from "../../extensions/prompts/goal-prompts.ts";
+import { checkpointTriggerPrompt } from "../../extensions/prompts/goal-prompts.ts";
 
 function readTurn(cwd, goals, goal) {
 	beginFsCount();
@@ -31,7 +31,7 @@ function readTurn(cwd, goals, goal) {
 	const pool = readActiveGoalPool({ cwd });
 	const ledger = readGoalLedger({ cwd });
 	const focused = pool.get(goal.id) ?? goal;
-	continuationPrompt(focused, settings);
+	checkpointTriggerPrompt(focused.id);
 	const ms = performance.now() - t0;
 	const ops = endFsCount();
 	return { ms, ops };

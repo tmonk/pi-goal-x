@@ -23,7 +23,6 @@ import {
 import { createMockExtensionContext, createMockTUI, createMockTheme, invokeCustomFactory, renderComponent } from "../../tests/tui-test-utils.ts";
 import { renderConfirmationTasks } from "../../extensions/goal-task-confirmation.ts";
 import { showEscapeDialog } from "../../extensions/widgets/goal-escape-dialog.ts";
-import { showTaskListOverlay } from "../../extensions/widgets/task-list-overlay.ts";
 import { renderGoalWidgetLines, GoalWidgetComponent } from "../../extensions/widgets/goal-widget.ts";
 import { buildGoalRunningNotification } from "../../extensions/widgets/goal-notifications.ts";
 import { renderGoalEvent } from "../../extensions/goal-format.ts";
@@ -34,7 +33,7 @@ import { deriveAuditorDashboardModel, deriveAuditResultCard } from "../../extens
 import { deriveTasksFromObjective } from "../../extensions/goal-task-derive.ts";
 import { countAllTasks } from "../../extensions/goal-task-count.ts";
 import { buildGoalStatusText } from "../../extensions/goal-status.ts";
-import { buildTaskSummary, validateTaskListProposal, buildCompletionReport } from "../../extensions/goal-policy.ts";
+import { buildTaskSummary, buildCompletionReport } from "../../extensions/goal-policy.ts";
 import { buildGoalListText, goalSelectorLabel } from "../../extensions/goal-pool.ts";
 import { GoalAccounting, budgetLine, budgetRemaining } from "../../extensions/goal-accounting.ts";
 import { buildCompactionSummary, buildGoalCompactSummary } from "../../extensions/goal-compaction.ts";
@@ -162,20 +161,10 @@ export async function run(baseline) {
 	baseline.add({ id: "B7.render.widgetLines", label: "renderGoalWidgetLines (20 tasks)", modules: "widgets/goal-widget", fixture: "1 goal, 20 tasks", n: r.n, p50: r.p50, p95: r.p95, max: r.max, notes: `mean ${r.mean}ms` });
 
 	r = measure(() => {
-		const component = new GoalWidgetComponent({ tui: t.tui, theme, getGoal: () => g20, getOpenGoalCount: () => 1, getSettings: () => ({}), getAuditorProgress: () => null, getDebugMode: () => false });
+		const component = new GoalWidgetComponent({ tui: t.tui, theme, getGoal: () => g20, getOpenGoalCount: () => 1, getSettings: () => ({}), getAuditorProgress: () => null });
 		return component.render(100);
 	}, { n: 100 });
 	baseline.add({ id: "B7.render.widgetComponent", label: "GoalWidgetComponent.render (mock TUI)", modules: "widgets/goal-widget", fixture: "1 goal, 20 tasks", n: r.n, p50: r.p50, p95: r.p95, max: r.max, notes: `mean ${r.mean}ms` });
-
-	// task-list overlay component render
-	{
-		const mockCtx = createMockExtensionContext();
-		const goals = new Map([[g20.id, g20]]);
-		showTaskListOverlay(mockCtx, goals, g20.id); // no await: the mock custom() promise stays pending (tests do the same)
-		const { component } = invokeCustomFactory(mockCtx._customCalls, 0);
-		r = measure(() => renderComponent(component, 100), { n: 100 });
-		baseline.add({ id: "B7.render.taskOverlay", label: "task-list overlay render (20 tasks)", modules: "widgets/task-list-overlay", fixture: "1 goal, 20 tasks", n: r.n, p50: r.p50, p95: r.p95, max: r.max, notes: `mean ${r.mean}ms` });
-	}
 
 	// escape dialog component render
 	{
@@ -190,8 +179,6 @@ export async function run(baseline) {
 	r = measure(() => buildTaskSummary(g20.taskList), { n: 200 });
 	baseline.add({ id: "B7.policy.taskSummary", label: "buildTaskSummary (20 tasks)", modules: "goal-policy", fixture: "20-task tree", n: r.n, p50: r.p50, p95: r.p95, max: r.max, notes: `mean ${r.mean}ms` });
 
-	r = measure(() => validateTaskListProposal({ tasks: flatTasks(50), blockCompletion: false }, { depth: 3 }), { n: 100 });
-	baseline.add({ id: "B7.policy.validateTasks", label: "validateTaskListProposal (50 flat tasks)", modules: "goal-policy + goal-task-tools", fixture: "50 flat tasks", n: r.n, p50: r.p50, p95: r.p95, max: r.max, notes: `mean ${r.mean}ms` });
 
 	r = measure(() => buildCompletionReport({ detailedSummary: "Goal: full objective\nStatus: complete", taskSummary: "5/10 tasks complete", failedSteps: [], stopReason: "complete" }), { n: 200 });
 	baseline.add({ id: "B7.policy.completionReport", label: "buildCompletionReport", modules: "goal-policy", fixture: "1 goal, 20 tasks", n: r.n, p50: r.p50, p95: r.p95, max: r.max, notes: `mean ${r.mean}ms` });
