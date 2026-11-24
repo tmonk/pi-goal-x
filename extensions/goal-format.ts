@@ -89,6 +89,11 @@ export function goalDetails(goal: GoalRecord | null, resultDetail?: string): Goa
 	return { version: 3, goal: goal ? cloneGoal(goal) : null, ...(resultDetail ? { resultDetail } : {}) };
 }
 
+/** A plain text tool result carrying the goal state; `terminate` is included only when given. */
+export function goalTextResult(text: string, goal: GoalRecord | null, terminate?: boolean) {
+	return { content: [{ type: "text" as const, text }], details: goalDetails(goal), ...(terminate === undefined ? {} : { terminate }) };
+}
+
 export function renderGoalResult(result: { details?: unknown; content: Array<{ type: string; text?: string }> }, options: { expanded?: boolean } | undefined, theme: Theme): Text {
 	const first = result.content.find((item) => item.type === "text" && typeof item.text === "string");
 	const firstText = first?.text ?? "";
