@@ -12,6 +12,13 @@ const fields = ["task_id", "status", "evidence", "reason"] as const;
 const statuses = new Set(["start", "complete", "skipped", "pending"]);
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 
+/** Remove a blank top-level status so an otherwise valid batch call passes validation. */
+export function dropBlankStatus(args: unknown): unknown {
+	if (!object(args)) return args;
+	const { status, ...rest } = args;
+	return typeof status === "string" && !status.trim() ? rest : args;
+}
+
 /** Normalize transport noise without discarding a meaningful task instruction. */
 export function normalizeTaskProgress(input: unknown): Result {
 	const fail = (message: string): Result => ({ok: false, message});

@@ -17,7 +17,7 @@ import { statusLabel, truncateText } from "./goal-display.ts";
 import { loadGoalSettings } from "./goal-settings.ts";
 import { buildTaskSummary, checkSubtasksComplete, findSubtaskDepthViolation, findTaskInTree, skipAllSubtasks } from "./goal-policy.ts";
 import { showTaskConfirmation, type TaskConfirmationResult } from "./goal-task-confirmation.ts";
-import { normalizeTaskProgress, type TaskProgressInput } from "./goal-tool-inputs.ts";
+import { dropBlankStatus, normalizeTaskProgress, type TaskProgressInput } from "./goal-tool-inputs.ts";
 export type { TaskProgressInput } from "./goal-tool-inputs.ts";
 import {
 	SET_GOAL_TASKS_TOOL_NAME,
@@ -388,11 +388,15 @@ pi.registerTool(defineTool({
 	promptGuidelines: ["start requires pending and sets current task. complete requires evidence for contracted tasks and completed/skipped non-lightweight children. skipped requires a reason and explicit user direction or a hard contradiction; never skip to avoid work. pending reopens skipped tasks only; completed tasks are immutable. Completing/skipping the current task clears focus."],
 	parameters: Type.Object({
 		task_id: Type.Optional(Type.String({ description: "Single-task form; with updates, any non-empty root fields must repeat one batch entry." })),
-		status: Type.Optional(StringEnum(["start", "complete", "skipped", "pending", ""] as const)),
+		status: Type.Optional(StringEnum(["start", "complete", "skipped", "pending"] as const, { description: "Single-task status. Leave it out when using updates." })),
 		updates: Type.Optional(Type.Array(Type.Object({task_id: Type.String(), status: StringEnum(["start", "complete", "skipped", "pending"] as const), evidence: Type.Optional(Type.String()), reason: Type.Optional(Type.String())}, {additionalProperties: false}), {maxItems: 100, description: "Ordered atomic batch. An empty array is allowed only with valid single-task fields."})),
 		evidence: Type.Optional(Type.String({ description: "Completion evidence; max 200 chars." })),
 		reason: Type.Optional(Type.String({ description: "Required for skipped." })),
 	}, { additionalProperties: false }),
+	// Some models send "" for every optional field. Google rejects "" in an
+	// enum, so it is not in the schema; drop a blank status here instead,
+	// before Pi validates the call.
+	prepareArguments: (args) => dropBlankStatus(args) as never,
 	executionMode: "sequential",
 	async execute(_toolCallId, rawParams, _signal, _onUpdate, ctx) {
 		const fail = (text: string) => ({content: [{type: "text" as const, text}], details: goalDetails(core.state.goal)});
