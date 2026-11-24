@@ -57,6 +57,8 @@ interface AtomicWriteOptions {
 	mode?: number;
 	/** fsync the file and its directory before returning. */
 	durable?: boolean;
+	/** Message to throw when the target is a symlink (default names the target path). */
+	symlinkMessage?: string;
 }
 
 function lstatIfPresent(target: string): fs.Stats | undefined {
@@ -75,7 +77,7 @@ function tempPathFor(target: string): string {
  */
 export function writeFileAtomicSync(target: string, content: string, options: AtomicWriteOptions = {}): void {
 	const prior = lstatIfPresent(target);
-	if (prior?.isSymbolicLink()) throw new Error(`Refusing to replace symlink: ${target}`);
+	if (prior?.isSymbolicLink()) throw new Error(options.symlinkMessage ?? `Refusing to replace symlink: ${target}`);
 	const mode = prior ? prior.mode & 0o777 : options.mode ?? 0o666;
 	const temp = tempPathFor(target);
 	let fd: number | undefined;

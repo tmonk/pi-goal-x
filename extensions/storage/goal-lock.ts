@@ -1,7 +1,6 @@
 import * as path from "node:path";
 import { acquireFileLock, type FileLock } from "./file-lock.ts";
-import { goalStoragePath, ensureGoalStorageDirectory } from "./goal-root.ts";
-import type { GoalFileContext } from "./goal-files.ts";
+import { goalStoragePath, ensureGoalStorageDirectory, type GoalStorageContext } from "./goal-root.ts";
 
 /**
  * Short per-goal lock at `.pi/goals/.locks/<goalId>.lock`. It serializes
@@ -16,12 +15,12 @@ export const GOAL_LOCK_DIR = ".pi/goals/.locks";
 
 export type GoalLock = FileLock;
 
-function safeLockName(goalId: string): string {
+export function safeLockName(goalId: string): string {
 	return goalId.replace(/[^A-Za-z0-9._-]/g, "_");
 }
 
 export function acquireGoalLock(
-	ctx: GoalFileContext,
+	ctx: GoalStorageContext,
 	goalId: string,
 	opts: { attempts?: number; retryMs?: number; staleTtlMs?: number } = {},
 ): GoalLock {
