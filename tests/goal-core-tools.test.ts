@@ -103,11 +103,11 @@ test("disabling tasks advertises the three core tools and the drafting tools", a
 			sessionEntries: [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") }],
 		});
 		await start(h);
-		for (const present of ["create_goal", "get_goal", "update_goal", "goal_question", "goal_questionnaire", "propose_goal_draft"]) {
+		for (const present of ["create_goal", "get_goal", "update_goal", "goal_questionnaire", "propose_goal_draft"]) {
 			assert.ok(h.activeTools.includes(present), `${present} must be advertised`);
 		}
 		for (const absent of [
-			"propose_task_list", "complete_task", "skip_task",
+			"propose_task_list", "complete_task", "skip_task", "goal_question",
 			"complete_goal", "pause_goal", "abort_goal",
 			"set_goal_tasks", "update_goal_task", "propose_goal_tweak", "step_complete",
 		]) {

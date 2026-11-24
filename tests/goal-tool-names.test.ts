@@ -13,7 +13,6 @@ import {
 	POST_STOP_ALLOWED_TOOLS,
 	PROPOSE_DRAFT_TOOL_NAME,
 	QUESTIONNAIRE_TOOL_NAME,
-	QUESTION_TOOL_NAME,
 	SET_GOAL_TASKS_TOOL_NAME,
 	TASK_TOOL_NAMES,
 	UPDATE_GOAL_TASK_TOOL_NAME,
@@ -24,11 +23,11 @@ const CORE = ["create_goal", "get_goal", "update_goal"];
 
 // Drafting tools belong to the separate transient user-started draft profile,
 // never to the steady three/five execution surface.
-const DRAFTING = ["goal_question", "goal_questionnaire", "propose_goal_draft"];
+const DRAFTING = ["goal_questionnaire", "propose_goal_draft"];
 
 // Removed steady-state lifecycle tools — none may exist in the module.
 const REMOVED_STEADY = [
-	"propose_goal_tweak", "step_complete", "abort_goal", "propose_task_list",
+	"propose_goal_tweak", "step_complete", "abort_goal", "propose_task_list", "goal_question",
 	"complete_task", "skip_task", "complete_goal", "pause_goal",
 ];
 
@@ -52,7 +51,6 @@ test("fixed profiles: core three, task two, all five registered", () => {
 });
 
 test("the module declares drafting names only in the transient profile", () => {
-	assert.equal(QUESTION_TOOL_NAME, "goal_question");
 	assert.equal(QUESTIONNAIRE_TOOL_NAME, "goal_questionnaire");
 	assert.equal(PROPOSE_DRAFT_TOOL_NAME, "propose_goal_draft");
 	// Drafting tools must never leak into the fixed execution profiles.

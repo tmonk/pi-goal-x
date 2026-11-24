@@ -67,7 +67,7 @@ function testFixture() {
 
 // The two possible lists. Goal status, focus and drafting never change them.
 const FIVE_GOAL_TOOLS = ["create_goal", "get_goal", "update_goal", "set_goal_tasks", "update_goal_task"];
-const DRAFTING_TOOLS = ["goal_question", "goal_questionnaire", "propose_goal_draft"];
+const DRAFTING_TOOLS = ["goal_questionnaire", "propose_goal_draft"];
 const ALL_GOAL_TOOLS = [...FIVE_GOAL_TOOLS, ...DRAFTING_TOOLS];
 const WITH_TASKS = ALL_GOAL_TOOLS;
 const WITHOUT_TASKS = ["create_goal", "get_goal", "update_goal", ...DRAFTING_TOOLS];
@@ -79,6 +79,7 @@ const HOST_SEED_B = ["read", "grep", "find", "ls", "fetch", "custom-ext-tool"];
 const REMOVED_TOOLS = [
 	"complete_goal", "pause_goal", "abort_goal", "propose_goal_tweak",
 	"step_complete", "propose_task_list", "complete_task", "skip_task",
+	"goal_question",
 ];
 
 // ── Test Suite ───────────────────────────────────────────────────────────────
@@ -309,7 +310,7 @@ describe("Fixed goal tool list", () => {
 			assert.ok(tool, `Tool "${name}" must be registered`);
 			assert.ok(typeof tool!.execute === "function", `Tool "${name}" must have an execute handler`);
 		}
-		for (const name of ["goal_question", "goal_questionnaire", "propose_goal_draft"]) {
+		for (const name of ["goal_questionnaire", "propose_goal_draft"]) {
 			const tool = registeredTools.find((t) => t.name === name);
 			assert.ok(tool, `Drafting tool "${name}" must be registered`);
 			assert.ok(typeof tool!.execute === "function", `Drafting tool "${name}" must have an execute handler`);

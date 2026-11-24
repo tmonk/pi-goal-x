@@ -62,7 +62,6 @@ const server = createServer((req, res) => {
 				tool: "propose_goal_draft",
 				args: {
 					objective: `Confirm Pi ${HOST_VERSION} compatibility.\nSuccess criteria: the live session completes one goal lifecycle.`,
-					sisyphus: false,
 				},
 			};
 		} else if (toolNames.includes("update_goal")) {

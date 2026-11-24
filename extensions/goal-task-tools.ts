@@ -236,6 +236,17 @@ function progressSpec(input: TaskProgressInput, core: import("./goal-state.ts").
 		};
 }
 
+/** The flat task list taken by set_goal_tasks and propose_goal_draft. */
+export function taskTreeSchema() {
+	return Type.Array(Type.Object({
+		id: Type.String({ description: "Short slug, e.g. task-1." }),
+		title: Type.String(),
+		parent_id: Type.Optional(Type.String({ description: "Leave out for top-level tasks." })),
+		verification_contract: Type.Optional(Type.String({ description: "Evidence needed to complete it." })),
+		lightweight_subtasks: Type.Optional(Type.Boolean({ description: "Its subtasks do not block it." })),
+	}));
+}
+
 // ── Tool registration ─
 
 export function registerTaskTools(core: import("./goal-state.ts").GoalCore): void {
@@ -249,15 +260,9 @@ pi.registerTool(defineTool({
 	promptSnippet: "Set the goal task tree with confirmation.",
 	promptGuidelines: ["Use tasks only for useful milestones. Restructure an existing tree only when the user asks or requirements structurally change. Input is a flat parent-linked tree, at most 50 tasks, within configured depth. lightweight_subtasks is valid only on parents."],
 	parameters: Type.Object({
-		tasks: Type.Array(Type.Object({
-			id: Type.String({ description: "Short stable slug e.g. 'task-1'" }),
-			title: Type.String({ description: "Human-readable task title" }),
-			parent_id: Type.Optional(Type.String({ description: "Parent id; omit for roots." })),
-			verification_contract: Type.Optional(Type.String({ description: "Required completion evidence." })),
-			lightweight_subtasks: Type.Optional(Type.Boolean({ description: "Children do not gate parent completion." })),
-		}), { description: "Flat parent-linked task list" }),
-		block_completion: Type.Optional(Type.Boolean({ description: "Require all tasks resolved; default false." })),
-		change_summary: Type.Optional(Type.String({ description: "Optional summary of the task list change" })),
+		tasks: taskTreeSchema(),
+		block_completion: Type.Optional(Type.Boolean({ description: "The goal cannot complete until every task is done." })),
+		change_summary: Type.Optional(Type.String()),
 	}, { additionalProperties: false }),
 	executionMode: "sequential",
 	async execute(_toolCallId, params, _signal, _onUpdate, ctx) {

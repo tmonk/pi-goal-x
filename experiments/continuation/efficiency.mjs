@@ -53,7 +53,7 @@ async function run(policy,scenario,{optIn=false,guard,cap}={}){
   let body='';for await(const chunk of req)body+=chunk;
   const payload=JSON.parse(body);const audit=/read-only completion auditor/i.test(JSON.stringify(payload.messages?.[0]));
   const draft=!audit&&draftInProgress(payload.messages);
-  const action=audit?text('The result.txt fixture contains exactly the expected result.\n<approved/>'):draft?tool('propose_goal_draft',{objective:'Produce result.txt containing exactly verified result followed by a newline. Verify it and complete the goal.',sisyphus:false}):(plan[step++]??text('Standing by.'));
+  const action=audit?text('The result.txt fixture contains exactly the expected result.\n<approved/>'):draft?tool('propose_goal_draft',{objective:'Produce result.txt containing exactly verified result followed by a newline. Verify it and complete the goal.'}):(plan[step++]??text('Standing by.'));
   const at=performance.now();if(!audit&&!draft&&lastSettled!==undefined){dispatchMs.push(at-lastSettled);lastSettled=undefined;}
   // Pi can append a system-role prompt delta inside history. Its role does
   // not make it part of the leading static prefix: preserve its actual position.

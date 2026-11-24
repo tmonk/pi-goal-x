@@ -68,7 +68,7 @@ for (const fixtureId of expectedFixtureIds) {
 
  const names = captured.tools.map(t => t.name);
  // The tool list is the same in every phase; a draft only blocks goal tools at call time.
- if (scenario.draftPrompt && !["goal_question", "goal_questionnaire", "propose_goal_draft", "create_goal", "get_goal", "update_goal"].every(n => names.includes(n))) failures.push(`${fixtureId}: drafting must keep the fixed tool list`);
+ if (scenario.draftPrompt && !["goal_questionnaire", "propose_goal_draft", "create_goal", "get_goal", "update_goal"].every(n => names.includes(n))) failures.push(`${fixtureId}: drafting must keep the fixed tool list`);
  if (fixtureId === "tasks-disabled" && names.some(n => n === "set_goal_tasks" || n === "update_goal_task")) failures.push(`${fixtureId}: disabled tools advertised`);
  if (["completion-audit", "audit-rejection-and-rework", "oracle-consultation"].includes(fixtureId) && !(breakdown.childRequestChars > 0)) failures.push(`${fixtureId}: child request not captured`);
  if (fixtureId === "post-compaction-turn" && !serializedRequestText(captured).includes("POST-COMPACTION RESYNC")) failures.push(`${fixtureId}: compaction hook was not exercised`);

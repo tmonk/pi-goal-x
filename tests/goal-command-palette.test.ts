@@ -58,7 +58,7 @@ test("/goal <objective> starts guided drafting without creating a goal", async (
 		const files = activeGoalFiles(cwd);
 		assert.equal(files.length, 0, "drafting does not create before confirmation");
 		assert.ok(h.messages.some((message) => message.includes("GOAL CONFIRMATION")), "drafting prompt sent to agent");
-		assert.deepEqual(h.getActiveTools().filter((name) => name.startsWith("goal_") || name === "propose_goal_draft"), ["goal_question", "goal_questionnaire", "propose_goal_draft"]);
+		assert.deepEqual(h.getActiveTools().filter((name) => name.startsWith("goal_") || name === "propose_goal_draft"), ["goal_questionnaire", "propose_goal_draft"]);
 	} finally {
 		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
 	}

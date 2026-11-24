@@ -14,8 +14,9 @@ import { loadGoalSettings } from "./goal-settings.ts";
 import { DIALOG_UNAVAILABLE_HINT, proposalDialogFailureMessage, formatQuestionnaireAnswers, runGoalQuestionnaire, shouldAutoConfirmProposal, showProposalDialog, type GoalQuestionnaireQuestion, type ProposalDecision } from "./goal-questionnaire.ts";
 import { currentTaskIdIsPending, nowIso, validateTokenBudgetInput, type GoalRecord, type GoalTaskList } from "./goal-record.ts";
 import type { GoalCore } from "./goal-state.ts";
-import { convertFlatTasks, countTasks, mergeTasksWithExisting, type FlatTaskInput } from "./goal-task-tools.ts";
-import { PROPOSE_DRAFT_TOOL_NAME, QUESTIONNAIRE_TOOL_NAME, QUESTION_TOOL_NAME } from "./goal-tool-names.ts";
+import { convertFlatTasks, countTasks, mergeTasksWithExisting, taskTreeSchema, type FlatTaskInput } from "./goal-task-tools.ts";
+import { dropKey } from "./goal-tool-inputs.ts";
+import { PROPOSE_DRAFT_TOOL_NAME, QUESTIONNAIRE_TOOL_NAME } from "./goal-tool-names.ts";
 
 export type GoalDraftMode = GoalDraftingFocus | "tweak";
 
@@ -209,64 +210,31 @@ export function proposalText(draft: ActiveGoalDraft, objective: string, autoCont
 	return `${draft.mode === "tweak" ? `Current ${formatGoalBudget(current?.tokenBudget)}\nProposed ${formatGoalBudget(tokenBudget === undefined ? current?.tokenBudget : tokenBudget ?? undefined)}` : formatGoalBudget(tokenBudget ?? undefined)}\n\n${base}${tasksText}`;
 }
 
-function flatTaskSchema() {
-	return Type.Array(Type.Object({
-		id: Type.String({ description: "Short stable slug, for example task-1." }),
-		title: Type.String({ description: "Human-readable task title." }),
-		parent_id: Type.Optional(Type.String({ description: "Optional parent task id in this proposal." })),
-		verification_contract: Type.Optional(Type.String({ description: "Evidence required for this task." })),
-		lightweight_subtasks: Type.Optional(Type.Boolean({ description: "True only for a task with lightweight children." })),
-	}), { description: "Flat parent-linked task tree to confirm with the goal." });
-}
-
 export function registerDraftingTools(core: GoalCore): void {
 	const { pi } = core;
 	pi.registerTool(defineTool({
-		name: QUESTION_TOOL_NAME,
-		label: "Ask Drafting Question",
-		description: "Ask one structured question during a user-started goal draft.",
-		promptSnippet: "Ask the user one focused drafting question.",
+		name: QUESTIONNAIRE_TOOL_NAME,
+		label: "Ask Drafting Questions",
+		description: "During a goal draft, ask the user one or more questions in a dialog.",
 		parameters: Type.Object({
-			question: Type.String({ description: "The question to ask." }),
-			options: Type.Optional(Type.Array(Type.String({ description: "A concise answer option." }))),
-			recommended: Type.Optional(Type.Integer({ minimum: 0, description: "Zero-based recommended option." })),
-			allow_custom: Type.Optional(Type.Boolean({ description: "Allow a custom answer; defaults to true." })),
+			questions: Type.Array(Type.Object({
+				question: Type.String(),
+				options: Type.Optional(Type.Array(Type.String())),
+				recommended: Type.Optional(Type.Integer({ minimum: 0, description: "Index of the suggested option." })),
+				allow_custom: Type.Optional(Type.Boolean({ description: "Default true." })),
+				context: Type.Optional(Type.String()),
+			}), { minItems: 1 }),
 		}, { additionalProperties: false }),
 		async execute(_id, params, _signal, _update, ctx) {
 			if (!activeDraft(core)) return { content: [{ type: "text", text: commandInstructions("No guided goal draft is active. Ask the user to run /goal or /sisyphus.", core.loadedCommands) }], details: goalDetails(core.state.goal) };
-			core.enterGoalModal();
-			try {
-				const result = await runGoalQuestionnaire(ctx, [{ id: "question", question: params.question, options: params.options ?? [], recommended: params.recommended, allowCustom: params.allow_custom }]);
-				if (result.unavailable === true) return { content: [{ type: "text", text: `${DIALOG_UNAVAILABLE_HINT} Ask the question in chat instead.` }], details: goalDetails(core.state.goal) };
-				return { content: [{ type: "text", text: result.cancelled ? "The user cancelled the question. Continue drafting conversationally." : formatQuestionnaireAnswers(result) }], details: goalDetails(core.state.goal) };
-			} catch (error) {
-				return { content: [{ type: "text", text: `Goal drafting dialog failed: ${error instanceof Error ? error.message : String(error)}. Drafting remains active; ask in chat instead of retrying the dialog.` }], details: goalDetails(core.state.goal) };
-			} finally {
-				core.exitGoalModal();
-			}
-		},
-		renderCall() { return new Text("goal_question", 0, 0); },
-		renderResult(result, _opts, theme) { return renderGoalResult(result, _opts, theme); },
-	}));
-
-	pi.registerTool(defineTool({
-		name: QUESTIONNAIRE_TOOL_NAME,
-		label: "Run Drafting Questionnaire",
-		description: "Ask a short structured questionnaire during a user-started goal draft.",
-		promptSnippet: "Ask only the questions needed to make the goal and task plan concrete.",
-		parameters: Type.Object({
-			questions: Type.Array(Type.Object({
-				id: Type.String({ description: "Stable question id." }),
-				question: Type.String({ description: "Question for the user." }),
-				context: Type.Optional(Type.String({ description: "Optional short context." })),
-				options: Type.Array(Type.String({ description: "Answer option." })),
-				recommended: Type.Optional(Type.Integer({ minimum: 0 })),
-				allow_custom: Type.Optional(Type.Boolean()),
-			})),
-		}, { additionalProperties: false }),
-		async execute(_id, params, _signal, _update, ctx) {
-			if (!activeDraft(core)) return { content: [{ type: "text", text: "No guided goal draft is active." }], details: goalDetails(core.state.goal) };
-			const questions: GoalQuestionnaireQuestion[] = params.questions.map((q: GoalQuestionnaireQuestion & { allow_custom?: boolean }) => ({ ...q, allowCustom: q.allow_custom }));
+			const questions: GoalQuestionnaireQuestion[] = params.questions.map((q, i) => ({
+				id: `q${i + 1}`,
+				question: q.question,
+				context: q.context,
+				options: q.options ?? [],
+				recommended: q.recommended,
+				allowCustom: q.allow_custom,
+			}));
 			core.enterGoalModal();
 			try {
 				const result = await runGoalQuestionnaire(ctx, questions);
@@ -282,29 +250,23 @@ export function registerDraftingTools(core: GoalCore): void {
 				core.exitGoalModal();
 			}
 		},
-		renderCall() { return new Text("goal_questionnaire", 0, 0); },
+		renderCall() { return new Text(QUESTIONNAIRE_TOOL_NAME, 0, 0); },
 		renderResult(result, _opts, theme) { return renderGoalResult(result, _opts, theme); },
 	}));
 
 	pi.registerTool(defineTool({
 		name: PROPOSE_DRAFT_TOOL_NAME,
 		label: "Propose Goal Draft",
-		description: "Present the drafted objective and agent-selected task plan for explicit user confirmation.",
-		promptSnippet: "Confirm the proposed goal and any useful task tree in one dialog.",
-		promptGuidelines: [
-			commandInstructions("Use only during a /goal, /sisyphus, or /goal-tweak guided draft.", core.loadedCommands),
-			"Clarify ambiguity before proposing. Include tasks when the work naturally decomposes into trackable milestones; omit them for genuinely simple work.",
-			"Set token_budget only when the user explicitly asked for a token budget or a spend limit. Never invent, estimate, or infer one from the objective's size; omitting it creates a goal with no budget.",
-			"Confirmation creates or revises the goal atomically. Continue Chatting leaves drafting active for refinement.",
-		],
+		description: "Show the drafted goal, and tasks if any, for the user to confirm.",
 		parameters: Type.Object({
-			objective: Type.String({ description: "The complete proposed objective, including any Success criteria, Boundaries, Constraints and Verification contract sections. Keep it unchanged for budget-only tweaks." }),
-			token_budget: Type.Optional(Type.Union([Type.Integer({minimum: 1}), Type.Null()], {description: "Only on user request: positive whole-token lifetime limit; null removes it. Omit to retain the current tweak budget or create without one."})),
-			auto_continue: Type.Optional(Type.Boolean({ description: "Defaults to true." })),
-			sisyphus: Type.Optional(Type.Boolean({ description: "Must match the user-selected goal mode." })),
-			tasks: Type.Optional(flatTaskSchema()),
-			block_completion: Type.Optional(Type.Boolean({ description: "Require task completion before goal completion." })),
+			objective: Type.String({ description: "The whole goal block, headings included." }),
+			tasks: Type.Optional(taskTreeSchema()),
+			block_completion: Type.Optional(Type.Boolean({ description: "The goal cannot complete until every task is done." })),
+			token_budget: Type.Optional(Type.Union([Type.Integer({ minimum: 1 }), Type.Null()], { description: "Only if the user asked for a budget. null removes it." })),
+			auto_continue: Type.Optional(Type.Boolean({ description: "Default true." })),
 		}, { additionalProperties: false }),
+		// Older prompts asked for a sisyphus flag. The draft already knows its mode.
+		prepareArguments: (args) => dropKey(args, "sisyphus") as never,
 		executionMode: "sequential",
 		async execute(_id, params, _signal, _update, ctx) {
 			const draft = activeDraft(core);
@@ -318,7 +280,6 @@ export function registerDraftingTools(core: GoalCore): void {
 			const objectiveMaxChars = loadGoalSettings(ctx.cwd).objectiveMaxChars ?? 0;
 			if (objectiveMaxChars > 0 && objective.length > objectiveMaxChars) return { content: [{ type: "text", text: `The proposed objective must be at most ${objectiveMaxChars} characters (${objective.length} given).` }], details: goalDetails(core.state.goal) };
 			const expectedSisyphus = draft.mode === "sisyphus";
-			if (draft.mode !== "tweak" && ((params.sisyphus === true) !== expectedSisyphus)) return { content: [{ type: "text", text: "Proposal mode does not match the command that began this draft." }], details: goalDetails(core.state.goal) };
 			const taskResult = proposedTaskList(core, ctx, params.tasks as FlatTaskInput[] | undefined, params.block_completion);
 			if (!taskResult.ok) return { content: [{ type: "text", text: taskResult.message }], details: goalDetails(core.state.goal) };
 			const flushError = core.goalService.flushForAudit(ctx);

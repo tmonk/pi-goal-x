@@ -32,7 +32,7 @@ const server=http.createServer(async(req,res)=>{
  const draft=!audit&&core!==undefined&&hasActiveDraft(core);
  let action;
  if(audit)action=auditStep++===0?tool('read',{path:'result.txt'}):{text:'The requested artifact contains the exact result and was independently read.\n<approved/>'};
- else if(draft)action=tool('propose_goal_draft',{objective:'Create result.txt containing exactly verified result followed by a newline, verify it and finish.',sisyphus:false});
+ else if(draft)action=tool('propose_goal_draft',{objective:'Create result.txt containing exactly verified result followed by a newline, verify it and finish.'});
  else if(lifecycle)action=!fs.existsSync(path.join(cwd,'result.txt'))?tool('write',{path:'result.txt',content:'verified result\n'}):tool('update_goal',{status:'complete'});
  else action=plan[step++]??{text:'Done.'};
  const leading=payload.messages[0];

@@ -19,6 +19,13 @@ export function dropBlankStatus(args: unknown): unknown {
 	return typeof status === "string" && !status.trim() ? rest : args;
 }
 
+/** Remove one top-level argument, if present. */
+export function dropKey(args: unknown, key: string): unknown {
+	if (!object(args) || !(key in args)) return args;
+	const { [key]: _dropped, ...rest } = args;
+	return rest;
+}
+
 /** Normalize transport noise without discarding a meaningful task instruction. */
 export function normalizeTaskProgress(input: unknown): Result {
 	const fail = (message: string): Result => ({ok: false, message});

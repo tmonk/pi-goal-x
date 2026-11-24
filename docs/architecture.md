@@ -32,7 +32,7 @@ handlers from their dedicated modules:
 | `goal-auditor.ts` | Independent pi auditor agent prompt/config/decision parsing and completion audit execution |
 | `goal-ledger.ts` | Single-file goal ledger append/read/reconstruction (18 event types incl. `task_reopened`) |
 | `prompts/goal-draft-prompts.ts` | Drafting prompt/confirmation text helpers (goalDraftingPrompt, buildDraftConfirmationText, renderConfirmationTasks, GoalDraftingFocus) |
-| `goal-drafting.ts` | Guided drafting orchestration: durable `pi-goal-draft` session entries (survive compaction/tree navigation), resume/replace/cancel protection, `goal_question`/`goal_questionnaire`/`propose_goal_draft` tools, per-draft auditor selection |
+| `goal-drafting.ts` | Guided drafting orchestration: durable `pi-goal-draft` session entries (survive compaction/tree navigation), resume/replace/cancel protection, `goal_questionnaire`/`propose_goal_draft` tools, per-draft auditor selection |
 | `goal-questionnaire.ts` | Structured question/answer UI (`runGoalQuestionnaire`, `showProposalDialog`) used by the drafting tools and confirmations |
 | `goal-tool-names.ts` | The five published tool-name constants, lifecycle-dependent profiles, work/progress classification, post-stop allowlist |
 | `goal-detail.ts` | Lossless objective/task/history paging with content-bound cursors |
@@ -206,8 +206,7 @@ The extension registers five normal-execution tools and three drafting-only tool
 | `update_goal` | Run outcomes: `complete` (audited from actual evidence; optional `completion_summary` is an untrusted claim), `blocked` (after three consecutive identical blockers), or `paused` (immediate agent pause with required `reason`). |
 | `set_goal_tasks` | Create or structurally replace the task tree (flat parent-linked input, confirmation dialog, id-stable merge). |
 | `update_goal_task` | Update one task or an ordered atomic batch: start, complete (evidence for contracted tasks), skipped (reason), pending (reopens skipped). |
-| `goal_question` | Drafting-only structured clarification question. |
-| `goal_questionnaire` | Drafting-only multi-question clarification UI. |
+| `goal_questionnaire` | Drafting only. Asks one or more questions in a dialog. |
 | `propose_goal_draft` | Drafting-only objective/task proposal with Confirm or Continue Chatting. |
 
 Outside drafting, creation and inspection are always advertised. Outcomes are

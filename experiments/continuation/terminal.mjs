@@ -34,7 +34,7 @@ const server=http.createServer(async(req,res)=>{
  }
  else if(draft)action=/Goal draft refinement requested|Draft cancelled/.test(JSON.stringify(payload.messages.at(-1)))
   ? {text:"Tell me what you would like to change."}
-  : {tool:'propose_goal_draft',args:{objective,sisyphus:false}};
+  : {tool:'propose_goal_draft',args:{objective}};
  else if(scenario==='idle-opt-out'&&optedIn)action={text:'Standing by.'};
  else if(!fs.existsSync(path.join(cwd,'greeting.txt')))action={tool:'write',args:{path:'greeting.txt',content:'Hello from goal\n'}};
  else action={tool:'update_goal',args:{status:'complete'}};

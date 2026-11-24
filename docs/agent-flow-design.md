@@ -124,7 +124,10 @@ and any change to it makes the provider re-read the whole prompt:
 
 - with tasks enabled: `create_goal`, `get_goal`, `update_goal`,
   `set_goal_tasks`, `update_goal_task`, plus the drafting tools
-  `goal_question`, `goal_questionnaire` and `propose_goal_draft`;
+  `goal_questionnaire` and `propose_goal_draft`;
+- the drafting tools are kept small because every request carries them. How
+  to draft lives in the draft prompt, which is only sent during a draft, not
+  in tool guidance, which is in every system prompt;
 - with tasks disabled: the same list without the two task tools;
 - only a change to `disableTasks` changes the list. Goal status, focus,
   drafting, completion, audits and compaction never do;
