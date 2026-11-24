@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { readdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { affectedTests } from "./affected-tests.mjs";
+import { changedFiles } from "./ci-scope.mjs";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const testsRoot = join(projectRoot, "tests");
@@ -15,6 +17,10 @@ const wantWriteManifest = process.argv.includes("--write-manifest");
 const shard = process.argv.find((arg) => arg.startsWith("--shard="))?.slice("--shard=".length);
 if (shard && !/^[1-9]\d*\/[1-9]\d*$/.test(shard)) throw new Error("Bad --shard value: " + shard);
 if (shard && Number(shard.split("/")[0]) > Number(shard.split("/")[1])) throw new Error("Bad --shard value: " + shard);
+
+// `--affected=<sha>` runs only the test files that the changes since that commit can reach.
+// CI uses it on pull requests; every push to main runs the whole suite.
+const affected = process.argv.find((arg) => arg.startsWith("--affected="))?.slice("--affected=".length);
 
 function discover(directory) {
 	return readdirSync(directory, { withFileTypes: true })
@@ -36,17 +42,26 @@ const testFiles = suite === "integration"
 			? [...e2eFiles, ...integrationFiles, ...unitFiles]
 			: unitFiles;
 
-// `--shard=1/4` runs a share of the files. Each file gets a rough cost (the two slowest files, then
-// end-to-end, integration and unit files) and goes to the shard with the least work so far, so no
-// shard is left holding all the slow ones. The shards together cover every file exactly once.
-const SLOWEST = ["tests/e2e/goal-session-safety.test.ts", "tests/goal-cache-simulation.test.ts"];
+// `--shard=1/4` runs a share of the files. Each file goes to the shard with the least work so far,
+// slowest first, so no shard is left holding all the slow ones. The shards together cover every file exactly once.
+// Seconds each slow file takes on a CI-sized machine. Every other file takes about half a second.
+const SLOW_SECONDS = {
+	"tests/e2e/goal-session-safety.test.ts": 8,
+	"tests/goal-cache-simulation.test.ts": 6.5,
+	"tests/e2e/goal-continuation-user.test.ts": 2.3,
+	"tests/e2e/goal-scheduler-sdk.test.ts": 2.1,
+	"tests/e2e/goal-tool-input-sdk.test.ts": 1.9,
+	"tests/e2e/goal-stale-dispatch-sdk.test.ts": 1.9,
+	"tests/goal-network-recovery.test.ts": 1.6,
+	"tests/e2e/goal-context-system-sdk.test.ts": 1.5,
+	"tests/goal-controls.test.ts": 1.5,
+	"tests/e2e/goal-prompt-cache-sdk.test.ts": 1.4,
+	"tests/goal-scheduler.test.ts": 1.1,
+};
 function shardFiles(files, shardSpec) {
 	if (!shardSpec) return files;
 	const [index, count] = shardSpec.split("/").map(Number);
-	const cost = (file) => {
-		const name = rel(file).slice(2);
-		return SLOWEST.includes(name) ? 8 : name.startsWith("tests/e2e/") ? 3 : name.startsWith("tests/integration/") ? 2 : 1;
-	};
+	const cost = (file) => SLOW_SECONDS[rel(file).slice(2)] ?? 0.5;
 	const load = new Array(count).fill(0);
 	const mine = [];
 	for (const file of [...files].sort((a, b) => cost(b) - cost(a) || a.localeCompare(b))) {
@@ -56,7 +71,16 @@ function shardFiles(files, shardSpec) {
 	}
 	return mine.sort();
 }
-const shardedFiles = shardFiles(testFiles, shard);
+let selectedFiles = testFiles;
+if (affected) {
+	const picked = affectedTests(projectRoot, testFiles.map((file) => rel(file).slice(2)), changedFiles(affected, projectRoot));
+	if (picked !== "all") {
+		const names = new Set(picked);
+		selectedFiles = testFiles.filter((file) => names.has(rel(file).slice(2)));
+		console.log(`[runner] Pull request: ${selectedFiles.length} of ${testFiles.length} test file(s) can reach the changed files. Main runs them all.`);
+	}
+}
+const shardedFiles = shardFiles(selectedFiles, shard);
 
 if (testFiles.length === 0) {
 	throw new Error("No " + suite + " test files were discovered.");
@@ -104,6 +128,10 @@ if (wantSelfCheck) {
 }
 
 // ---- Execution ---------------------------------------------------------
+if (shardedFiles.length === 0) {
+	console.log("[runner] No test files to run in this part.");
+	process.exit(0);
+}
 const startedAt = Date.now();
 const result = spawnSync(
 	process.execPath,
