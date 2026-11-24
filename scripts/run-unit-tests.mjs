@@ -28,7 +28,8 @@ const testFiles = suite === "integration"
 	: suite === "e2e"
 		? e2eFiles
 		: suite === "all"
-			? [...unitFiles, ...integrationFiles, ...e2eFiles]
+			// The slow end-to-end files go first so they overlap with the many quick ones.
+			? [...e2eFiles, ...integrationFiles, ...unitFiles]
 			: unitFiles;
 
 if (testFiles.length === 0) {
@@ -78,11 +79,6 @@ if (wantSelfCheck) {
 
 // ---- Execution ---------------------------------------------------------
 const startedAt = Date.now();
-// `--test-isolation=none` (single-process suite, shared module state) is only
-// accepted by Node >= 23.4; probe the running binary and omit it on older
-// releases so the same script works across the supported Node range (22.19+).
-const isolationProbe = spawnSync(process.execPath, ["--test-isolation=none", "--test", "--help"], { stdio: "ignore" });
-const isolationArgs = isolationProbe.status === 0 ? ["--test-isolation=none"] : [];
 const result = spawnSync(
 	process.execPath,
 	[
@@ -90,7 +86,6 @@ const result = spawnSync(
 		"--import", pathToFileURL(join(projectRoot, "scripts", "test-adapter-hooks.mjs")).href,
 		"--experimental-strip-types",
 		"--test",
-		...isolationArgs,
 		...testFiles,
 	],
 	{ cwd: projectRoot, stdio: "inherit" },
