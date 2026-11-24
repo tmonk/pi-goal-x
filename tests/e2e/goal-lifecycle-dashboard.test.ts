@@ -16,8 +16,7 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../../extensions/goal.ts";
+import { createExtensionHarness } from "../support/extension-harness.ts";
 import { readGoalLedger } from "../../extensions/goal-ledger.ts";
 import type { GoalRecord } from "../../extensions/goal-record.ts";
 import { parseGoalFile, readActiveGoalPool } from "../../extensions/storage/goal-files.ts";
@@ -38,64 +37,22 @@ interface StageRecord {
 }
 
 function createHarness(cwd: string, opts: { runCompletionAuditor?: (...args: any[]) => Promise<any> } = {}) {
-	const handlers = new Map<string, Function>();
-	const commands = new Map<string, any>();
-	const tools = new Map<string, any>();
-	const notifications: string[] = [];
-	const entries: unknown[] = [];
-	let dialogResolve: ((result: any) => void) | null = null;
-	let hasDialogPending = false;
-	const pi = {
-		registerTool: (def: any) => { tools.set(def.name, def); },
-		registerCommand: (name: string, def: any) => { commands.set(name, def); },
-		on: (event: string, handler: Function) => { handlers.set(event, handler); },
-		appendEntry: (customType: string, data: unknown) => { entries.push({ type: "custom", customType, data }); },
-		registerMessageRenderer: () => {},
-		sendUserMessage: () => {},
-		sendMessage: () => {},
-		getActiveTools: () => ["read", "bash", "edit", "write"],
-		setActiveTools: () => {},
-		hasUI: true,
-	};
-	const ctx = {
+	const h = createExtensionHarness({
 		cwd,
 		hasUI: true,
-		sessionManager: {
-			getBranch: () => [...entries],
-			getCwd: () => cwd,
-			getSessionId: () => "lifecycle-e2e-session",
-			getRoot: () => cwd,
-		},
-		ui: {
-			notify: (message: string) => { notifications.push(message); },
-			setStatus: () => {},
-			setWidget: () => {},
-			onTerminalInput: () => () => {},
-			select: async () => undefined,
-			confirm: async () => true,
-			custom: async () => new Promise((resolve) => { dialogResolve = resolve; hasDialogPending = true; }),
-		},
-		getSystemPrompt: () => "base",
-		isIdle: () => true,
-		hasPendingMessages: () => false,
-		abort: () => {},
-	} as unknown as ExtensionContext;
-	goalExtension(pi as any, { runCompletionAuditor: opts.runCompletionAuditor });
-	return {
-		ctx,
-		commands,
-		tools,
-		handlers,
-		notifications,
-		get core() { return (pi as unknown as { _goalCore: any })._goalCore; },
-		dialogResult: (result: unknown) => { hasDialogPending = false; dialogResolve?.(result); },
-		hasDialog: () => hasDialogPending,
-		sessionStart: async () => { await handlers.get("session_start")?.({ reason: "start" }, ctx); },
-		beforeAgentStart: async () => { await handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, ctx); },
+		sessionId: "lifecycle-e2e-session",
+		systemPrompt: "base",
+		runCompletionAuditor: opts.runCompletionAuditor,
+		custom: "dialog",
+		ui: { confirm: async () => true },
+	});
+	return Object.assign(h, {
+		dialogResult: h.resolveDialog,
+		beforeAgentStart: async () => { await h.emit("before_agent_start", { systemPrompt: "base", prompt: "go", systemPromptOptions: {} }); },
 		turnEnd: async (message: unknown = { role: "assistant", stopReason: "stop", usage: { input: 0, output: 0 } }) => {
-			await handlers.get("turn_end")?.(message, ctx);
+			await h.emit("turn_end", message);
 		},
-	};
+	});
 }
 
 function activeGoalFiles(cwd: string): string[] {
