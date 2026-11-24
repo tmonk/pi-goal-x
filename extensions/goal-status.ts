@@ -10,7 +10,8 @@ import type { GoalKeybindings } from "./settings/schema.ts";
  * so the exact text is unit-testable and can never drift from the widget.
  */
 
-import { truncateText } from "./goal-display.ts";
+import { displayStatusLabel, truncateText } from "./goal-display.ts";
+import { t, tn } from "./i18n/index.ts";
 import type { GoalLedgerEvent, GoalLedgerEvent as LedgerEvent } from "./goal-ledger.ts";
 import { latestAuditorResultForGoal, latestAuditForGoal, latestEventsForGoal } from "./goal-ledger.ts";
 import type { GoalRecord, GoalTask } from "./goal-record.ts";
@@ -73,7 +74,7 @@ export function buildGoalStatusText(options: GoalStatusTextOptions): string {
 	if (!options.goal) {
 		return options.otherOpenGoals > 0
 			? renderUnfocusedDashboard(options.otherOpenGoals, PLAIN_THEME, width, options.commands).join("\n")
-			: `No goal is set. Use ${commandHint("goal", options.commands)} or ${commandHint("sisyphus", options.commands)} to draft a goal.`;
+			: t("No goal is set. Use {goal} or {sisyphus} to draft a goal.", { goal: commandHint("goal", options.commands), sisyphus: commandHint("sisyphus", options.commands) });
 	}
 	const events = options.ledgerEvents ?? [];
 	const model = deriveGoalDashboardModel(options.goal, {
@@ -84,14 +85,14 @@ export function buildGoalStatusText(options: GoalStatusTextOptions): string {
 		otherOpenGoals: options.otherOpenGoals,
 		ledgerEvents: events,
 	});
-	if (!model) return "No goal is set.";
+	if (!model) return t("No goal is set.");
 
 	if (options.verbose) {
 		return buildVerboseStatus(options.goal, model, events, options.settingsReport ?? [], width);
 	}
 
 	const parts: string[] = [];
-	parts.push(renderCompactDashboard(model, PLAIN_THEME, width, { footerHint: `Run ${commandHint("goal-status", options.commands)} verbose for full detail`, keybindings: options.keybindings?.dashboard, auditorKey: options.keybindings?.toggleAuditor }).join("\n"));
+	parts.push(renderCompactDashboard(model, PLAIN_THEME, width, { footerHint: t("Run {command} verbose for full detail", { command: commandHint("goal-status", options.commands) }), keybindings: options.keybindings?.dashboard, auditorKey: options.keybindings?.toggleAuditor }).join("\n"));
 	if (model.currentTask) {
 		parts.push(renderCurrentTaskBlock(model, PLAIN_THEME, width).join("\n"));
 	}
@@ -99,7 +100,7 @@ export function buildGoalStatusText(options: GoalStatusTextOptions): string {
 		parts.push(renderActivityBlock(model.recentActivity, PLAIN_THEME, width).join("\n"));
 	}
 	const audit = latestAuditorResultForGoal(events, model.goalId);
-	if (latestAuditForGoal(events, model.goalId)?.type === "audit_started") parts.push("Latest audit: no recorded result.");
+	if (latestAuditForGoal(events, model.goalId)?.type === "audit_started") parts.push(t("Latest audit: no recorded result."));
 	if (audit) {
 		parts.push(lastAuditBlock(audit, width));
 	}
@@ -121,36 +122,38 @@ function buildHealthStatus(options: GoalStatusTextOptions, width: number): strin
 	const goal = options.goal;
 	if (!goal) {
 		const focus = options.otherOpenGoals > 0
-			? `WARN — no goal is focused; ${options.otherOpenGoals} open goal${options.otherOpenGoals === 1 ? "" : "s"} remain.`
-			: "OK — no goal is focused and there are no open goals.";
-		return ["Goal health: " + (options.otherOpenGoals > 0 ? "WARN" : "OK"), `Focus: ${focus}`, "Run /goal-status for the normal dashboard."].join("\n");
+			? tn(options.otherOpenGoals, { one: "WARN — no goal is focused; {n} open goal remain.", other: "WARN — no goal is focused; {n} open goals remain." })
+			: t("OK — no goal is focused and there are no open goals.");
+		return [t("Goal health: {overall}", { overall: options.otherOpenGoals > 0 ? healthWord("WARN") : healthWord("OK") }), t("Focus: {focus}", { focus }), t("Run /goal-status for the normal dashboard.")].join("\n");
 	}
 
 	const checks: HealthCheck[] = [];
 	checks.push({
-		label: "Focus",
-		value: options.focused ? "focused" : "not focused",
+		label: t("Focus"),
+		value: options.focused ? t("focused") : t("not focused"),
 		severity: options.focused ? "ok" : "warn",
 	});
 	checks.push({
-		label: "Lifecycle",
-		value: `${statusLabelForHealth(goal)}${goal.autoContinue ? " · auto-continue on" : " · auto-continue off"}`,
+		label: t("Lifecycle"),
+		value: goal.autoContinue
+			? t("{status} · auto-continue on", { status: statusLabelForHealth(goal) })
+			: t("{status} · auto-continue off", { status: statusLabelForHealth(goal) }),
 		severity: goal.status === "active" || goal.status === "paused" || goal.status === "blocked" || goal.status === "budget_limited" || goal.status === "complete" ? "ok" : "error",
 	});
 
 	if (goal.status !== "complete") {
 		const fileSeverity = options.activeFilePresent === false ? "error" : options.activeFilePresent === true ? "ok" : "warn";
 		checks.push({
-			label: "Goal file",
-			value: goal.activePath ? (options.activeFilePresent === false ? `missing · ${goal.activePath}` : goal.activePath) : "missing active path",
+			label: t("Goal file"),
+			value: goal.activePath ? (options.activeFilePresent === false ? t("missing · {path}", { path: goal.activePath }) : goal.activePath) : t("missing active path"),
 			severity: fileSeverity,
 		});
 	}
 
 	const malformed = options.ledgerMalformed ?? 0;
 	checks.push({
-		label: "Ledger",
-		value: malformed > 0 ? `${malformed} malformed entr${malformed === 1 ? "y" : "ies"}` : "valid",
+		label: t("Ledger"),
+		value: malformed > 0 ? tn(malformed, { one: "{n} malformed entry", other: "{n} malformed entries" }) : t("valid"),
 		severity: malformed > 0 ? "warn" : "ok",
 	});
 
@@ -160,8 +163,8 @@ function buildHealthStatus(options: GoalStatusTextOptions, width: number): strin
 		const pending = tasks.length - completed;
 		const contractedPending = tasks.filter((task) => task.status === "pending" && Boolean(task.verificationContract?.trim())).length;
 		checks.push({
-			label: "Tasks",
-			value: `${completed}/${tasks.length} terminal · ${pending} pending${contractedPending > 0 ? ` · ${contractedPending} contracted` : ""}`,
+			label: t("Tasks"),
+			value: t("{done}/{total} terminal · {pending} pending", { done: completed, total: tasks.length, pending }) + (contractedPending > 0 ? ` · ${t("{count} contracted", { count: contractedPending })}` : ""),
 			severity: goal.taskList.blockCompletion && pending > 0 ? "warn" : "ok",
 		});
 	}
@@ -169,20 +172,20 @@ function buildHealthStatus(options: GoalStatusTextOptions, width: number): strin
 	if (typeof goal.tokenBudget === "number" && goal.tokenBudget > 0) {
 		const percentage = Math.round((goal.usage.tokensUsed / goal.tokenBudget) * 100);
 		checks.push({
-			label: "Budget",
-			value: `${formatCompactTokens(goal.usage.tokensUsed)} / ${formatCompactTokens(goal.tokenBudget)} (${Math.max(0, percentage)}%)`,
+			label: t("Budget"),
+			value: t("{used} / {total} ({percent}%)", { used: formatCompactTokens(goal.usage.tokensUsed), total: formatCompactTokens(goal.tokenBudget), percent: Math.max(0, percentage) }),
 			severity: goal.status === "budget_limited" || percentage >= 100 ? "warn" : percentage >= 90 ? "warn" : "ok",
 		});
 	}
 
 	const overall = checks.some((check) => check.severity === "error") ? "ERROR" : checks.some((check) => check.severity === "warn") ? "WARN" : "OK";
-	const lines = [`Goal health: ${overall}`, `Goal: ${truncateText(goal.objective, Math.max(20, width - 12))}`];
-	for (const check of checks) lines.push(`${check.severity === "error" ? "ERROR" : check.severity === "warn" ? "WARN" : "OK"} ${check.label}: ${check.value}`);
+	const lines = [t("Goal health: {overall}", { overall: healthWord(overall) }), t("Goal: {objective}", { objective: truncateText(goal.objective, Math.max(20, width - 12)) })];
+	for (const check of checks) lines.push(t("{severity} {label}: {value}", { severity: healthWord(check.severity === "error" ? "ERROR" : check.severity === "warn" ? "WARN" : "OK"), label: check.label, value: check.value }));
 	if (options.checkpointHealth && options.checkpointHealth.total > 0) {
 		lines.push("");
 		lines.push(formatCheckpointHealthReport(options.checkpointHealth, options.checkpointSessionFile));
 	}
-	lines.push("", "This is a storage/runtime health check, not a completion verdict.");
+	lines.push("", t("This is a storage/runtime health check, not a completion verdict."));
 	return lines.join("\n");
 }
 
@@ -196,18 +199,23 @@ function flattenHealthTasks(tasks: GoalTask[]): GoalTask[] {
 }
 
 function statusLabelForHealth(goal: GoalRecord): string {
-	return goal.status === "budget_limited" ? "budget limited" : goal.status;
+	return displayStatusLabel({ ...goal, sisyphus: false, autoContinue: false, stopReason: undefined });
+}
+
+function healthWord(word: "OK" | "WARN" | "ERROR"): string {
+	return word === "OK" ? t("OK") : word === "WARN" ? t("WARN") : t("ERROR");
 }
 
 function lastAuditBlock(
 	audit: { verdict: "approved" | "disapproved" | "error"; report: string; at: string },
 	width: number,
 ): string {
-	const verdictLabel = audit.verdict === "approved" ? "APPROVED" : audit.verdict === "disapproved" ? "CHANGES REQUIRED" : "ERROR";
-	const line = `Last audit: ${verdictLabel} (${audit.at.slice(0, 10)}) — ${truncateText(audit.report.replace(/\s+/g, " "), 90)}`;
+	const verdictLabel = audit.verdict === "approved" ? t("APPROVED") : audit.verdict === "disapproved" ? t("CHANGES REQUIRED") : t("ERROR");
+	const auditTitle = t("Audit result");
+	const line = t("Last audit: {verdict} ({date}) — {report}", { verdict: verdictLabel, date: audit.at.slice(0, 10), report: truncateText(audit.report.replace(/\s+/g, " "), 90) });
 	const inner = Math.max(4, width - 2);
 	return [
-		`╭─ Audit result ─ ${verdictLabel} ${"─".repeat(Math.max(1, inner - visibleLen(`─ Audit result ─ ${verdictLabel} `) - 1))}╮`,
+		`╭─ ${auditTitle} ─ ${verdictLabel} ${"─".repeat(Math.max(1, inner - visibleLen(`─ ${auditTitle} ─ ${verdictLabel} `) - 1))}╮`,
 		`│ ${truncateText(line, inner - 2)}${" ".repeat(Math.max(0, inner - 2 - truncateText(line, inner - 2).length))}│`,
 		`╰${"─".repeat(inner)}╯`,
 	].join("\n");
@@ -221,55 +229,57 @@ function visibleLen(value: string): number {
 
 function buildVerboseStatus(goal: GoalRecord, model: ReturnType<typeof deriveGoalDashboardModel>, events: GoalLedgerEvent[], settingsReport: string[], _width: number): string {
 	const lines: string[] = [];
-	lines.push(`Goal id: ${goal.id}`);
+	lines.push(t("Goal id: {id}", { id: goal.id }));
 	lines.push(...(model?.scheduling ?? []));
-	lines.push(`Revision: ${goal.revision ?? 0}`);
-	lines.push(`Status: ${model?.status.label}${model?.focused ? " (focused)" : " (not focused)"}`);
-	lines.push(`Mode: ${goal.sisyphus ? "sisyphus" : "goal"} · auto-continue: ${goal.autoContinue ? "on" : "off"}`);
-	lines.push(`Usage: ${formatDashboardDuration(goal.usage.activeSeconds)} · ${formatCompactTokens(goal.usage.tokensUsed)} tokens`);
+	lines.push(t("Revision: {revision}", { revision: goal.revision ?? 0 }));
+	lines.push(model?.focused ? t("Status: {status} (focused)", { status: String(model?.status.label) }) : t("Status: {status} (not focused)", { status: String(model?.status.label) }));
+	lines.push(t("Mode: {mode} · auto-continue: {state}", { mode: goal.sisyphus ? t("sisyphus") : t("goal"), state: goal.autoContinue ? t("on") : t("off") }));
+	lines.push(t("Usage: {duration} · {tokens} tokens", { duration: formatDashboardDuration(goal.usage.activeSeconds), tokens: formatCompactTokens(goal.usage.tokensUsed) }));
 	if (model?.budget) {
-		lines.push(`Budget: ${formatCompactTokens(model.budget.used)} / ${formatCompactTokens(model.budget.total)} · ${model.budget.percentage}% used · ${formatCompactTokens(model.budget.remaining)} remaining`);
+		lines.push(t("Budget: {used} / {total} · {percent}% used · {remaining} remaining", { used: formatCompactTokens(model.budget.used), total: formatCompactTokens(model.budget.total), percent: model.budget.percentage, remaining: formatCompactTokens(model.budget.remaining) }));
 	}
-	if (goal.pauseReason) lines.push(`Pause/blocker: ${goal.pauseReason}`);
-	if (goal.pauseSuggestedAction) lines.push(`Suggested action: ${goal.pauseSuggestedAction}`);
-	if (goal.activePath) lines.push(`File: ${goal.activePath}`);
-	if (goal.archivedPath) lines.push(`Archive: ${goal.archivedPath}`);
+	if (goal.pauseReason) lines.push(t("Pause/blocker: {reason}", { reason: goal.pauseReason }));
+	if (goal.pauseSuggestedAction) lines.push(t("Suggested action: {action}", { action: goal.pauseSuggestedAction }));
+	if (goal.activePath) lines.push(t("File: {path}", { path: goal.activePath }));
+	if (goal.archivedPath) lines.push(t("Archive: {path}", { path: goal.archivedPath }));
 
-	lines.push("", "Objective:", goal.objective.trim());
+	lines.push("", t("Objective:"), goal.objective.trim());
 
 	if (goal.verificationContract) {
-		lines.push("", `Verification contract: ${goal.verificationContract.trim()}`);
+		lines.push("", t("Verification contract: {contract}", { contract: goal.verificationContract.trim() }));
 	}
 	if (goal.taskList) {
-		lines.push("", `Tasks (${topLevelCount(goal.taskList.tasks)} top-level, ${goal.taskList.tasks.filter((t) => t.status === "complete" || t.status === "skipped").length} done):`);
+		lines.push("", t("Tasks ({total} top-level, {done} done):", { total: topLevelCount(goal.taskList.tasks), done: goal.taskList.tasks.filter((task) => task.status === "complete" || task.status === "skipped").length }));
 		for (const line of renderTaskTreeVerbose(goal.taskList.tasks, 0, goal.currentTaskId)) {
 			lines.push(line);
 		}
 	}
 	if (model?.currentTask) {
-		lines.push("", `Current task: ${model.currentTask.id} · ${model.currentTask.title}${model.currentTask.inferred ? " (inferred)" : ""}`);
+		lines.push("", model.currentTask.inferred
+			? t("Current task: {id} · {title} (inferred)", { id: model.currentTask.id, title: model.currentTask.title })
+			: t("Current task: {id} · {title}", { id: model.currentTask.id, title: model.currentTask.title }));
 		if (model.currentTask.totalSubtasks > 0) {
-			lines.push(`  subtasks: ${model.currentTask.completedSubtasks}/${model.currentTask.totalSubtasks} (${model.currentTask.subtaskPercentage}%)`);
+			lines.push(t("  subtasks: {done}/{total} ({percent}%)", { done: model.currentTask.completedSubtasks, total: model.currentTask.totalSubtasks, percent: model.currentTask.subtaskPercentage }));
 		}
-		if (model.currentTask.verificationContract) lines.push(`  contract: ${model.currentTask.verificationContract}`);
-		if (model.currentTask.evidence) lines.push(`  evidence: ${model.currentTask.evidence}`);
+		if (model.currentTask.verificationContract) lines.push(t("  contract: {contract}", { contract: model.currentTask.verificationContract }));
+		if (model.currentTask.evidence) lines.push(t("  evidence: {evidence}", { evidence: model.currentTask.evidence }));
 	}
 
 	const recent = latestEventsForGoal(events, goal.id, 12);
 	if (recent.length > 0) {
-		lines.push("", "Recent ledger:");
+		lines.push("", t("Recent ledger:"));
 		for (const event of recent) {
 			lines.push(`  ${event.at.slice(0, 19)} ${event.type}`);
 		}
 	}
 	const audit = latestAuditorResultForGoal(events, goal.id);
-	if (latestAuditForGoal(events, goal.id)?.type === "audit_started") lines.push("", "Latest audit: no recorded result.");
+	if (latestAuditForGoal(events, goal.id)?.type === "audit_started") lines.push("", t("Latest audit: no recorded result."));
 	if (audit) {
-		lines.push("", `Last audit (${audit.at.slice(0, 10)}): ${audit.verdict}`);
+		lines.push("", t("Last audit ({date}): {verdict}", { date: audit.at.slice(0, 10), verdict: audit.verdict }));
 		lines.push(truncateText(audit.report.replace(/\s+/g, " "), 400));
 	}
 	if (settingsReport.length > 0) {
-		lines.push("", "Effective settings:");
+		lines.push("", t("Effective settings:"));
 		lines.push(...settingsReport.map((line) => `  ${line}`));
 	}
 	return lines.join("\n");
@@ -282,14 +292,14 @@ function topLevelCount(tasks: GoalTask[]): number {
 function renderTaskTreeVerbose(tasks: GoalTask[], depth = 0, currentTaskId?: string): string[] {
 	const lines: string[] = [];
 	const indent = "  ".repeat(depth);
-	for (const t of tasks) {
-		const isCurrent = t.id === currentTaskId;
-		const marker = isCurrent ? "▸" : t.status === "complete" ? "✓" : t.status === "skipped" ? "~" : "·";
-		const contract = t.verificationContract ? ` — contract: ${t.verificationContract}` : "";
-		const evidence = t.status === "complete" && t.evidence ? ` — evidence: ${t.evidence}` : "";
-		lines.push(`${indent}${marker} ${t.id}  ${t.title}${contract}${evidence}`);
-		if (t.subtasks && t.subtasks.length > 0) {
-			lines.push(...renderTaskTreeVerbose(t.subtasks, depth + 1, currentTaskId));
+	for (const task of tasks) {
+		const isCurrent = task.id === currentTaskId;
+		const marker = isCurrent ? "▸" : task.status === "complete" ? "✓" : task.status === "skipped" ? "~" : "·";
+		const contract = task.verificationContract ? ` — ${t("contract: {contract}", { contract: task.verificationContract })}` : "";
+		const evidence = task.status === "complete" && task.evidence ? ` — ${t("evidence: {evidence}", { evidence: task.evidence })}` : "";
+		lines.push(`${indent}${marker} ${task.id}  ${task.title}${contract}${evidence}`);
+		if (task.subtasks && task.subtasks.length > 0) {
+			lines.push(...renderTaskTreeVerbose(task.subtasks, depth + 1, currentTaskId));
 		}
 	}
 	return lines;

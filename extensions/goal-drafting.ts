@@ -12,6 +12,7 @@ import type {
 	GoalModalAccess,
 	HostSlice,
 } from "./goal-core-types.ts";
+import { t } from "./i18n/index.ts";
 
 type GoalDraftMode = GoalDraftingFocus | "tweak";
 
@@ -123,7 +124,7 @@ export function rehydrateDraft(core: DraftRecorder & GoalDiskSync & GoalFocusedG
 		if (!core.state.goal || core.state.goal.id !== session.targetGoalId) {
 			// The tweak target is gone or no longer focused — the draft is stale.
 			draftSessionEntry(core, { ...session, clearedAt: nowIso() });
-			ctx.ui.notify("The goal tweak draft is stale (its target goal changed); it was discarded.", "warning");
+			ctx.ui.notify(t("The goal tweak draft is stale (its target goal changed); it was discarded."), "warning");
 			return;
 		}
 	}
@@ -139,10 +140,10 @@ export function rehydrateDraft(core: DraftRecorder & GoalDiskSync & GoalFocusedG
 }
 
 async function awaitDraftChoice(core: GoalModalAccess, ctx: ExtensionContext, label: string): Promise<"resume" | "replace" | "cancel"> {
-	const choices = ["Resume the existing draft", "Replace it with a new draft", "Cancel"];
+	const choices = [t("Resume the existing draft"), t("Replace it with a new draft"), t("Cancel")];
 	core.state.enterModal();
 	try {
-		const selected = await ctx.ui.select(`A ${label.toLowerCase()} is already active`, choices);
+		const selected = await ctx.ui.select(t("A {label} is already active", { label: label.toLowerCase() }), choices);
 		if (!selected || selected === choices[0]!) return "resume";
 		if (selected === choices[2]) return "cancel";
 		return "replace";
@@ -165,21 +166,21 @@ function tweakDraftPrompt(topic: string, targetGoal: GoalRecord | undefined): st
 
 export async function startGoalDrafting(core: GoalDraftingCore, ctx: ExtensionContext, mode: GoalDraftMode, topic: string, targetGoal?: GoalRecord): Promise<void> {
 	const trimmed = topic.trim();
-	const label = mode === "sisyphus" ? "Sisyphus draft" : mode === "tweak" ? "Goal tweak draft" : "Goal draft";
+	const label = mode === "sisyphus" ? t("Sisyphus draft") : mode === "tweak" ? t("Goal tweak draft") : t("Goal draft");
 	// A second draft must never silently discard the first.
 	if (activeDraft(core)) {
 		const choice = ctx.hasUI
 			? await awaitDraftChoice(core, ctx, label)
 			: "replace"; // headless: explicit new intent wins, but not silently (notified)
 		if (choice === "resume") {
-			ctx.ui.notify(commandInstructions("A draft is already active; resuming it. Use /goal-cancel to discard it.", core.loadedCommands), "info");
+			ctx.ui.notify(commandInstructions(t("A draft is already active; resuming it. Use /goal-cancel to discard it."), core.loadedCommands), "info");
 			return;
 		}
 		if (choice === "cancel") {
-			ctx.ui.notify("Draft start cancelled; the existing draft stays active.", "info");
+			ctx.ui.notify(t("Draft start cancelled; the existing draft stays active."), "info");
 			return;
 		}
-		ctx.ui.notify("Replacing the active draft with a new " + label.toLowerCase() + ".", "warning");
+		ctx.ui.notify(t("Replacing the active draft with a new {label}.", { label: label.toLowerCase() }), "warning");
 		clearGoalDrafting(core, ctx);
 	}
 	// A tweak confirmation defaults to the target goal's persisted per-goal
@@ -193,12 +194,14 @@ export async function startGoalDrafting(core: GoalDraftingCore, ctx: ExtensionCo
 	setActiveDraft(core, { mode, originalTopic: trimmed, targetGoalId: targetGoal?.id, startedAt: nowIso(), auditorEnabled });
 	core.clearContinuationState();
 	core.clearActiveAccounting();
-	ctx.ui.notify(label + " started" + (trimmed ? ": " + trimmed.slice(0, 60) : "") + ". The agent will clarify, propose a goal and tasks where useful, then ask you to confirm.", "info");
+	ctx.ui.notify(trimmed
+		? t("{label} started: {topic}. The agent will clarify, propose a goal and tasks where useful, then ask you to confirm.", { label, topic: trimmed.slice(0, 60) })
+		: t("{label} started. The agent will clarify, propose a goal and tasks where useful, then ask you to confirm.", { label }), "info");
 	const prompt = mode === "tweak" ? tweakDraftPrompt(trimmed, targetGoal) : goalDraftingPrompt(trimmed, mode, core.loadedCommands);
 	try {
 		core.pi.sendUserMessage(prompt, { deliverAs: ctx.isIdle() ? "followUp" : "steer" });
 	} catch (err) {
 		clearGoalDrafting(core, ctx);
-		ctx.ui.notify("Could not start " + label.toLowerCase() + ": " + (err instanceof Error ? err.message : String(err)), "error");
+		ctx.ui.notify(t("Could not start {label}: {error}", { label: label.toLowerCase(), error: err instanceof Error ? err.message : String(err) }), "error");
 	}
 }

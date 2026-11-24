@@ -20,6 +20,7 @@ export type {
 	GoalQuestionnaireResult,
 	ProposalDecision,
 } from "./questionnaire/types.ts";
+import { t } from "./i18n/index.ts";
 
 export function normalizeQuestionnaireQuestions(rawQuestions: GoalQuestionnaireQuestion[]): GoalQuestionnaireQuestion[] {
 	const seenIds = new Set<string>();
@@ -211,7 +212,7 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 			// Degrading silently would look like the per-question dialogs came back for no
 			// reason (and any already-answered questions are re-asked): say why first.
 			ctx.ui.notify(
-				`Goal dialog could not be rendered by this host (${error instanceof Error ? error.message : String(error)}); falling back to one dialog per question.`,
+				t("Goal dialog could not be rendered by this host ({error}); falling back to one dialog per question.", { error: error instanceof Error ? error.message : String(error) }),
 				"warning",
 			);
 			return undefined;
@@ -231,18 +232,21 @@ export async function showProposalDialog(
 	focus: GoalDraftingFocus,
 	defaultAuditorEnabled?: boolean,
 ): Promise<{ decision: ProposalDecision; auditorEnabled: boolean; unavailable: boolean }> {
-	const headerTitle = focus === "sisyphus" ? "Confirm Sisyphus Goal Draft" : "Confirm Goal Draft";
+	const headerTitle = focus === "sisyphus" ? t("Confirm Sisyphus Goal Draft") : t("Confirm Goal Draft");
+	const englishOptions = ["Confirm — create this goal now", "Continue chatting — keep refining", "Cancel — discard this draft"];
+	const options = [t("Confirm — create this goal now"), t("Continue chatting — keep refining"), t("Cancel — discard this draft")];
 	const result = await runGoalQuestionnaire(ctx, [{
 		id: "confirm",
 		question: headerTitle,
 		context: confirmationText,
-		options: ["Confirm — create this goal now", "Continue chatting — keep refining", "Cancel — discard this draft"],
+		options,
 		recommended: 0,
 		allowCustom: false,
 	}], defaultAuditorEnabled !== undefined ? { defaultEnabled: defaultAuditorEnabled } : undefined);
 	const decision = proposalDecisionFromQuestionnaireResult({
 		cancelled: result.cancelled,
-		answer: result.answers[0]?.answer,
+		// Decide on the English option text, whatever language the dialog showed.
+		answer: englishOptions[options.indexOf(result.answers[0]?.answer ?? "")] ?? result.answers[0]?.answer,
 	});
 	return { decision, auditorEnabled: result.auditorEnabled ?? true, unavailable: result.unavailable === true };
 }

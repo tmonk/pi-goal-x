@@ -1,7 +1,9 @@
+import { t } from "./i18n/index.ts";
 import { type Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { commandInstructions, type GoalCommands } from "./goal-controls.ts";
 import {
+	displayStatusLabel,
 	formatDuration,
 	formatTokenValue,
 	statusLabel,
@@ -87,9 +89,9 @@ export function detailedSummary(goal: GoalRecord | null, commands?: GoalCommands
 }
 
 export function oneLineSummary(goal: GoalRecord | null): string {
-	if (!goal) return "No goal is set.";
+	if (!goal) return t("No goal is set.");
 	const tail = goal.usage.tokensUsed > 0 ? ` [${formatTokenValue(goal.usage.tokensUsed).split(" ")[0]}]` : "";
-	return `${statusLabel(goal)}${tail} - ${truncateText(goal.objective)}`;
+	return `${displayStatusLabel(goal)}${tail} - ${truncateText(goal.objective)}`;
 }
 
 // ---------- entry / render helpers ----------
@@ -125,7 +127,7 @@ export function renderGoalResult(result: { details?: unknown; content: Array<{ t
 	) {
 		return new Text(firstText, 0, 0);
 	}
-	return new Text(theme.fg("accent", "Goal ") + theme.fg("muted", oneLineSummary(details.goal)), 0, 0);
+	return new Text(theme.fg("accent", `${t("Goal")} `) + theme.fg("muted", oneLineSummary(details.goal)), 0, 0);
 }
 
 function normalizeGoalEventDetails(value: unknown): GoalEventDetails {
@@ -160,20 +162,27 @@ export interface GoalAuditEventDetails {
 	auditor?: string;
 }
 
+function eventStatusLabel(status: GoalStatus): string {
+	return status === "active" ? t("active") : status === "paused" ? t("paused") : status === "blocked" ? t("blocked") : status === "budget_limited" ? t("budget limited") : t("complete");
+}
+
 export function renderGoalEvent(message: { details?: GoalEventDetails }, options: { expanded: boolean }, theme: Theme): Text {
 	const details = normalizeGoalEventDetails(message.details);
-	const label = details.kind === "stale" ? "stale checkpoint" : "checkpoint";
+	const label = details.kind === "stale" ? t("stale checkpoint") : t("checkpoint");
 	if (!options.expanded) {
-		return new Text(theme.fg("customMessageLabel", "Goal ") + theme.fg("customMessageText", label), 0, 0);
+		return new Text(theme.fg("customMessageLabel", `${t("Goal")} `) + theme.fg("customMessageText", label), 0, 0);
 	}
-	const lines = [`Status: ${details.status === "active" ? "running" : details.status ?? "unknown"}`];
-	if (details.objective) lines.push(`Objective: ${details.objective}`);
-	lines.push(`Goal id: ${details.goalId}`);
+	const lines = [t("Status: {status}", { status: details.status === "active" ? t("running") : details.status ? eventStatusLabel(details.status) : t("unknown") })];
+	if (details.objective) lines.push(t("Objective: {objective}", { objective: details.objective }));
+	lines.push(t("Goal id: {id}", { id: details.goalId }));
 	if (details.currentGoalId || details.currentStatus) {
-		lines.push(`Current: ${details.currentGoalId ?? "none"}${details.currentStatus ? ` (${details.currentStatus})` : ""}`);
+		const current = details.currentGoalId ?? t("none");
+		lines.push(details.currentStatus
+			? t("Current: {goal} ({status})", { goal: current, status: eventStatusLabel(details.currentStatus) })
+			: t("Current: {goal}", { goal: current }));
 	}
 	return new Text(
-		theme.fg("customMessageLabel", `Goal ${label}`) + "\n" + theme.fg("customMessageText", lines.join("\n")),
+		theme.fg("customMessageLabel", `${t("Goal")} ${label}`) + "\n" + theme.fg("customMessageText", lines.join("\n")),
 		0,
 		0,
 	);
@@ -181,10 +190,10 @@ export function renderGoalEvent(message: { details?: GoalEventDetails }, options
 
 export function renderGoalAuditEvent(message: { content?: unknown; details?: GoalAuditEventDetails }, _options: { expanded: boolean }, theme: Theme): Text {
 	const phase = message.details?.phase ?? "started";
-	const label = phase === "approved" ? "approved" : phase === "rejected" ? "rejected" : phase === "skipped" ? "skipped" : "started";
-	const content = typeof message.content === "string" ? message.content : `Goal audit ${label}.`;
+	const label = phase === "approved" ? t("Goal audit approved") : phase === "rejected" ? t("Goal audit rejected") : phase === "skipped" ? t("Goal audit skipped") : t("Goal audit started");
+	const content = typeof message.content === "string" ? message.content : t("{heading}.", { heading: label });
 	return new Text(
-		theme.fg("customMessageLabel", `Goal audit ${label}`) + "\n" + theme.fg("customMessageText", content),
+		theme.fg("customMessageLabel", label) + "\n" + theme.fg("customMessageText", content),
 		0,
 		0,
 	);
