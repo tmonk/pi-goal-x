@@ -83,9 +83,19 @@ All files are in `extensions/`.
 
 | File | Responsibility |
 |---|---|
-| `goal-service.ts` | `GoalService`, the sole mutation boundary |
+| `goal-service.ts` | `GoalService`, the sole mutation boundary: locks, file writes, the ordered write, ledger, memory commit |
+| `goal-service-types.ts` | Ref, mutation spec and outcome, task-update types |
+| `goal-turn-buffer.ts` | `TurnBuffer`, the in-memory state of one turn's transaction |
+| `goal-reconcile.ts` | `planReconcile`, a pure plan for reconciling memory with disk |
+| `goal-task-update.ts` | Find, validate and apply task updates (single and batch) |
+| `goal-usage-baseline.ts` | Additive merge of token and time usage |
+| `goal-ledger-sink.ts` | Best-effort ledger append; only `GoalService` calls it |
 | `goal-runtime.ts` | `GoalRuntime` |
-| `goal-scheduler.ts`, `goal-scheduler-state.ts` | `GoalScheduler`, persisted scheduler state and its summary text |
+| `goal-scheduler.ts` | `GoalScheduler`: reads settings and the clock, saves through the service |
+| `goal-scheduler-rules.ts` | Pure decisions: idle pacing, waits, dispatch kind, claiming, release |
+| `goal-scheduler-host.ts` | `SchedulerHost` and `InterruptionHost`: what each class needs from the core |
+| `goal-scheduler-state.ts` | Persisted scheduler state and its summary text |
+| `goal-wake-timer.ts` | Re-armable timer that does not keep the process alive |
 | `goal-accounting.ts` | `GoalAccounting`, budget helpers, context usage line |
 | `network-error-backoff.ts` | Retry plan for provider errors |
 | `goal-policy.ts` | Gates for complete, blocked, pause and tasks; reports |
