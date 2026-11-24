@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { showGoalControls, type GoalControlsCore } from "./widgets/goal-controls-dialog.ts";
+import { t } from "./i18n/index.ts";
+import { scopeName, showGoalControls, type GoalControlsCore } from "./widgets/goal-controls-dialog.ts";
 import { type GoalSettings, type SettingsScope } from "./settings/schema.ts";
 import { goalSettingsPath, goalGlobalSettingsPath } from "./settings/files.ts";
 import { loadGoalSettings, loadSettingsSnapshot, envOverrideFor, type SettingsSnapshot } from "./settings/resolve.ts";
@@ -23,39 +24,40 @@ import type { GoalToolProfile, SchedulerSlice, StateSlice } from "./goal-core-ty
 type SettingRow = {
 	key: keyof GoalSettings | string;
 	label: string;
-	section: "Goal behavior" | "Task tracking" | "Completion auditor" | "Blocker Oracle" | "Advanced execution";
+	section: string;
 	kind: "boolean" | "modelSelector" | "thinking" | "positiveInteger";
 	/** Settings path for the mutation (defaults to [key]). */
 	path?: string[];
 	help?: string;
 };
 
-const SETTING_ROWS: readonly SettingRow[] = [
-	{ key: "autoSelectSingleGoal", label: "autoSelectSingleGoal", section: "Goal behavior", kind: "boolean" },
-	{ key: "hideUnfocusedBanner", label: "hideUnfocusedBanner", section: "Goal behavior", kind: "boolean" },
-	{ key: "hideUnfocusedPrompt", label: "hideUnfocusedPrompt", section: "Goal behavior", kind: "boolean" },
-	{ key: "disableContracts", label: "disableContracts", section: "Goal behavior", kind: "boolean" },
-	{ key: "strictExecutionContract", label: "explicit execution contracts (opt-in)", section: "Goal behavior", kind: "boolean" },
-	{ key: "maxAutonomousRuns", label: "autonomous run allowance", section: "Goal behavior", kind: "positiveInteger" },
-	{ key: "showAutonomousRuns", label: "show autonomous runs line", section: "Goal behavior", kind: "boolean" },
-	{ key: "showContextUsage", label: "show context usage line", section: "Goal behavior", kind: "boolean" },
-	{ key: "stallTimeoutMinutes", label: "stall timeout (minutes)", section: "Goal behavior", kind: "positiveInteger" },
-	{ key: "objectiveMaxChars", label: "max objective length (0 = none)", section: "Goal behavior", kind: "positiveInteger" },
-	{ key: "idleContinuationBackoff", label: "slow repeated idle replies (opt-in)", section: "Advanced execution", kind: "boolean",
-		help: "Slows repeated replies without recognized work. May delay reasoning or custom tools. For a hard stop, set an autonomous run allowance." },
-	{ key: "disableTasks", label: "disableTasks", section: "Task tracking", kind: "boolean" },
-	{ key: "subtaskDepth", label: "subtaskDepth", section: "Task tracking", kind: "positiveInteger" },
-	{ key: "disabled", label: "auditor disabled", section: "Completion auditor", kind: "boolean" },
-	{ key: "provider", label: "provider", section: "Completion auditor", kind: "modelSelector" },
-	{ key: "model", label: "model", section: "Completion auditor", kind: "modelSelector" },
-	{ key: "thinkingLevel", label: "thinking_level", section: "Completion auditor", kind: "thinking" },
+/** Built when the menu opens, so labels follow the chosen language. */
+const settingRows = (): SettingRow[] => [
+	{ key: "autoSelectSingleGoal", label: "autoSelectSingleGoal", section: t("Goal behavior"), kind: "boolean" },
+	{ key: "hideUnfocusedBanner", label: "hideUnfocusedBanner", section: t("Goal behavior"), kind: "boolean" },
+	{ key: "hideUnfocusedPrompt", label: "hideUnfocusedPrompt", section: t("Goal behavior"), kind: "boolean" },
+	{ key: "disableContracts", label: "disableContracts", section: t("Goal behavior"), kind: "boolean" },
+	{ key: "strictExecutionContract", label: t("explicit execution contracts (opt-in)"), section: t("Goal behavior"), kind: "boolean" },
+	{ key: "maxAutonomousRuns", label: t("autonomous run allowance"), section: t("Goal behavior"), kind: "positiveInteger" },
+	{ key: "showAutonomousRuns", label: t("show autonomous runs line"), section: t("Goal behavior"), kind: "boolean" },
+	{ key: "showContextUsage", label: t("show context usage line"), section: t("Goal behavior"), kind: "boolean" },
+	{ key: "stallTimeoutMinutes", label: t("stall timeout (minutes)"), section: t("Goal behavior"), kind: "positiveInteger" },
+	{ key: "objectiveMaxChars", label: t("max objective length (0 = none)"), section: t("Goal behavior"), kind: "positiveInteger" },
+	{ key: "idleContinuationBackoff", label: t("slow repeated idle replies (opt-in)"), section: t("Advanced execution"), kind: "boolean",
+		help: t("Slows repeated replies without recognized work. May delay reasoning or custom tools. For a hard stop, set an autonomous run allowance.") },
+	{ key: "disableTasks", label: "disableTasks", section: t("Task tracking"), kind: "boolean" },
+	{ key: "subtaskDepth", label: "subtaskDepth", section: t("Task tracking"), kind: "positiveInteger" },
+	{ key: "disabled", label: t("auditor disabled"), section: t("Completion auditor"), kind: "boolean" },
+	{ key: "provider", label: "provider", section: t("Completion auditor"), kind: "modelSelector" },
+	{ key: "model", label: "model", section: t("Completion auditor"), kind: "modelSelector" },
+	{ key: "thinkingLevel", label: "thinking_level", section: t("Completion auditor"), kind: "thinking" },
 	// Issue #26: opt-in blocker Oracle. Disabled by default; provider/model
 	// must BOTH be set explicitly — the executor model is never used silently.
-	{ key: "oracleEnabled", label: "oracle enabled", section: "Blocker Oracle", kind: "boolean", path: ["oracle", "enabled"] },
-	{ key: "oracleProviderModel", label: "oracle provider/model", section: "Blocker Oracle", kind: "modelSelector", path: ["oracle"] },
-	{ key: "oracleThinkingLevel", label: "oracle thinking_level", section: "Blocker Oracle", kind: "thinking", path: ["oracle", "thinkingLevel"] },
-	{ key: "oracleProjectResources", label: "oracle project resources", section: "Blocker Oracle", kind: "boolean", path: ["oracle", "projectResources"] },
-	{ key: "oracleMaxFailedAttemptsPerBlocker", label: "max failed attempts per blocker", section: "Blocker Oracle", kind: "positiveInteger", path: ["oracle", "maxFailedAttemptsPerBlocker"] },
+	{ key: "oracleEnabled", label: t("oracle enabled"), section: t("Blocker Oracle"), kind: "boolean", path: ["oracle", "enabled"] },
+	{ key: "oracleProviderModel", label: t("oracle provider/model"), section: t("Blocker Oracle"), kind: "modelSelector", path: ["oracle"] },
+	{ key: "oracleThinkingLevel", label: t("oracle thinking_level"), section: t("Blocker Oracle"), kind: "thinking", path: ["oracle", "thinkingLevel"] },
+	{ key: "oracleProjectResources", label: t("oracle project resources"), section: t("Blocker Oracle"), kind: "boolean", path: ["oracle", "projectResources"] },
+	{ key: "oracleMaxFailedAttemptsPerBlocker", label: t("max failed attempts per blocker"), section: t("Blocker Oracle"), kind: "positiveInteger", path: ["oracle", "maxFailedAttemptsPerBlocker"] },
 ];
 
 const BOOLEAN_KEYS = new Set<string>([
@@ -69,7 +71,7 @@ const ZERO_ALLOWED_KEYS = new Set<string>(["stallTimeoutMinutes", "objectiveMaxC
 function settingsValue(config: GoalSettings, key: keyof GoalSettings | string): string {
 	if (BOOLEAN_KEYS.has(key)) return (config as Record<string, unknown>)[key] === true ? "true" : "false";
 	if (key === "subtaskDepth") return config.subtaskDepth !== undefined ? String(config.subtaskDepth) : "1";
-	if (key === "maxAutonomousRuns") return config.maxAutonomousRuns === 0 ? "0 (disabled)" : String(config.maxAutonomousRuns ?? "unlimited (default)");
+	if (key === "maxAutonomousRuns") return config.maxAutonomousRuns === 0 ? t("0 (disabled)") : String(config.maxAutonomousRuns ?? t("unlimited (default)"));
 	if (key === "stallTimeoutMinutes") return config.stallTimeoutMinutes !== undefined ? String(config.stallTimeoutMinutes) : "0";
 	if (key === "objectiveMaxChars") return config.objectiveMaxChars !== undefined ? String(config.objectiveMaxChars) : "0";
 	if (key === "keybindings") return config.keybindings ? `${config.keybindings.dashboard.toggleExpand}, ${config.keybindings.dashboard.scrollUp}, ${config.keybindings.dashboard.scrollDown}` : "(default)";
@@ -92,10 +94,10 @@ function valueAtPath(obj: unknown, path: string[]): unknown {
 function sourceLabel(snapshot: SettingsSnapshot, localLayer: Record<string, unknown>, scope: SettingsScope, rowPath: string[]): string {
 	const provenance = snapshot.provenance.get(rowPath.join("."));
 	let source: string;
-	if (provenance?.source === "global") source = scope === "project" ? "(inherited from global)" : "(global override)";
-	else if (provenance?.source === "project") source = scope === "project" ? "(project override)" : "(project; edit via project scope)";
-	else source = "(default)";
-	if (valueAtPath(localLayer, rowPath) !== undefined && provenance?.source === scope) source = `(${scope} override)`;
+	if (provenance?.source === "global") source = scope === "project" ? t("(inherited from global)") : t("(global override)");
+	else if (provenance?.source === "project") source = scope === "project" ? t("(project override)") : t("(project; edit via project scope)");
+	else source = t("(default)");
+	if (valueAtPath(localLayer, rowPath) !== undefined && provenance?.source === scope) source = scope === "project" ? t("(project override)") : t("(global override)");
 	return source;
 }
 
@@ -111,23 +113,29 @@ interface RowEdit {
 }
 
 function inheritLabelFor(scope: SettingsScope): string {
-	return scope === "project" ? "Use inherited value" : "Use default (delete global override)";
+	return scope === "project" ? t("Use inherited value") : t("Use default (delete global override)");
+}
+
+function rowTitle(row: SettingRow, scope: SettingsScope): string {
+	return t("{label} ({scope})", { label: row.label, scope: scopeName(scope) }) + (row.help ? `\n${row.help}` : "");
 }
 
 async function editBooleanRow(edit: RowEdit): Promise<void> {
 	const { ctx, row, scope, snapshot, rowPath, hasLocalOverride, apply } = edit;
 	const inheritLabel = inheritLabelFor(scope);
 	const effective = snapshot.provenance.get(rowPath.join("."))?.value === true;
-	const actions = [`Set ${scope} override to true`, `Set ${scope} override to false`];
+	const setTrue = t("Set {scope} override to true", { scope: scopeName(scope) });
+	const cancel = t("Cancel");
+	const actions = [setTrue, t("Set {scope} override to false", { scope: scopeName(scope) })];
 	if (hasLocalOverride) actions.push(inheritLabel);
-	actions.push("Cancel");
-	const action = await ctx.ui.select(`${row.label} (${scope})${row.help ? `\n${row.help}` : ""}`, actions);
-	if (!action || action === "Cancel") return;
+	actions.push(cancel);
+	const action = await ctx.ui.select(rowTitle(row, scope), actions);
+	if (!action || action === cancel) return;
 	if (action === inheritLabel) {
 		apply(scope, { op: "unset", path: rowPath });
 		return;
 	}
-	const value = action.endsWith("true");
+	const value = action === setTrue;
 	if (value !== effective || !hasLocalOverride) apply(scope, { op: "set", path: rowPath, value });
 }
 
@@ -135,27 +143,28 @@ async function editIntegerRow(edit: RowEdit): Promise<void> {
 	const { ctx, row, scope, snapshot, rowPath, hasLocalOverride, apply } = edit;
 	const inheritLabel = inheritLabelFor(scope);
 	const min = !row.path && ZERO_ALLOWED_KEYS.has(String(row.key)) ? 0 : 1;
-	const actions = [`Set ${scope} override...`];
+	const cancel = t("Cancel");
+	const actions = [t("Set {scope} override...", { scope: scopeName(scope) })];
 	if (hasLocalOverride) actions.push(inheritLabel);
-	actions.push("Cancel");
-	const action = await ctx.ui.select(`${row.label} (${scope})${row.help ? `\n${row.help}` : ""}`, actions);
-	if (!action || action === "Cancel") return;
+	actions.push(cancel);
+	const action = await ctx.ui.select(rowTitle(row, scope), actions);
+	if (!action || action === cancel) return;
 	if (action === inheritLabel) {
 		apply(scope, { op: "unset", path: rowPath });
 		return;
 	}
-	const input = await ctx.ui.input(`Set ${row.label}`, String(snapshot.provenance.get(rowPath.join("."))?.value ?? min));
+	const input = await ctx.ui.input(t("Set {label}", { label: row.label }), String(snapshot.provenance.get(rowPath.join("."))?.value ?? min));
 	if (input === undefined) return;
 	// Full-string decimal validation: rejects 1.5, 1x, negatives,
 	// infinity, and unsafe integers alike.
 	const value = input.trim();
 	if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < min) {
-		ctx.ui.notify(`${row.label} must be an integer >= ${min} (e.g. ${min}, ${min + 1}, ${min + 2})`, "warning");
+		ctx.ui.notify(t("{label} must be an integer >= {min} (e.g. {min}, {next}, {after})", { label: row.label, min, next: min + 1, after: min + 2 }), "warning");
 		return;
 	}
 	// Oracle attempt cap is bounded at 3 by the settings parser.
 	if (row.path?.[0] === "oracle" && Number(value) > 3) {
-		ctx.ui.notify(`${row.label} must be an integer between 1 and 3`, "warning");
+		ctx.ui.notify(t("{label} must be an integer between 1 and 3", { label: row.label }), "warning");
 		return;
 	}
 	apply(scope, { op: "set", path: rowPath, value: Number(value) });
@@ -165,7 +174,7 @@ async function editThinkingRow(edit: RowEdit): Promise<void> {
 	const { ctx, row, scope, snapshot, rowPath, hasLocalOverride, apply } = edit;
 	const currentValue = settingsValue(snapshot.value, row.key);
 	const levels = thinkingLevelChoices(currentValue === "(default)" ? undefined : currentValue);
-	const picked = await ctx.ui.select(`Set ${row.label} (${scope})`, levels);
+	const picked = await ctx.ui.select(t("Set {label} ({scope})", { label: row.label, scope: scopeName(scope) }), levels);
 	if (!picked) return;
 	const choice = picked.trim().replace(/^✓\s+/, "");
 	if (choice === "(default)") {
@@ -173,7 +182,7 @@ async function editThinkingRow(edit: RowEdit): Promise<void> {
 		return;
 	}
 	if (!(AUDITOR_THINKING_LEVELS as readonly string[]).includes(choice)) {
-		ctx.ui.notify(`thinking_level must be one of: ${AUDITOR_THINKING_LEVELS.join(", ")} (or "(default)")`, "warning");
+		ctx.ui.notify(t("thinking_level must be one of: {levels} (or \"(default)\")", { levels: AUDITOR_THINKING_LEVELS.join(", ") }), "warning");
 		return;
 	}
 	apply(scope, { op: "set", path: rowPath, value: choice });
@@ -193,10 +202,10 @@ async function editModelRow(edit: RowEdit): Promise<void> {
 	const configured = configuredBase || undefined;
 	const session = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
 	const choices = buildAuditorModelChoices(ctx.modelRegistry.getAvailable(), configured, session);
-	const filter = await ctx.ui.input("Filter auditor models (provider/id/name; blank = all)", "");
+	const filter = await ctx.ui.input(t("Filter auditor models (provider/id/name; blank = all)"), "");
 	if (filter === undefined) return;
 	const filtered = filterAuditorModelChoices(choices, filter);
-	const picked = await ctx.ui.select("Select auditor model", filtered.map((choice: AuditorChoice) => choice.label));
+	const picked = await ctx.ui.select(t("Select auditor model"), filtered.map((choice: AuditorChoice) => choice.label));
 	if (!picked) return;
 	const choice = filtered.find((candidate: AuditorChoice) => candidate.label === picked);
 	if (!choice) return;
@@ -209,7 +218,7 @@ async function editModelRow(edit: RowEdit): Promise<void> {
 	let providerValue: string;
 	let modelValue: string;
 	if (choice.kind === "manual") {
-		const input = await ctx.ui.input("Set auditor provider/model", configured ?? "provider/model");
+		const input = await ctx.ui.input(t("Set auditor provider/model"), configured ?? "provider/model");
 		if (input === undefined) return;
 		const parsed = parseManualAuditorModel(input);
 		if ("error" in parsed) {
@@ -241,7 +250,7 @@ export async function handleSettingsMenu(core: SettingsMenuCore, ctx: ExtensionC
 	if (!ctx.hasUI) {
 		// Headless: read-only report of both layer paths.
 		ctx.ui.notify(
-			`Settings — project file: ${goalSettingsPath(ctx.cwd)}\nGlobal file: ${goalGlobalSettingsPath()}`,
+			t("Settings — project file: {project}\nGlobal file: {global}", { project: goalSettingsPath(ctx.cwd), global: goalGlobalSettingsPath() }),
 			"info",
 		);
 		return;
@@ -270,7 +279,7 @@ export async function handleSettingsMenu(core: SettingsMenuCore, ctx: ExtensionC
 			if (mutation.path[0] === "idleContinuationBackoff") core.scheduler.refreshSettings(ctx);
 			return true;
 		} catch (err) {
-			ctx.ui.notify(`Settings change failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
+			ctx.ui.notify(t("Settings change failed: {message}", { message: err instanceof Error ? err.message : String(err) }), "warning");
 			return false;
 		}
 	};
@@ -281,48 +290,52 @@ export async function handleSettingsMenu(core: SettingsMenuCore, ctx: ExtensionC
 	core.state.enterModal();
 	try {
 		let scope: SettingsScope = "project";
+		const rows = settingRows();
+		const done = t("Done");
+		const controls = t("Controls: commands, keys and pause order…");
 		while (true) {
 			const snapshot = loadSettingsSnapshot(ctx.cwd);
 			const localLayer = snapshot[scope].layer as Record<string, unknown>;
+			const scopeOption = t("Scope: {scope} (select to switch)", { scope: scopeName(scope) });
 			const options: string[] = [
-				`─── Editing: ${scope} (${scopePath(scope)}) ───`,
-				`Scope: ${scope} (select to switch)`,
-				"Controls: commands, keys and pause order…",
+				t("─── Editing: {scope} ({path}) ───", { scope: scopeName(scope), path: scopePath(scope) }),
+				scopeOption,
+				controls,
 			];
+			const rowByOption = new Map<string, SettingRow>();
 			let lastSection: string | null = null;
-			for (const row of SETTING_ROWS) {
+			for (const row of rows) {
 				if (row.section !== lastSection) {
 					options.push(`─── ${row.section} ───`);
 					lastSection = row.section;
 				}
+				let line: string;
 				if (envOverrideFor(row.key as keyof GoalSettings)) {
-					options.push(`  ${row.label}: ${settingsValue(snapshot.value, row.key)} (environment; read-only)`);
-					continue;
+					line = `  ${row.label}: ${settingsValue(snapshot.value, row.key)} ${t("(environment; read-only)")}`;
+				} else {
+					// Nested rows render their leaf value directly.
+					const displayValue = row.path
+						? String(valueAtPath(snapshot.value, row.path) ?? "(default)")
+						: settingsValue(snapshot.value, row.key);
+					line = `  ${row.label}: ${displayValue} ${sourceLabel(snapshot, localLayer, scope, rowPathOf(row))}`;
 				}
-				// Nested rows render their leaf value directly.
-				const displayValue = row.path
-					? String(valueAtPath(snapshot.value, row.path) ?? "(default)")
-					: settingsValue(snapshot.value, row.key);
-				options.push(`  ${row.label}: ${displayValue} ${sourceLabel(snapshot, localLayer, scope, rowPathOf(row))}`);
+				rowByOption.set(line, row);
+				options.push(line);
 			}
-			options.push("Done");
-			const selected = await ctx.ui.select("Goal settings", options);
-			if (!selected || selected === "Done") break;
-			if (selected.startsWith("Controls:")) { if (await showGoalControls(core, ctx, scope)) return; continue; }
+			options.push(done);
+			const selected = await ctx.ui.select(t("Goal settings"), options);
+			if (!selected || selected === done) break;
+			if (selected === controls) { if (await showGoalControls(core, ctx, scope)) return; continue; }
 			if (selected.startsWith("───")) continue; // headers are not rows
-			const trimmed = selected.trim();
-			if (trimmed.startsWith("Scope:")) {
+			if (selected === scopeOption) {
 				scope = scope === "project" ? "global" : "project";
 				continue;
 			}
-			const colon = trimmed.indexOf(":");
-			if (colon === -1) continue;
-			const label = trimmed.slice(0, colon).trim();
-			const row = SETTING_ROWS.find((r) => r.label === label);
+			const row = rowByOption.get(selected);
 			if (!row) continue;
 			const envVar = envOverrideFor(row.key as keyof GoalSettings);
 			if (envVar) {
-				ctx.ui.notify(`${row.label} is read-only: overridden by the ${envVar} env var.`, "warning");
+				ctx.ui.notify(t("{label} is read-only: overridden by the {envVar} env var.", { label: row.label, envVar }), "warning");
 				continue;
 			}
 			// Per-row settings path (flat keys default to [key]; nested Blocker
