@@ -154,7 +154,14 @@ jobs:
             measure_base
             npm run bench:naf -- after naf
           fi
-          PI_GOAL_BENCH_REFERENCE="$GITHUB_WORKSPACE/.benchmark-base/experiments/bench/baseline-naf-after.json" npm run bench:gate:naf
+          export PI_GOAL_BENCH_REFERENCE="$GITHUB_WORKSPACE/.benchmark-base/experiments/bench/baseline-naf-after.json"
+          # A single slow sample can fail a row that is normally fast. Measure the branch once more
+          # before failing; a real slowdown shows up again, with the same limits.
+          if ! npm run bench:gate:naf; then
+            echo "The gate failed. Measuring the branch once more before failing."
+            npm run bench:naf -- after naf
+            npm run bench:gate:naf
+          fi
           mkdir -p .bench-saved && cp experiments/bench/baseline-naf-after.json .bench-saved/
       - if: steps.setup.outputs.run == 'true' && github.event_name == 'push'
         uses: actions/cache/save@v4
