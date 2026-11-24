@@ -518,7 +518,7 @@ test("GoalWidgetComponent unfocused with 38 open goals at width 109", () => {
 
 // ── §19.5 dashboard interaction tests ────────────────────────────────────────
 
-import { syncTerminalInputPause } from "../extensions/goal-widget.ts";
+import { syncTerminalInputPause } from "../extensions/goal-terminal-input.ts";
 
 const CTRL_SHIFT_T = "\u001b[27;6;84~";
 const CTRL_SHIFT_A = "\u001b[27;6;65~";

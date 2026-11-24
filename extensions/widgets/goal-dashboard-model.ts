@@ -12,7 +12,7 @@ import { taskIndex } from "../goal-task-index.ts";
  * the durable ledger.
  */
 
-import { displayObjectiveTitle, formatDuration, statusLabel } from "../goal-core.ts";
+import { displayObjectiveTitle, formatDuration, statusLabel } from "../goal-display.ts";
 import type { GoalLedgerEvent } from "../goal-ledger.ts";
 import type { GoalRecord, GoalTask } from "../goal-record.ts";
 import { deriveGoalActivity, type GoalActivityItem } from "../goal-activity.ts";

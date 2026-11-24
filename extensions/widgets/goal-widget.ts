@@ -8,7 +8,7 @@ import {
 	formatDuration,
 	formatTokenValue,
 	type GoalDisplayRecordLike,
-} from "../goal-core.ts";
+} from "../goal-display.ts";
 import type { GoalRecord, GoalTask, GoalTaskList, TaskStatus } from "../goal-record.ts";
 import type { GoalDashboardKeybindings, GoalSettings } from "../goal-settings.ts";
 import { sisyphusStepProgress } from "../goal-policy.ts";

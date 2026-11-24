@@ -9,7 +9,7 @@ import {
 	statusLabel,
 	truncateText,
 	type GoalDisplayRecordLike,
-} from "../extensions/goal-core.ts";
+} from "../extensions/goal-display.ts";
 
 test("displayObjectiveTitle strips goal block boilerplate", () => {
 	assert.equal(

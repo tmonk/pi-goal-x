@@ -16,7 +16,7 @@ import {
 import type { GoalRecord, GoalTask, GoalTaskList } from "./goal-record.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
 import { GOAL_THINKING_LEVELS, loadGoalSettings, type GoalSettings, type ThinkingLevel } from "./goal-settings.ts";
-import { statusLabel } from "./goal-core.ts";
+import { statusLabel } from "./goal-display.ts";
 
 export interface AuditorProgress {
 	/** Current tool being executed by the auditor, if any */

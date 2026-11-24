@@ -1,7 +1,7 @@
 import { commandInstructions, type GoalCommands } from "../goal-controls.ts";
 import { schedulerSummaryParts } from "../goal-scheduler-state.ts";
 import { taskIndex } from "../goal-task-index.ts";
-import { statusLabel, truncateText } from "../goal-core.ts";
+import { statusLabel, truncateText } from "../goal-display.ts";
 import { promptSafeObjective } from "../goal-contract.ts";
 import type { GoalRecord, GoalTask } from "../goal-record.ts";
 import type { GoalSettings } from "../goal-settings.ts";

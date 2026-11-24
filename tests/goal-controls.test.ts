@@ -12,7 +12,7 @@ import {
 	normalizeGoalKey, sameGoalKey, parseCommandPaths, parseGoalKeybinding, keybindingProblems, commandHint,
 } from "../extensions/goal-controls.ts";
 import { loadSettingsSnapshot, mutateSettingsLayer, SettingsMutationError, invalidateGoalSettingsCache } from "../extensions/goal-settings.ts";
-import { syncTerminalInputPause } from "../extensions/goal-widget.ts";
+import { syncTerminalInputPause } from "../extensions/goal-terminal-input.ts";
 import { GoalControlsDialog, commandControlsFingerprint } from "../extensions/widgets/goal-controls-dialog.ts";
 import { createMockTheme, createMockTUI } from "./tui-test-utils.ts";
 import { goalPrompt } from "../extensions/prompts/goal-prompts.ts";

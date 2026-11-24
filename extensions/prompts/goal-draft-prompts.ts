@@ -1,7 +1,7 @@
-import { commandInstructions, type GoalCommands } from "./goal-controls.ts";
-import type { GoalTask, GoalTaskList } from "./goal-record.ts";
-import { promptSafeObjective } from "./goal-contract.ts";
-import { renderConfirmationTasks } from "./goal-task-confirmation.ts";
+import { commandInstructions, type GoalCommands } from "../goal-controls.ts";
+import type { GoalTask, GoalTaskList } from "../goal-record.ts";
+import { promptSafeObjective } from "../goal-contract.ts";
+import { renderConfirmationTasks } from "../goal-task-confirmation.ts";
 
 export type GoalDraftingFocus = "goal" | "sisyphus";
 

@@ -14,7 +14,7 @@
  *   for verbose status and archived records.
  */
 
-import { truncateText } from "./goal-core.ts";
+import { truncateText } from "./goal-display.ts";
 import type { GoalLedgerEvent } from "./goal-ledger.ts";
 
 export type GoalActivityKind = "goal" | "task" | "verification" | "audit" | "archive";

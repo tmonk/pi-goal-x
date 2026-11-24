@@ -6,7 +6,7 @@ import { taskIndex } from "./goal-task-index.ts";
 import { StringEnum, Type } from "@earendil-works/pi-ai";
 import { defineTool, type AgentToolResult, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { formatDuration, formatTokenValue, statusLabel, truncateText } from "./goal-core.ts";
+import { formatDuration, formatTokenValue, statusLabel, truncateText } from "./goal-display.ts";
 import { extractVerificationContract } from "./goal-contract.ts";
 import { detailedSummary, goalDetails, renderGoalResult } from "./goal-format.ts";
 import { modelBudgetLine } from "./goal-accounting.ts";

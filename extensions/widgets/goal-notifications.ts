@@ -1,4 +1,4 @@
-import { displayObjectiveTitle, truncateText } from "../goal-core.ts";
+import { displayObjectiveTitle, truncateText } from "../goal-display.ts";
 
 export function buildGoalRunningNotification(args: { objective: string; sisyphus: boolean; autoContinue: boolean }): string {
 	const icon = args.sisyphus ? "◆" : "●";

@@ -4,7 +4,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { extractVerificationContract, sisyphusObjectiveSufficient } from "./goal-contract.ts";
-import { buildDraftConfirmationText, buildProposalSummary, buildTweakConfirmationText, goalDraftingPrompt, type GoalDraftingFocus } from "./goal-draft.ts";
+import { buildDraftConfirmationText, buildProposalSummary, buildTweakConfirmationText, goalDraftingPrompt, type GoalDraftingFocus } from "./prompts/goal-draft-prompts.ts";
 import { renderConfirmationTasks } from "./goal-task-confirmation.ts";
 import { deriveTasksFromObjective } from "./goal-task-derive.ts";
 import { goalDetails, renderGoalResult } from "./goal-format.ts";

@@ -4,7 +4,7 @@ import {
 	formatTokenValue,
 	statusLabel,
 	truncateText,
-} from "./goal-core.ts";
+} from "./goal-display.ts";
 import { cloneGoal, type GoalFocusEntry, type GoalRecord } from "./goal-record.ts";
 
 export function goalPoolFromGoals(goals: Iterable<GoalRecord>): Map<string, GoalRecord> {

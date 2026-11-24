@@ -10,7 +10,7 @@ import type { GoalKeybindings } from "./goal-settings.ts";
  * so the exact text is unit-testable and can never drift from the widget.
  */
 
-import { truncateText } from "./goal-core.ts";
+import { truncateText } from "./goal-display.ts";
 import type { GoalLedgerEvent, GoalLedgerEvent as LedgerEvent } from "./goal-ledger.ts";
 import { latestAuditorResultForGoal, latestAuditForGoal, latestEventsForGoal } from "./goal-ledger.ts";
 import type { GoalRecord, GoalTask } from "./goal-record.ts";

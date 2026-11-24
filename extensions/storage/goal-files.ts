@@ -7,7 +7,7 @@ import {
 	formatDuration,
 	formatTokenValue,
 	statusLabel,
-} from "../goal-core.ts";
+} from "../goal-display.ts";
 import {
 	cloneGoal,
 	normalizeGoalRecord,

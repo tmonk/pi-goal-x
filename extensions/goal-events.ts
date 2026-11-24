@@ -17,7 +17,7 @@ import {
 import { buildCompactionSummary, buildPostCompactionGoalDelta } from "./goal-compaction.ts";
 import { latestAuditorResultForGoal, readGoalLedger, goalRuntimeEvents, invalidateGoalLedgerCache } from "./goal-ledger.ts";
 import { shouldArmPostCompactReminder, shouldInjectPostCompactReminder } from "./goal-policy.ts";
-import { formatTokenValue } from "./goal-core.ts";
+import { formatTokenValue } from "./goal-display.ts";
 import { loadGoalSettings, invalidateGoalSettingsCache } from "./goal-settings.ts";
 import { modelBudgetLine, budgetRemaining } from "./goal-accounting.ts";
 import { asRecord, nowIso, type AssistantMessageLike, type GoalRecord } from "./goal-record.ts";
@@ -33,7 +33,7 @@ import {
 	untrustedObjectiveBlock,
 } from "./prompts/goal-prompts.ts";
 import { hasActiveDraft, rehydrateDraft } from "./goal-drafting.ts";
-import { syncTerminalInputPause } from "./goal-widget.ts";
+import { syncTerminalInputPause } from "./goal-terminal-input.ts";
 import type { GoalCore } from "./goal-state.ts";
 import { filterGoalSessionContext, isStaleExtensionContextError } from "./goal-session-safety.ts";
 import { registerGoalContext } from "./goal-context.ts";

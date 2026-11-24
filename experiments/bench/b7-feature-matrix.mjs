@@ -43,7 +43,7 @@ import { normalizeGoalRecord } from "../../extensions/goal-record.ts";
 import { serializeGoalFile, parseGoalFile } from "../../extensions/storage/goal-files.ts";
 import { latestEventsForGoal, reconstructGoalLedger } from "../../extensions/goal-ledger.ts";
 import { staleContinuationPrompt, unfocusedOpenGoalsPrompt } from "../../extensions/prompts/goal-prompts.ts";
-import { buildDraftConfirmationText } from "../../extensions/goal-draft.ts";
+import { buildDraftConfirmationText } from "../../extensions/prompts/goal-draft-prompts.ts";
 import { formatQuestionnaireAnswers } from "../../extensions/goal-questionnaire.ts";
 import { goalDetails } from "../../extensions/goal-format.ts";
 import { readGoalLedger } from "../../extensions/goal-ledger.ts";

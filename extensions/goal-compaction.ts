@@ -3,7 +3,7 @@ import {
   formatTokenValue,
   statusLabel,
   truncateText,
-} from "./goal-core.ts";
+} from "./goal-display.ts";
 import {
   latestAuditorResultForGoal, latestAuditForGoal,
   latestEventsForGoal,

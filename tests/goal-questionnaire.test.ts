@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createMockExtensionContext, createMockTheme, createMockTUI } from "./tui-test-utils.ts";
-import { buildDraftConfirmationText } from "../extensions/goal-draft.ts";
+import { buildDraftConfirmationText } from "../extensions/prompts/goal-draft-prompts.ts";
 import type { GoalTask } from "../extensions/goal-record.ts";
 import { renderConfirmationTasks } from "../extensions/goal-task-confirmation.ts";
 import {

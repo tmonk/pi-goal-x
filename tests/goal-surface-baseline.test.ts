@@ -58,9 +58,8 @@ function createRecordingPi() {
 
 /**
  * The five goal tools registered today (registration order, which is also the
- * order pi exposes them in the model tool list). All five are registered from
- * the split tool modules (goal-core-tools.ts + goal-task-tools.ts) via the
- * goal-tools.ts composition installer.
+ * order pi exposes them in the model tool list), registered by
+ * goal-core-tools.ts and goal-task-tools.ts.
  */
 const EXPECTED_REGISTERED_TOOLS = [
 	"get_goal",

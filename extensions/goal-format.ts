@@ -6,7 +6,7 @@ import {
 	formatTokenValue,
 	statusLabel,
 	truncateText,
-} from "./goal-core.ts";
+} from "./goal-display.ts";
 import { buildTaskSummary } from "./goal-policy.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
 import { latestAuditorResultForGoal, latestAuditForGoal, latestEventsForGoal, type GoalLedgerEvent } from "./goal-ledger.ts";

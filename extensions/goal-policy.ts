@@ -1,4 +1,4 @@
-import { statusLabel, type GoalDisplayRecordLike } from "./goal-core.ts";
+import { statusLabel, type GoalDisplayRecordLike } from "./goal-display.ts";
 import type { GoalTask, GoalTaskList, TaskStatus } from "./goal-record.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
 
