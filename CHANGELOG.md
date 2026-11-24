@@ -15,6 +15,7 @@ All notable changes to pi-goal-x are documented here.
 ### Changed
 
 - The goal tool list no longer changes with goal status, focus or drafting, so these no longer throw away the provider's prompt cache. The drafting tools are always listed; the goal tools are blocked during a draft instead of hidden. Only `disableTasks` changes the list. Thanks @quantforge-br and @wuhaoyujerry (#126, #134).
+- The drafting tools are smaller, since every request now carries them. `goal_question` is merged into `goal_questionnaire`, which takes one or more questions. `propose_goal_draft` no longer takes `sisyphus`; the draft already knows its mode, and an old call that sends it still works. Drafting rules moved from tool guidance in the system prompt into the draft prompt.
 - Task updates no longer reset the cached prompt. The task list now sits in the goal snapshot next to usage and runs (#108). Thanks @xulongwu4.
 - With open goals but none focused, the reminder no longer tells the agent to stop work. It says goal tracking is off and the agent should do what the user asks (#135, #129).
 - A goal that a provider error has stopped is paused with the error as the reason, instead of showing as running with nothing scheduled. The same applies when a configured recovery limit runs out. HTTP 499 now gets the normal outage retry (#125).

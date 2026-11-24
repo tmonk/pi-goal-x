@@ -21,12 +21,16 @@ carried over by hand, one commit per item, with a `Co-authored-by:` trailer.
 ## Gates that moved, and why
 
 - **Context baseline** (`experiments/context/baseline-main.json`): re-measured.
-  Tool schemas now include the drafting tools in every request, so tool schema
-  size went from about 3.7-4.7k to 7.4k characters (5.3k with tasks off). This
-  is the cost of a stable tool list. A changing list cost a full cache miss on
-  every state change, which is far more.
-- **Cache gate** (`experiments/context/cache-gate.mjs`): pinned to c4dc4cb, the
-  commit after W1 and W9. Both change the cached payload on purpose.
+  Every request now carries the drafting tools. To keep that cheap,
+  `goal_question` was merged into `goal_questionnaire`, `propose_goal_draft`
+  lost its `sisyphus` flag and shares the task schema with `set_goal_tasks`,
+  and the drafting rules moved from tool guidance (in every system prompt)
+  into the draft prompt (sent only during a draft). With an active goal, the
+  fixed list costs about 1,500 more characters than `main`, down from about
+  4,400 before these cuts. All of it stays cached.
+- **Cache gate** (`experiments/context/cache-gate.mjs`): pinned to 4883b97,
+  after W1, W9 and the smaller drafting tools. All three change the cached
+  payload on purpose.
 - **Draft detection in fake providers**: tests and gate scripts used to spot a
   draft by the presence of `propose_goal_draft` in the tool list. That no
   longer works, so `experiments/draft-phase.mjs` reads the conversation
