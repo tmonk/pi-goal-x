@@ -37,11 +37,12 @@ export interface ActiveGoalDraft {
 	questionnaireEcho?: string;
 }
 
-const activeDrafts = new WeakMap<GoalCore, ActiveGoalDraft>();
+/** Keyed by the session core object; any object works as the key. */
+const activeDrafts = new WeakMap<object, ActiveGoalDraft>();
 
-export function activeDraft(core: GoalCore): ActiveGoalDraft | undefined { return activeDrafts.get(core); }
+export function activeDraft(core: object): ActiveGoalDraft | undefined { return activeDrafts.get(core); }
 
-export function hasActiveDraft(core: GoalCore): boolean { return activeDraft(core) !== undefined; }
+export function hasActiveDraft(core: object): boolean { return activeDraft(core) !== undefined; }
 
 function draftSessionEntry(core: GoalCore, session: GoalDraftSession): void {
 	try {

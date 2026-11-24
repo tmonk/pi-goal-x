@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { GoalCore } from "./goal-state.ts";
+import type { InterruptionHost } from "./goal-scheduler-host.ts";
 import { loadGoalSettings } from "./settings/resolve.ts";
 
 /** A user-stopped turn must not become a retry, nor affect a replacement goal. */
@@ -7,8 +7,8 @@ export class GoalInterruption {
 	private heldGoalId: string | undefined;
 	private abortedGoalId: string | undefined;
 	private finishGoalId: string | undefined;
-	private core: GoalCore;
-	constructor(core: GoalCore) { this.core = core; }
+	private core: InterruptionHost;
+	constructor(core: InterruptionHost) { this.core = core; }
 	isHeld(goalId = this.core.state.goal?.id): boolean { return !!goalId && this.heldGoalId === goalId && this.core.state.goal?.id === goalId && this.core.state.goal.status === "active"; }
 	ignoreAbort(goalId = this.core.runningGoalId ?? this.core.state.goal?.id): boolean { return !!goalId && this.abortedGoalId === goalId; }
 	settled(): void { if (this.isHeld()) this.core.clearActiveAccounting(); this.abortedGoalId = undefined; this.finishGoalId = undefined; }
