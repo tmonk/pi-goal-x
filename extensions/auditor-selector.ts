@@ -8,6 +8,7 @@
  * thinking-level row offers Pi's seven levels or `(default)`.
  */
 
+import { t } from "./i18n/index.ts";
 import { GOAL_THINKING_LEVELS } from "./settings/schema.ts";
 
 type AuditorModelSummary = { provider: string; id: string; name?: string };
@@ -37,7 +38,7 @@ export function buildAuditorModelChoices(
 	return [
 		{
 			kind: "default",
-			label: `${configured ? "  " : session ? "✓ " : "  "}Current session / default${session ? ` (${session})` : " (system default)"}`,
+			label: `${configured ? "  " : session ? "✓ " : "  "}${session ? t("Current session / default ({session})", { session }) : t("Current session / default (system default)")}`,
 		},
 		...models.map((model) => {
 			const key = `${model.provider}/${model.id}`;
@@ -48,7 +49,7 @@ export function buildAuditorModelChoices(
 				label: `${configured === key ? "✓ " : "  "}${auditorModelLabel(model)}`,
 			};
 		}),
-		{ kind: "manual", label: "✎ Enter provider/model manually (advanced)" },
+		{ kind: "manual", label: t("✎ Enter provider/model manually (advanced)") },
 	];
 }
 

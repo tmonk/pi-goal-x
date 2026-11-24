@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { InterruptionHost } from "./goal-scheduler-host.ts";
 import { loadGoalSettings } from "./settings/resolve.ts";
+import { t } from "./i18n/index.ts";
 
 /** A user-stopped turn must not become a retry, nor affect a replacement goal. */
 export class GoalInterruption {
@@ -26,8 +27,8 @@ export class GoalInterruption {
 		this.abortedGoalId = goal.id;
 		this.core.clearContinuationState();
 		this.core.scheduler.interrupt(ctx);
-		ctx.ui.setStatus("goal-interrupt", "Turn stopped · press pause again to pause the goal · Resume or send a message to continue");
-		ctx.ui.notify("Turn stopped. The goal is waiting for you; Resume or send a message to continue.", "info");
+		ctx.ui.setStatus("goal-interrupt", t("Turn stopped · press pause again to pause the goal · Resume or send a message to continue"));
+		ctx.ui.notify(t("Turn stopped. The goal is waiting for you; Resume or send a message to continue."), "info");
 		ctx.abort?.();
 		this.core.updateUI(ctx);
 	}

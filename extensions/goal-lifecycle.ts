@@ -15,6 +15,7 @@ import type { GoalService } from "./goal-service.ts";
 import type { GoalSessionState } from "./goal-session-state.ts";
 import { mergeGoalPromptFromDisk } from "./storage/goal-files.ts";
 import { buildGoalRunningNotification } from "./widgets/goal-notifications.ts";
+import { t } from "./i18n/index.ts";
 
 interface GoalLifecycleDeps {
 	session: GoalSessionState;
@@ -93,7 +94,7 @@ export class GoalLifecycle {
 		});
 		if (result.focusChanged) this.deps.focus().appendEntry(result.goalId, "created");
 		this.deps.progress().begin();
-		ctx.ui.notify(`${buildGoalRunningNotification(config)}\nBudget: ${goal.tokenBudget === undefined ? "none" : `${goal.tokenBudget} tokens`}`, "info");
+		ctx.ui.notify(`${buildGoalRunningNotification(config)}\n${goal.tokenBudget === undefined ? t("Budget: none") : t("Budget: {tokens} tokens", { tokens: goal.tokenBudget })}`, "info");
 		if (startNow && session.goal?.autoContinue) this.deps.scheduler().kickoff(ctx);
 	}
 
@@ -143,7 +144,7 @@ export class GoalLifecycle {
 		if (!session.goal || session.goal.status !== "active") return;
 		session.goal = { ...session.goal, autoContinue: false, pauseReason: undefined, pauseSuggestedAction: undefined };
 		this.stop("paused", "user", ctx);
-		ctx.ui.notify("Goal paused.", "info");
+		ctx.ui.notify(t("Goal paused."), "info");
 	}
 
 	/**
@@ -155,11 +156,11 @@ export class GoalLifecycle {
 		const { session, goalService } = this.deps;
 		const goal = session.goal;
 		if (!goal) {
-			ctx.ui.notify("No focused goal to toggle the auditor for.", "info");
+			ctx.ui.notify(t("No focused goal to toggle the auditor for."), "info");
 			return;
 		}
 		if (goal.status === "complete") {
-			ctx.ui.notify("This goal is complete; the auditor no longer applies.", "info");
+			ctx.ui.notify(t("This goal is complete; the auditor no longer applies."), "info");
 			return;
 		}
 		const nextEnabled = goal.skipAuditor === true;
@@ -170,11 +171,11 @@ export class GoalLifecycle {
 			ledger: (written) => [{ type: "auditor_toggled" as const, goalId: written.id, enabled: nextEnabled, at: written.updatedAt }],
 		});
 		if (!result.ok) {
-			ctx.ui.notify("Could not toggle the auditor: " + result.message, "error");
+			ctx.ui.notify(t("Could not toggle the auditor: {message}", { message: result.message }), "error");
 			return;
 		}
 		goalService.flushTurn(ctx);
 		this.deps.updateUI(ctx);
-		ctx.ui.notify(nextEnabled ? "Auditor enabled for this goal." : "Auditor disabled for this goal.", "info");
+		ctx.ui.notify(nextEnabled ? t("Auditor enabled for this goal.") : t("Auditor disabled for this goal."), "info");
 	}
 }

@@ -5,6 +5,7 @@ import { nowIso } from "./goal-record.ts";
 import type { GoalService } from "./goal-service.ts";
 import type { GoalSessionState } from "./goal-session-state.ts";
 import { loadGoalSettings } from "./settings/resolve.ts";
+import { t, tn } from "./i18n/index.ts";
 
 const BUDGET_WARNING_THRESHOLDS = [0.5, 0.75, 0.9];
 
@@ -53,7 +54,7 @@ export class GoalWatch {
 		} catch {
 			// A failed ledger write must not crash the turn.
 		}
-		ctx.ui.notify(`Goal stalled: no activity for ${minutes} minute${minutes === 1 ? "" : "s"}.`, "warning");
+		ctx.ui.notify(tn(minutes, { one: "Goal stalled: no activity for {n} minute.", other: "Goal stalled: no activity for {n} minutes." }), "warning");
 		return `\n\n[GOAL STALLED goalId=${goal.id}]\n${idle} Report your progress or ask the user to pause or resume the goal.`;
 	}
 
@@ -80,6 +81,6 @@ export class GoalWatch {
 			// A failed ledger write must not crash the turn.
 		}
 		const hint = commandHint("goal-tweak", this.deps.getCommands());
-		ctx.ui.notify(`Token budget ${percent}% used (${goal.usage.tokensUsed}/${budget} tokens). Use ${hint} to change or remove the budget.`, "warning");
+		ctx.ui.notify(t("Token budget {percent}% used ({used}/{budget} tokens). Use {hint} to change or remove the budget.", { percent, used: goal.usage.tokensUsed, budget, hint }), "warning");
 	}
 }
