@@ -10,9 +10,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
+import { tempDir } from "./support/fs.ts";
 
 const CLI = new URL("../scripts/recover-session-checkpoints.mjs", import.meta.url).pathname;
 
@@ -37,7 +37,7 @@ interface Fixture {
 }
 
 function makeSessionFixture(): Fixture {
-	const dir = mkdtempSync(path.join(tmpdir(), "goal-recover-"));
+	const dir = tempDir("goal-recover-");
 	const file = path.join(dir, "session.jsonl");
 	const legacyContent = `[GOAL CHECKPOINT goalId=g1]\nContinue working toward the active pi goal.\n${"x".repeat(6000)}`;
 	const lines = [

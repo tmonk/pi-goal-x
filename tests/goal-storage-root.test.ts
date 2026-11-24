@@ -2,7 +2,6 @@ import { execFileSync } from "node:child_process";
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { createGoalCore } from "../extensions/goal-state.ts";
 import { createGoal, goalFocusDetails } from "../extensions/goal-record.ts";
@@ -13,9 +12,10 @@ import { writeActiveGoalFile, archiveGoalFile, readActiveGoalPool, invalidateGoa
 import { appendGoalEvent, readGoalLedger } from "../extensions/goal-ledger.ts";
 import { acquireGoalLock } from "../extensions/storage/goal-lock.ts";
 import { runRecoveryReport } from "../extensions/goal-recovery.ts";
+import { tempDir } from "./support/fs.ts";
 
 function fixture(t: test.TestContext) {
-	const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "goal-root-")));
+	const dir = fs.realpathSync(tempDir("goal-root-"));
 	t.after(() => { fs.rmSync(dir, { recursive: true, force: true }); invalidateGoalSettingsCache(); invalidateGoalPoolCache(); });
 	const root = path.join(dir, "pool");
 	const context = (name: string, configured: unknown = root) => {

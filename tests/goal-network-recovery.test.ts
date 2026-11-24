@@ -14,8 +14,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -32,6 +31,7 @@ import {
 } from "../extensions/goal-format.ts";
 import { createExtensionHarness } from "./support/extension-harness.ts";
 import { writeProjectSettings } from "./support/settings.ts";
+import { tempDir } from "./support/fs.ts";
 
 const FIXTURE_GOAL = readFileSync(
 	new URL("./fixtures/goals/active_goal_fixture.md", import.meta.url),
@@ -59,7 +59,7 @@ function createHarness(cwd: string, goal: GoalRecord) {
 }
 
 function fixtureCwd(): { cwd: string; goal: GoalRecord } {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-network-recovery-"));
+	const cwd = tempDir("goal-network-recovery-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	writeFileSync(path.join(cwd, ".pi", "goals", "active_goal_fixture.md"), FIXTURE_GOAL);
 	const parsed = createGoal(

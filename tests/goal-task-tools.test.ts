@@ -4,8 +4,7 @@
  */
 
 import { createExtensionHarness } from "./support/extension-harness.ts";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -14,9 +13,9 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { convertFlatTasks, countTasks, mergeTasksWithExisting } from "../extensions/goal-task-tree.ts";
 import { createGoal, goalFocusDetails, type GoalTask } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
-import { goalLedgerPath } from "../extensions/goal-ledger.ts";
 
 import { showTaskConfirmation } from "../extensions/goal-task-confirmation.ts";
+import { ledgerEvents, tempDir } from "./support/fs.ts";
 
 // ── Flat conversion unit tests ───────────────────────────────────────────────
 
@@ -97,7 +96,7 @@ function createHarness(cwd: string, sessionEntries: unknown[]) {
 }
 
 function fixtureWithTasks(tasks: Array<Record<string, unknown>>) {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-task-"));
+	const cwd = tempDir("goal-task-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const goal = createGoal({ objective: "Task tool goal", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 5, 9, 0, 0));
 	goal.taskList = { tasks: tasks as any, blockCompletion: false, proposedAt: new Date().toISOString() };
@@ -110,14 +109,6 @@ function fixtureWithTasks(tasks: Array<Record<string, unknown>>) {
 function activeGoal(cwd: string) {
 	const files = readdirSync(path.join(cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
 	return parseGoalFile(path.join(cwd, ".pi", "goals", files[0]!));
-}
-
-function ledgerEvents(cwd: string): Array<Record<string, unknown>> {
-	try {
-		return readFileSync(goalLedgerPath({ cwd }), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
-	} catch {
-		return [];
-	}
 }
 
 test("set_goal_tasks sets a structural task tree (headless auto-confirm)", async () => {
@@ -189,7 +180,7 @@ test("update_goal_task(skipped) requires a reason and cascades to subtasks", asy
 	]);
 	// Rebuild with subtasks nested properly.
 	f.cleanup();
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-task-skip-"));
+	const cwd = tempDir("goal-task-skip-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const goal = createGoal({ objective: "Skip test", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 5, 10, 0, 0));
 	goal.taskList = {
@@ -221,7 +212,7 @@ test("update_goal_task(skipped) requires a reason and cascades to subtasks", asy
 });
 
 test("update_goal_task(pending) reopens a skipped task; completed tasks are immutable", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-task-pending-"));
+	const cwd = tempDir("goal-task-pending-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const goal = createGoal({ objective: "Reopen test", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 5, 11, 0, 0));
 	goal.taskList = {
@@ -445,7 +436,7 @@ test("set_goal_tasks never creates per-goal auditor bypass state", async () => {
 });
 
 test("update_goal_task(pending) writes a task_reopened ledger event", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-task-reopen-ev-"));
+	const cwd = tempDir("goal-task-reopen-ev-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const goal = createGoal({ objective: "Reopen event", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 5, 12, 0, 0));
 	goal.taskList = {

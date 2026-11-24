@@ -1,8 +1,6 @@
 /** The goal tool list is fixed: only disableTasks changes it, and host tools are never touched. */
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -15,6 +13,7 @@ import {
 import { writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { createExtensionHarness } from "./support/extension-harness.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { tempDir } from "./support/fs.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,7 +28,7 @@ function seedHostTools(names: readonly string[]): void {
 }
 
 function testFixture() {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tool-vis-"));
+	const cwd = tempDir("goal-tool-vis-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 
 	const goal = createGoal({
@@ -114,7 +113,7 @@ describe("Fixed goal tool list", () => {
 	});
 
 	it("a session with no focused goal gets the same list", async () => {
-		const cwd = mkdtempSync(path.join(tmpdir(), "goal-tool-vis-nogoal-"));
+		const cwd = tempDir("goal-tool-vis-nogoal-");
 		try {
 			mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 			seedHostTools(HOST_SEED_A);
@@ -157,7 +156,7 @@ describe("Fixed goal tool list", () => {
 
 	it("with tasks disabled, every status gets the list without task tools", async () => {
 		for (const status of ["active", "paused", "complete"] as const) {
-			const cwd = mkdtempSync(path.join(tmpdir(), "goal-tool-vis-notasks-"));
+			const cwd = tempDir("goal-tool-vis-notasks-");
 			try {
 				mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 				writeFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ disableTasks: true }));

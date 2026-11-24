@@ -4,13 +4,13 @@
  */
 
 import { createExtensionHarness } from "./support/extension-harness.ts";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import { parseGoalFile } from "../extensions/storage/goal-files.ts";
+import { activeGoalFiles, tempDir } from "./support/fs.ts";
 
 const CURATED_COMMANDS = [
 	"goal", "sisyphus", "goal-direct", "sisyphus-direct", "goal-tweak", "goal-pause", "goal-resume",
@@ -24,16 +24,8 @@ function createHarness(cwd: string) {
 	return Object.assign(h, { messages: h.userMessages as string[], getActiveTools: () => h.activeTools });
 }
 
-function activeGoalFiles(cwd: string): string[] {
-	try {
-		return readdirSync(path.join(cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
-	} catch {
-		return [];
-	}
-}
-
 test("exactly the fourteen curated commands are registered; legacy commands are absent", () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-palette-"));
+	const cwd = tempDir("goal-palette-");
 	try {
 		const h = createHarness(cwd);
 		for (const name of CURATED_COMMANDS) {
@@ -49,7 +41,7 @@ test("exactly the fourteen curated commands are registered; legacy commands are 
 });
 
 test("/goal <objective> starts guided drafting without creating a goal", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-palette-create-"));
+	const cwd = tempDir("goal-palette-create-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd);
@@ -65,7 +57,7 @@ test("/goal <objective> starts guided drafting without creating a goal", async (
 });
 
 test("bare /goal begins a guided draft and asks for an objective", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-palette-status-"));
+	const cwd = tempDir("goal-palette-status-");
 	try {
 		const h = createHarness(cwd);
 		await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
@@ -78,7 +70,7 @@ test("bare /goal begins a guided draft and asks for an objective", async () => {
 });
 
 test("confirmed draft creates the proposed goal and agent-selected task plan together", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-palette-confirm-"));
+	const cwd = tempDir("goal-palette-confirm-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd);
@@ -104,7 +96,7 @@ test("confirmed draft creates the proposed goal and agent-selected task plan tog
 });
 
 test("/goal-direct and /sisyphus-direct create goals immediately", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-palette-sisy-"));
+	const cwd = tempDir("goal-palette-sisy-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd);
@@ -122,7 +114,7 @@ test("/goal-direct and /sisyphus-direct create goals immediately", async () => {
 });
 
 test("goal-settings renders sectioned rows with clearer auditor wording", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-settings-"));
+	const cwd = tempDir("goal-settings-");
 	mkdirSync(path.join(cwd, ".pi"), { recursive: true });
 	const h = createHarness(cwd);
 	try {
@@ -162,7 +154,7 @@ test("goal-settings renders sectioned rows with clearer auditor wording", async 
 // subtaskDepth is a nesting depth and must keep rejecting 0 and non-integers.
 
 test("goal-settings: stall timeout row accepts 0 (row-driven lower bound)", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-settings-bound-"));
+	const cwd = tempDir("goal-settings-bound-");
 	mkdirSync(path.join(cwd, ".pi"), { recursive: true });
 	const h = createHarness(cwd);
 	try {
@@ -193,7 +185,7 @@ test("goal-settings: stall timeout row accepts 0 (row-driven lower bound)", asyn
 });
 
 test("goal-settings: autonomous allowance accepts an explicit zero override", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-settings-zero-"));
+	const cwd = tempDir("goal-settings-zero-");
 	const h = createHarness(cwd);
 	try {
 		(h.ctx as { hasUI: boolean }).hasUI = true;
@@ -219,7 +211,7 @@ test("goal-settings: autonomous allowance accepts an explicit zero override", as
 });
 
 test("goal-settings: subtaskDepth rejects 0 (min 1) and never saves it", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-settings-bound-"));
+	const cwd = tempDir("goal-settings-bound-");
 	mkdirSync(path.join(cwd, ".pi"), { recursive: true });
 	const h = createHarness(cwd);
 	try {
@@ -255,7 +247,7 @@ test("goal-settings: subtaskDepth rejects 0 (min 1) and never saves it", async (
 });
 
 test("goal-settings: max objective length row defaults to 0 and accepts a configured limit", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-settings-objective-max-"));
+	const cwd = tempDir("goal-settings-objective-max-");
 	mkdirSync(path.join(cwd, ".pi"), { recursive: true });
 	const h = createHarness(cwd);
 	try {
@@ -306,7 +298,7 @@ function readFileSyncSafe(p: string): string | null {
 }
 
 for (const [key, label] of [["strictExecutionContract", "explicit execution contracts (opt-in)"], ["idleContinuationBackoff", "slow repeated idle replies (opt-in)"]] as const) test(`goal-settings: ${key} can be set and removed through the menu`, async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-settings-contract-"));
+	const cwd = tempDir("goal-settings-contract-");
 	mkdirSync(path.join(cwd, ".pi"), {recursive: true});
 	const h = createHarness(cwd);
 	try {
@@ -328,7 +320,7 @@ for (const [key, label] of [["strictExecutionContract", "explicit execution cont
 });
 
 test("/goal-resume sends any text after the command to the agent", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-resume-text-"));
+	const cwd = tempDir("goal-resume-text-");
 	try {
 		let idle = true;
 		const h = createExtensionHarness({ cwd, isIdle: () => idle });

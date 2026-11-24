@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, getKeybindings } from "@earendil-works/pi-tui";
@@ -23,12 +22,13 @@ import { runGoalQuestionnaire } from "../extensions/goal-questionnaire.ts";
 import { fitDialogLines } from "../extensions/goal-dialog-fit.ts";
 import { detailedSummary } from "../extensions/goal-format.ts";
 import { formatRecoveryReport, runRecoveryReport } from "../extensions/goal-recovery.ts";
+import { tempDir } from "./support/fs.ts";
 
 const ESC = "\x1b", ENTER = "\r", DOWN = "\x1b[B", TAB = "\t";
 const F6 = "\x1b[17~";
 
 function fixture(settings: unknown = {}) {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-controls-"));
+	const cwd = tempDir("goal-controls-");
 	mkdirSync(path.join(cwd, ".pi"));
 	const file = path.join(cwd, ".pi", "pi-goal-x-settings.json");
 	writeFileSync(file, JSON.stringify(settings));

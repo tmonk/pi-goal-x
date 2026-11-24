@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import test from "node:test";
 
 import {
@@ -14,6 +12,7 @@ import {
 import { loadGoalSettings } from "../extensions/settings/resolve.ts";
 import type { GoalRecord } from "../extensions/goal-record.ts";
 import { parseSettings } from "./support/settings.ts";
+import { tempDir } from "./support/fs.ts";
 
 function goal(overrides: Partial<GoalRecord> = {}): GoalRecord {
 	return {
@@ -64,7 +63,7 @@ test("resolveAuditorSessionModelOptions shares parent ModelRuntime when availabl
 });
 
 test("runGoalCompletionAuditor passes parent modelRuntime into createSession", async () => {
-	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-goal-auditor-test-"));
+	const cwd = tempDir("pi-goal-auditor-test-");
 	try {
 		const runtime = { id: "parent-runtime" };
 		const modelRegistry = { runtime, find: () => undefined, getAvailable: () => [] };
@@ -221,7 +220,7 @@ test("buildGoalAuditorPrompt escapes verification contract, warm context, and ta
 });
 
 test("runGoalCompletionAuditor returns aborted error when signal is already aborted (pre-flight)", async () => {
-	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-goal-auditor-test-"));
+	const cwd = tempDir("pi-goal-auditor-test-");
 	try {
 		const ctrl = new AbortController();
 		ctrl.abort(); // Already aborted before call
@@ -254,7 +253,7 @@ test("runGoalCompletionAuditor returns aborted error when signal is already abor
 });
 
 test("runGoalCompletionAuditor aborts running prompt when signal fires (abort during prompt)", async () => {
-	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-goal-auditor-test-"));
+	const cwd = tempDir("pi-goal-auditor-test-");
 	try {
 		const ctrl = new AbortController();
 		let abortCalledOnSession = false;
@@ -300,7 +299,7 @@ test("runGoalCompletionAuditor aborts running prompt when signal fires (abort du
  * "Auditor aborted." error instead of treating it as a normal (empty) result.
  */
 test("runGoalCompletionAuditor detects abort when session.prompt returns normally (no throw)", async () => {
-	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-goal-auditor-test-"));
+	const cwd = tempDir("pi-goal-auditor-test-");
 	try {
 		const ctrl = new AbortController();
 		let abortCalledOnSession = false;
@@ -349,7 +348,7 @@ test("runGoalCompletionAuditor detects abort when session.prompt returns normall
  * (non-aborted) audit run resolves, preventing memory leaks.
  */
 test("runGoalCompletionAuditor cleans up abort listener on normal completion", async () => {
-	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-goal-auditor-test-"));
+	const cwd = tempDir("pi-goal-auditor-test-");
 	try {
 		const ctrl = new AbortController();
 		let abortCalledOnSession = false;

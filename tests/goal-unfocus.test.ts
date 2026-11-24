@@ -1,8 +1,7 @@
 import { createExtensionHarness } from "./support/extension-harness.ts";
 import { goalStorageContext } from "../extensions/storage/goal-root.ts";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -10,6 +9,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createGoal, goalFocusDetails, type GoalRecord } from "../extensions/goal-record.ts";
 import { writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { invalidateGoalSettingsCache } from "../extensions/settings/files.ts";
+import { tempDir } from "./support/fs.ts";
 
 interface HarnessOptions {
 	cwd: string;
@@ -48,7 +48,7 @@ function createHarness(options: HarnessOptions) {
 }
 
 function createFixture(overrides: Partial<GoalRecord> = {}, settings: Record<string, unknown> = { autoSelectSingleGoal: false, disabled: true }) {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-unfocus-"));
+	const cwd = tempDir("goal-unfocus-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	writeFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify(settings));
 	const goal = createGoal({ objective: "Keep this shared goal open", autoContinue: true, sisyphus: false });

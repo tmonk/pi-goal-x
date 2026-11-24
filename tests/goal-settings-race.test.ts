@@ -9,14 +9,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { Worker } from "node:worker_threads";
+import { tempDir } from "./support/fs.ts";
 
 const WORKER = new URL("./support/settings-race-worker.mjs", import.meta.url).pathname;
 
 test("two concurrent processes editing different keys never lose an update", async () => {
-	const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "goal-settings-race-")));
+	const dir = fs.realpathSync(tempDir("goal-settings-race-"));
 	try {
 		const globalFile = path.join(dir, "g.json");
 		fs.writeFileSync(globalFile, "{}", "utf8");

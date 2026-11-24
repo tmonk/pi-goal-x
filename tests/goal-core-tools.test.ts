@@ -16,16 +16,15 @@ import { appendGoalEvent } from "../extensions/goal-ledger.ts";
  *    active, with the goal_blocked ledger event.
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createGoal, goalFocusDetails, normalizeGoalRecord } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
-import { goalLedgerPath } from "../extensions/goal-ledger.ts";
 import { STATE_ENTRY } from "../extensions/goal-format.ts";
+import { activeGoalFiles, ledgerEvents, tempDir } from "./support/fs.ts";
 
 interface HarnessOptions {
 	cwd: string;
@@ -51,7 +50,7 @@ function createHarness(options: HarnessOptions) {
 }
 
 function makeFixture(opts: { objective?: string; tokenBudget?: number; pauseReason?: string; status?: string } = {}) {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-core-"));
+	const cwd = tempDir("goal-core-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const goal = createGoal({
 		objective: opts.objective ?? "=== Goal ===\nObjective: Core tools test",
@@ -67,23 +66,6 @@ function makeFixture(opts: { objective?: string; tokenBudget?: number; pauseReas
 	return { cwd, goal: written, sessionEntries, cleanup };
 }
 
-function activeGoalFiles(cwd: string): string[] {
-	try {
-		return readdirSync(path.join(cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
-	} catch {
-		return [];
-	}
-}
-
-function ledgerEvents(cwd: string): Array<Record<string, unknown>> {
-	const filePath = goalLedgerPath({ cwd });
-	try {
-		return readFileSync(filePath, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
-	} catch {
-		return [];
-	}
-}
-
 async function start(h: ReturnType<typeof createHarness>): Promise<void> {
 	await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
 	await h.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "test", systemPromptOptions: {} }, h.ctx);
@@ -92,7 +74,7 @@ async function start(h: ReturnType<typeof createHarness>): Promise<void> {
 // ── Tool surface ─────────────────────────────────────────────────────────────
 
 test("disabling tasks advertises the three core tools and the drafting tools", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-core-notasks-"));
+	const cwd = tempDir("goal-core-notasks-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	writeFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ disableTasks: true }));
 	const goal = createGoal({ objective: "Tasks disabled", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 4, 10, 0, 0));
@@ -142,7 +124,7 @@ test("create_goal creates, focuses, and reports other open goals", async () => {
 });
 
 test("create_goal accepts token_budget and sisyphus mode", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-core-budget-"));
+	const cwd = tempDir("goal-core-budget-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness({ cwd, sessionEntries: [] });
@@ -209,7 +191,7 @@ test("create_goal enforces the configured max objective length setting", async (
 
 test("get_goal returns the complete stable snapshot", async () => {
 	const now = new Date().toISOString();
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-core-snapshot-"));
+	const cwd = tempDir("goal-core-snapshot-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const goal = createGoal({ objective: "Snapshot goal", autoContinue: true, sisyphus: true }, Date.UTC(2026, 7, 4, 11, 0, 0));
 	goal.tokenBudget = 1000;
@@ -246,7 +228,7 @@ test("get_goal returns the complete stable snapshot", async () => {
 
 test("get_goal default is concise; verbose retains full diagnostics", async () => {
 	const now = new Date().toISOString();
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-core-concise-"));
+	const cwd = tempDir("goal-core-concise-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const goal = createGoal({ objective: "Concise snapshot goal", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 4, 11, 0, 0));
 	goal.verificationContract = "Run npm test (0 failures).";
@@ -448,7 +430,7 @@ test("update_goal(paused) surfaces an apply failure instead of claiming success 
 // ── Stage 1 hardening: lifecycle authority and completion paths ──────────────
 
 test("legacy paused record with autoContinue:true stays paused after session restore", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-core-pausedrestore-"));
+	const cwd = tempDir("goal-core-pausedrestore-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	// Legacy on-disk record: paused status with a stale true continuation flag.
 	const legacy = normalizeGoalRecord({

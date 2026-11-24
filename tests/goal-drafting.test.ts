@@ -7,8 +7,7 @@
  */
 
 import { createExtensionHarness } from "./support/extension-harness.ts";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -22,6 +21,7 @@ import { proposalText } from "../extensions/goal-drafting-tools.ts";
 import { createGoal, type GoalRecord } from "../extensions/goal-record.ts";
 import { goalDraftingPrompt } from "../extensions/prompts/goal-draft-prompts.ts";
 import { createMockTheme } from "./support/tui-test-utils.ts";
+import { activeGoalFiles, tempDir } from "./support/fs.ts";
 
 type Harness = ReturnType<typeof createHarness>;
 
@@ -45,14 +45,6 @@ function createHarness(cwd: string, opts: { hasUI?: boolean } = {}) {
 		sessionTree: async () => { await h.emit("session_tree"); },
 		entries: () => [...h.entries],
 	};
-}
-
-function activeGoalFiles(cwd: string): string[] {
-	try {
-		return readdirSync(path.join(cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
-	} catch {
-		return [];
-	}
 }
 
 function ledgerEvents(cwd: string) {
@@ -87,7 +79,7 @@ async function runProposal(h: Harness, params: Record<string, unknown>): Promise
 // ── Confirmation decisions ────────────────────────────────────────────────
 
 test("dialog cancel is a durable no-op and clears the draft", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-cancel-"));
+	const cwd = tempDir("goal-draft-cancel-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -114,7 +106,7 @@ test("regression: the proposal emits the complete goal presentation to the trans
 	// can scroll up and read it ("the user can just scroll"). propose_goal_draft
 	// renders this via renderCall, which pi displays in the transcript as soon
 	// as the tool call starts — before the dialog opens.
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-present-"));
+	const cwd = tempDir("goal-draft-present-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -186,7 +178,7 @@ test("renderCall for a tweak without explicit tasks shows the retained current l
 	// explicit task list showed a phantom "derived from the objective" set
 	// that is never persisted (the apply retains the current list). The
 	// presentation must mirror the dialog preview: the retained current list.
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-tweak-render-"));
+	const cwd = tempDir("goal-draft-tweak-render-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -228,7 +220,7 @@ test("renderCall for a new draft derives from the same objective text the apply 
 	// task list. The apply path derives from the extracted objective (the
 	// Verification contract line removed); the presentation must derive from
 	// the same input so the shown set is the persisted set.
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-derived-equal- "));
+	const cwd = tempDir("goal-draft-derived-equal- ");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -258,7 +250,7 @@ test("renderCall for a new draft derives from the same objective text the apply 
 });
 
 test("continue refining keeps the draft alive and a second proposal confirms", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-refine-"));
+	const cwd = tempDir("goal-draft-refine-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -283,7 +275,7 @@ test("continue refining keeps the draft alive and a second proposal confirms", a
 });
 
 test("confirmed proposal persists verification contract and nested tasks without changing the tool list", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-nested-"));
+	const cwd = tempDir("goal-draft-nested-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -320,7 +312,7 @@ test("an unrequested token budget is never created: the draft forbids inventing 
 	// The draft prompt and the argument description both say so, and omitting
 	// token_budget stores no budget. See the budget note in
 	// specs/2026-10-01-pi-1-0-0-compatibility/MILESTONES.md.
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-no-budget-"));
+	const cwd = tempDir("goal-draft-no-budget-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -350,7 +342,7 @@ test("an unrequested token budget is never created: the draft forbids inventing 
 // ── Sisyphus fidelity and validation ──────────────────────────────────────
 
 test("propose_goal_draft drops the old sisyphus argument before validation", () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-prepare-"));
+	const cwd = tempDir("goal-draft-prepare-");
 	try {
 		const h = createHarness(cwd);
 		const tool = h.tools.get("propose_goal_draft");
@@ -364,7 +356,7 @@ test("propose_goal_draft drops the old sisyphus argument before validation", () 
 });
 
 test("a sisyphus draft takes its mode from the command and needs ordered steps", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-sisy-"));
+	const cwd = tempDir("goal-draft-sisy-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd);
@@ -383,7 +375,7 @@ test("a sisyphus draft takes its mode from the command and needs ordered steps",
 });
 
 test("/sisyphus-direct rejects structurally insufficient objectives", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-sisydirect-"));
+	const cwd = tempDir("goal-draft-sisydirect-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd);
@@ -402,7 +394,7 @@ test("/sisyphus-direct rejects structurally insufficient objectives", async () =
 // ── Disabled variants ─────────────────────────────────────────────────────
 
 test("tasks-disabled settings reject task proposals and confirm without a task list", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-notasks-"));
+	const cwd = tempDir("goal-draft-notasks-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		writeSettings(cwd, { disableTasks: true });
@@ -421,7 +413,7 @@ test("tasks-disabled settings reject task proposals and confirm without a task l
 });
 
 test("contracts-disabled settings strip the verification contract from a confirmed proposal", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-nocontract-"));
+	const cwd = tempDir("goal-draft-nocontract-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		writeSettings(cwd, { disableContracts: true });
@@ -442,7 +434,7 @@ test("contracts-disabled settings strip the verification contract from a confirm
 // ── /goal-tweak guided refinement ─────────────────────────────────────────
 
 test("/goal-tweak confirms a revision under focus validation", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-tweak-"));
+	const cwd = tempDir("goal-draft-tweak-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -465,7 +457,7 @@ test("/goal-tweak confirms a revision under focus validation", async () => {
 });
 
 test("tweak against a changed focus is rejected without mutation", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-tweakrace-"));
+	const cwd = tempDir("goal-draft-tweakrace-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd);
@@ -486,7 +478,7 @@ test("tweak against a changed focus is rejected without mutation", async () => {
 // ── Headless semantics ────────────────────────────────────────────────────
 
 test("headless proposal auto-confirm semantics are explicit", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-headless-"));
+	const cwd = tempDir("goal-draft-headless-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		// Headless with no override: proposal auto-confirms (harness-friendly).
@@ -529,7 +521,7 @@ test("headless proposal auto-confirm semantics are explicit", async () => {
 // ── Questionnaire tools ───────────────────────────────────────────────────
 
 test("questionnaire tools require an active draft and return structured answers", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-question-"));
+	const cwd = tempDir("goal-draft-question-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -567,7 +559,7 @@ test("questionnaire tools require an active draft and return structured answers"
 });
 
 test("a single question returns a structured answer", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-singleq-"));
+	const cwd = tempDir("goal-draft-singleq-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -592,7 +584,7 @@ test("a single question returns a structured answer", async () => {
 // ── Stage 5.1-A: durable draft state and /goal-cancel ─────────────────────
 
 test("/goal-cancel clears the draft as a durable no-op", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-cancelcmd-"));
+	const cwd = tempDir("goal-draft-cancelcmd-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd);
@@ -617,7 +609,7 @@ test("/goal-cancel clears the draft as a durable no-op", async () => {
 });
 
 test("an unconfirmed draft survives session_tree rehydration", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-rehydrate-"));
+	const cwd = tempDir("goal-draft-rehydrate-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd);
@@ -639,7 +631,7 @@ test("an unconfirmed draft survives session_tree rehydration", async () => {
 });
 
 test("tree navigation restores only the incoming branch's durable draft", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-branch-"));
+	const cwd = tempDir("goal-draft-branch-");
 	try {
 		const h = createHarness(cwd);
 		await h.sessionStart();
@@ -662,7 +654,7 @@ test("tree navigation restores only the incoming branch's durable draft", async 
 });
 
 test("a second draft offers resume, replace, or cancel and never silently discards", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-second-"));
+	const cwd = tempDir("goal-draft-second-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		// Resume keeps the first draft.
@@ -707,7 +699,7 @@ test("a second draft offers resume, replace, or cancel and never silently discar
 });
 
 test("a stale tweak draft is invalidated on rehydration when its target is unfocused", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-staletweak-"));
+	const cwd = tempDir("goal-draft-staletweak-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd);
@@ -727,7 +719,7 @@ test("a stale tweak draft is invalidated on rehydration when its target is unfoc
 });
 
 test("direct goal creation interrupts and clears an active draft", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-interrupt-"));
+	const cwd = tempDir("goal-draft-interrupt-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd);
@@ -749,7 +741,7 @@ test("direct goal creation interrupts and clears an active draft", async () => {
 // ── Stage 5.1-B: /goal-status and per-draft auditor selection ─────────────
 
 test("/goal-status reports state without initiating drafting", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-status-"));
+	const cwd = tempDir("goal-status-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd);
@@ -770,7 +762,7 @@ test("/goal-status reports state without initiating drafting", async () => {
 });
 
 test("the auditor choice persists on create and through continue refining", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-auditor-create-"));
+	const cwd = tempDir("goal-auditor-create-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -808,7 +800,7 @@ test("the auditor choice persists on create and through continue refining", asyn
 });
 
 test("headless confirmation uses effective settings for the auditor", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-auditor-headless-"));
+	const cwd = tempDir("goal-auditor-headless-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		// Default settings: auditor enabled.
@@ -834,7 +826,7 @@ test("headless confirmation uses effective settings for the auditor", async () =
 });
 
 test("a tweak confirmation persists the auditor choice in the same transaction", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-auditor-tweak-"));
+	const cwd = tempDir("goal-auditor-tweak-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -859,7 +851,7 @@ test("a tweak confirmation persists the auditor choice in the same transaction",
 // ── §tweak-resume: a confirmed tweak revives a stalled goal ──────────────
 
 test("a tweak confirmation resumes a paused goal (active, pause metadata cleared, goal_resumed event)", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tweak-resume-paused-"));
+	const cwd = tempDir("goal-tweak-resume-paused-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -894,7 +886,7 @@ test("a tweak confirmation resumes a paused goal (active, pause metadata cleared
 });
 
 test("a tweak confirmation resumes a blocked goal", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tweak-resume-blocked-"));
+	const cwd = tempDir("goal-tweak-resume-blocked-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -921,7 +913,7 @@ test("a tweak confirmation resumes a blocked goal", async () => {
 });
 
 test("a tweak confirmation leaves a budget_limited goal behind its hard budget gate", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tweak-resume-budget-"));
+	const cwd = tempDir("goal-tweak-resume-budget-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const seeded = { ...createGoal({ objective: "Seed budget-limited objective", autoContinue: true, sisyphus: false }), status: "budget_limited" as const };
@@ -943,7 +935,7 @@ test("a tweak confirmation leaves a budget_limited goal behind its hard budget g
 });
 
 test("a tweak confirmation on an active goal stays active without a resume event", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tweak-resume-active-"));
+	const cwd = tempDir("goal-tweak-resume-active-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -964,7 +956,7 @@ test("a tweak confirmation on an active goal stays active without a resume event
 // ── §tweak-persist: the auditor toggle defaults to the goal's own setting ─
 
 test("tweak drafting defaults the auditor toggle to the goal's persisted skipAuditor", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tweak-auditor-default-off-"));
+	const cwd = tempDir("goal-tweak-auditor-default-off-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const seeded = createGoal({ objective: "Auditor-off seed objective", autoContinue: true, sisyphus: false, skipAuditor: true });
@@ -982,7 +974,7 @@ test("tweak drafting defaults the auditor toggle to the goal's persisted skipAud
 });
 
 test("tweak drafting defaults the auditor toggle on when the goal has no per-goal setting", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tweak-auditor-default-on-"));
+	const cwd = tempDir("goal-tweak-auditor-default-on-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -998,7 +990,7 @@ test("tweak drafting defaults the auditor toggle on when the goal has no per-goa
 });
 
 test("tweak drafting falls back to global settings when the goal has no per-goal auditor setting", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tweak-auditor-global-fallback-"));
+	const cwd = tempDir("goal-tweak-auditor-global-fallback-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		writeSettings(cwd, { disabled: true });
@@ -1017,7 +1009,7 @@ test("tweak drafting falls back to global settings when the goal has no per-goal
 // ── §objective-limit: the objective length limit is a configurable setting ─
 
 test("propose_goal_draft accepts long objectives by default (no hard 4000 limit)", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-long-objective-"));
+	const cwd = tempDir("goal-draft-long-objective-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -1036,7 +1028,7 @@ test("propose_goal_draft accepts long objectives by default (no hard 4000 limit)
 });
 
 test("propose_goal_draft enforces the configured max objective length setting", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-limit-"));
+	const cwd = tempDir("goal-draft-limit-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		writeSettings(cwd, { objectiveMaxChars: 20 });
@@ -1060,7 +1052,7 @@ test("propose_goal_draft enforces the configured max objective length setting", 
 });
 
 test("/goal-tweak command rejects an oversized replacement per the configured limit", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tweak-limit-"));
+	const cwd = tempDir("goal-tweak-limit-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		writeSettings(cwd, { objectiveMaxChars: 30 });
@@ -1078,7 +1070,7 @@ test("/goal-tweak command rejects an oversized replacement per the configured li
 // ── §14 durable proposal summary and confirmation polish ──────────────────
 
 test("confirmed proposal writes the durable summary and the richer confirmation report", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-summary-"));
+	const cwd = tempDir("goal-draft-summary-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -1118,7 +1110,7 @@ test("confirmed proposal writes the durable summary and the richer confirmation 
 });
 
 test("questionnaire answers are captured in the confirmed-goal report (E5 §14)", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-qa-echo-"));
+	const cwd = tempDir("goal-draft-qa-echo-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -1147,7 +1139,7 @@ test("questionnaire answers are captured in the confirmed-goal report (E5 §14)"
 });
 
 test("cancel and refine outcomes still carry the durable proposal summary", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-summary-cancel-"));
+	const cwd = tempDir("goal-draft-summary-cancel-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -1257,7 +1249,7 @@ test("a tweak without explicit tasks previews the retained current list exactly 
 // ── §7.5 regression: a tweak never changes the status of persisting steps ─
 
 test("a tweak merges the proposed task list by id, preserving statuses of surviving steps", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tweak-merge-"));
+	const cwd = tempDir("goal-tweak-merge-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -1309,7 +1301,7 @@ test("a tweak merges the proposed task list by id, preserving statuses of surviv
 });
 
 test("a tweak with no task list retains the current list and keeps its statuses", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tweak-retain-"));
+	const cwd = tempDir("goal-tweak-retain-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const h = createHarness(cwd, { hasUI: true });
@@ -1346,7 +1338,7 @@ test("a tweak with no task list retains the current list and keeps its statuses"
 
 for (const unavailable of [false, true]) {
 	test(`all drafting tools preserve the draft when dialogs are ${unavailable ? "unavailable" : "failing"}`, async () => {
-		const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-dialog-failure-"));
+		const cwd = tempDir("goal-draft-dialog-failure-");
 		try {
 			const h = createHarness(cwd, { hasUI: true });
 			await h.sessionStart();
@@ -1368,7 +1360,7 @@ for (const unavailable of [false, true]) {
 }
 
 test("goal tools stay listed during a draft but are blocked until it ends", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-tool-gate-"));
+	const cwd = tempDir("goal-draft-tool-gate-");
 	try {
 		const h = createHarness(cwd, { hasUI: true });
 		await h.sessionStart();
@@ -1396,7 +1388,7 @@ async function goalContext(h: Harness): Promise<string> {
 }
 
 test("a draft hides the goal block that asks for update_goal", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-context-"));
+	const cwd = tempDir("goal-draft-context-");
 	try {
 		const h = createHarness(cwd, { hasUI: true });
 		await h.sessionStart();
@@ -1414,7 +1406,7 @@ test("a draft hides the goal block that asks for update_goal", async () => {
 });
 
 test("a draft hides the unfocused reminder", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-unfocused-"));
+	const cwd = tempDir("goal-draft-unfocused-");
 	try {
 		writeActiveGoalFile({ cwd } as ExtensionContext, createGoal({ objective: "An older open goal", autoContinue: true, sisyphus: false }));
 		const h = createHarness(cwd, { hasUI: true });

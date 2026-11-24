@@ -9,7 +9,6 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -24,11 +23,12 @@ import {
 import { acquireGoalLock } from "../extensions/storage/goal-lock.ts";
 import { appendGoalEvent, goalLedgerPath, invalidateGoalLedgerCache, loadLedgerState, readGoalLedger } from "../extensions/goal-ledger.ts";
 import { diffGoalRefreshState } from "../extensions/goal-commands.ts";
+import { tempDir } from "./support/fs.ts";
 
 const EXT_ROOT = fileURLToPath(new URL("../extensions/", import.meta.url));
 
 function tempCwd(): string {
-	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "goal-fault-"));
+	const cwd = tempDir("goal-fault-");
 	fs.mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	return cwd;
 }

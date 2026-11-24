@@ -18,8 +18,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -41,6 +40,7 @@ import {
 	serializeGoalFile,
 	writeActiveGoalFile,
 } from "../extensions/storage/goal-files.ts";
+import { tempDir } from "./support/fs.ts";
 
 const FIXTURE_GOAL_RELPATH = `${GOALS_DIR}/active_goal_fixture.md`;
 
@@ -51,7 +51,7 @@ function fixturePath(rel: string): string {
 }
 
 function tempCwd(): string {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-golden-"));
+	const cwd = tempDir("goal-golden-");
 	mkdirSync(path.join(cwd, GOALS_DIR), { recursive: true });
 	return cwd;
 }

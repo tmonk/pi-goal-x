@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { invalidateGoalSettingsCache } from "../extensions/settings/files.ts";
 import { loadGoalSettings, loadSettingsSnapshot } from "../extensions/settings/resolve.ts";
@@ -19,9 +18,10 @@ import { inspectCheckpointHealth, readSessionCheckpointHealth } from "../extensi
 import { updateTaskInTree } from "../extensions/goal-policy.ts";
 import { truncateToWidth, wrapTextWithAnsi } from "../extensions/widgets/text-cache.ts";
 import { truncateToWidth as sdkTruncate, wrapTextWithAnsi as sdkWrap } from "@earendil-works/pi-tui";
+import { tempDir } from "./support/fs.ts";
 
 function fixture() {
-	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "goal-comprehensive-test-"));
+	const cwd = tempDir("goal-comprehensive-test-");
 	fs.mkdirSync(path.join(cwd, ".pi/goals"), {recursive:true});
 	const goal = createGoal({objective:"Implement every requirement 🧭", autoContinue:true, sisyphus:false});
 	return {cwd, goal, cleanup: () => fs.rmSync(cwd, {recursive:true, force:true})};

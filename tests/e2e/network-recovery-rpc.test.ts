@@ -16,8 +16,7 @@
  * Skipped when the `pi` CLI is not on PATH. Runtime ~30s (bounded).
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import assert from "node:assert/strict";
@@ -26,6 +25,7 @@ import test from "node:test";
 
 import { createGoal } from "../../extensions/goal-record.ts";
 import { writeActiveGoalFile } from "../../extensions/storage/goal-files.ts";
+import { tempDir } from "../support/fs.ts";
 
 const EXT_PATH = path.resolve(import.meta.dirname!, "..", "..", "extensions", "goal.ts");
 
@@ -90,7 +90,7 @@ async function runOutageScenario(t: import("node:test").TestContext, scenario: O
 	t.after(() => server.close());
 
 	// ── Isolated agent dir + project cwd ───────────────────────────────────
-	const work = mkdtempSync(path.join(tmpdir(), "goal-netrecovery-e2e-"));
+	const work = tempDir("goal-netrecovery-e2e-");
 	t.after(() => {
 		try {
 			rmSync(work, { recursive: true, force: true });

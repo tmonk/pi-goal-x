@@ -9,7 +9,7 @@
  */
 
 import { createExtensionHarness } from "./support/extension-harness.ts";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -20,6 +20,7 @@ import { writeActiveGoalFile, parseGoalFile } from "../extensions/storage/goal-f
 import { readGoalLedger } from "../extensions/goal-ledger.ts";
 import { countTasks } from "../extensions/goal-task-tree.ts";
 import { writeProjectSettings } from "./support/settings.ts";
+import { activeGoalFiles } from "./support/fs.ts";
 
 type Harness = ReturnType<typeof createHarness>;
 
@@ -29,14 +30,6 @@ function createHarness(cwd: string) {
 }
 
 const CONFIRM_ANSWER = "Confirm — create this goal now";
-
-function activeGoalFiles(cwd: string): string[] {
-	try {
-		return readdirSync(path.join(cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
-	} catch {
-		return [];
-	}
-}
 
 function diskGoal(cwd: string) {
 	const files = activeGoalFiles(cwd);

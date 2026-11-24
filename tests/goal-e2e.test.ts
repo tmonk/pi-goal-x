@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -12,13 +11,14 @@ import {
 	writeActiveGoalFile,
 } from "../extensions/storage/goal-files.ts";
 import type { GoalRecord } from "../extensions/goal-record.ts";
+import { tempDir } from "./support/fs.ts";
 
 interface TestContext {
 	cwd: string;
 }
 
 function tempCtx(): TestContext {
-	return { cwd: mkdtempSync(path.join(tmpdir(), "goal-e2e-test-")) };
+	return { cwd: tempDir("goal-e2e-test-") };
 }
 
 function cleanup(ctx: TestContext): void {
