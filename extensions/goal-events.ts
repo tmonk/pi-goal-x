@@ -1,5 +1,6 @@
 import { goalStorageContext, type GoalStorageContext } from "./storage/goal-root.ts";
 import { commandHint, commandInstructions } from "./goal-controls.ts";
+import { FIVE_GOAL_TOOLS } from "./goal-tool-names.ts";
 import { cacheGoalHistory } from "./goal-prompt-cache.ts";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -153,6 +154,15 @@ export function registerGoalEvents(core: GoalCore): void {
 				reason: `Cannot call ${event.toolName}: the goal checkpoint that triggered this turn is no longer active. ` +
 					`Goal ${checkpointGoalId} has been paused, cleared, or replaced. ` +
 					`End the turn with a brief summary and yield to the user.`,
+			};
+		}
+		// The goal tools stay advertised during a draft so the cached prompt does
+		// not change. Block them here instead, so nothing touches a goal before
+		// the user confirms the draft.
+		if (hasActiveDraft(core) && (FIVE_GOAL_TOOLS as readonly string[]).includes(event.toolName)) {
+			return {
+				block: true,
+				reason: commandInstructions("A goal draft is in progress. Finish it with propose_goal_draft, or ask the user to run /goal-cancel.", core.loadedCommands),
 			};
 		}
 		// Track Oracle work attempts; this does not authorize scheduling.
@@ -344,6 +354,7 @@ export function registerGoalEvents(core: GoalCore): void {
 			if (ctx.hasUI) ctx.ui.setStatus("goal-interrupt", undefined);
 			if (core.controlWarnings?.length) ctx.ui.notify(`Goal command settings were not applied: ${core.controlWarnings.join(" ")} Open /goal-settings controls to correct them.`, "warning");
 			rehydrateDraft(core, ctx);
+		core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
 			syncTerminalInputPause(core, ctx);
 		if (event.reason === "resume" && !core.state.goal && !core.hasExplicitSessionFocus && otherOpenGoalCount(core.goalsById, null) > 1 && ctx.hasUI) {
 			// Prompt the user to pick which open goal to focus (mirrors /goal-focus).
@@ -413,7 +424,7 @@ export function registerGoalEvents(core: GoalCore): void {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		core.advanceTurnSeq();
-		if (!hasActiveDraft(core)) core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
+		core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
 		const incomingGoalId = event.messageType === "custom"
 			? goalEventMessageId(event.message) : extractGoalIdFromInjectedMessage(event.prompt ?? "");
 		if (event.messageType !== "custom" && !incomingGoalId) core.interruption.continueWithUser(ctx);

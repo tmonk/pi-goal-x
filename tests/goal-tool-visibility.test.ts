@@ -1,4 +1,4 @@
-/** Lifecycle-specific tool profiles preserve host tools and executor guards. */
+/** The goal tool list is fixed: only disableTasks changes it, and host tools are never touched. */
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
@@ -65,11 +65,12 @@ function testFixture() {
 	return { cwd, goal: written, mockCtx, cleanup };
 }
 
-// Fixed profiles (Stage 2). Lifecycle state never changes these.
+// The two possible lists. Goal status, focus and drafting never change them.
 const FIVE_GOAL_TOOLS = ["create_goal", "get_goal", "update_goal", "set_goal_tasks", "update_goal_task"];
-const CORE_GOAL_TOOLS = ["create_goal", "get_goal", "update_goal"];
-const BASE = ["create_goal", "get_goal"];
-const ACTIVE_NO_TASKS = [...CORE_GOAL_TOOLS, "set_goal_tasks"];
+const DRAFTING_TOOLS = ["goal_question", "goal_questionnaire", "propose_goal_draft"];
+const ALL_GOAL_TOOLS = [...FIVE_GOAL_TOOLS, ...DRAFTING_TOOLS];
+const WITH_TASKS = ALL_GOAL_TOOLS;
+const WITHOUT_TASKS = ["create_goal", "get_goal", "update_goal", ...DRAFTING_TOOLS];
 
 // Arbitrary host tool seeds: profile installation must never touch these.
 const HOST_SEED_A = ["read", "bash", "edit", "write"];
@@ -82,7 +83,7 @@ const REMOVED_TOOLS = [
 
 // ── Test Suite ───────────────────────────────────────────────────────────────
 
-describe("Applicable tool profiles", () => {
+describe("Fixed goal tool list", () => {
 	const registeredTools: ToolDefinition[] = [];
 	const lifecycleHandlers = new Map<string, Function>();
 	let apiCalls: Array<{ type: string; data?: unknown }> = [];
@@ -116,13 +117,13 @@ describe("Applicable tool profiles", () => {
 				`removed tool "${removed}" must never be advertised. Active: ${JSON.stringify(activeToolNames)}`);
 		}
 		// Exactly the expected goal tools: no extras, no missing.
-		const goalTools = activeToolNames.filter((t) => [...FIVE_GOAL_TOOLS, "goal_question", "goal_questionnaire", "propose_goal_draft", ...REMOVED_TOOLS].includes(t));
+		const goalTools = activeToolNames.filter((t) => [...ALL_GOAL_TOOLS, ...REMOVED_TOOLS].includes(t));
 		assert.equal(goalTools.length, expected.length,
 			`goal profile must be exactly [${expected.join(", ")}], got: ${JSON.stringify(goalTools)}`);
 	}
 
 	function expectHostUntouched(seed: readonly string[]): void {
-		const host = activeToolNames.filter((t) => !FIVE_GOAL_TOOLS.includes(t));
+		const host = activeToolNames.filter((t) => !ALL_GOAL_TOOLS.includes(t));
 		assert.deepEqual(host.sort(), [...seed].sort(),
 			`host tool selection must be untouched. Active: ${JSON.stringify(activeToolNames)}`);
 	}
@@ -134,35 +135,34 @@ describe("Applicable tool profiles", () => {
 	}
 
 	// ── Fixed profile across every lifecycle state ─────────────────────────
-	it("active goal without tasks advertises four operations and host tools are untouched", async () => {
+	it("an active goal without tasks gets the full list and host tools are untouched", async () => {
 		const f = testFixture();
 		try {
 			activeToolNames = [...HOST_SEED_A];
 			apiCalls = [];
 			await runSession(f.cwd, f.mockCtx.sessionManager.getBranch() as unknown[]);
-			expectGoalProfile(ACTIVE_NO_TASKS);
+			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_A);
 		} finally {
 			f.cleanup();
 		}
 	});
 
-	it("no-focus session advertises creation and inspection", async () => {
+	it("a session with no focused goal gets the same list", async () => {
 		const cwd = mkdtempSync(path.join(tmpdir(), "goal-tool-vis-nogoal-"));
 		try {
 			mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 			activeToolNames = [...HOST_SEED_A];
 			apiCalls = [];
 			await runSession(cwd, []);
-			// No goal: creation and inspection remain available.
-			expectGoalProfile(BASE);
+			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_A);
 		} finally {
 			try { rmSync(cwd, { recursive: true, force: true }); } catch {}
 		}
 	});
 
-	it("non-active states advertise only valid operations", async () => {
+	it("every goal status gets the same list", async () => {
 		for (const status of ["paused", "blocked", "budget_limited", "complete"] as const) {
 			const f = testFixture();
 			try {
@@ -184,7 +184,7 @@ describe("Applicable tool profiles", () => {
 				activeToolNames = [...HOST_SEED_A];
 				apiCalls = [];
 				await runSession(f.cwd, entries);
-				expectGoalProfile(status === "paused" ? ACTIVE_NO_TASKS : status === "budget_limited" ? CORE_GOAL_TOOLS : BASE);
+				expectGoalProfile(WITH_TASKS);
 				expectHostUntouched(HOST_SEED_A);
 			} finally {
 				f.cleanup();
@@ -192,7 +192,7 @@ describe("Applicable tool profiles", () => {
 		}
 	});
 
-	it("tasks disabled: task tools remain hidden across states", async () => {
+	it("with tasks disabled, every status gets the list without task tools", async () => {
 		for (const status of ["active", "paused", "complete"] as const) {
 			const cwd = mkdtempSync(path.join(tmpdir(), "goal-tool-vis-notasks-"));
 			try {
@@ -212,7 +212,7 @@ describe("Applicable tool profiles", () => {
 				activeToolNames = [...HOST_SEED_B];
 				apiCalls = [];
 				await runSession(cwd, entries);
-				expectGoalProfile(status === "complete" ? BASE : CORE_GOAL_TOOLS);
+				expectGoalProfile(WITHOUT_TASKS);
 				expectHostUntouched(HOST_SEED_B);
 			} finally {
 				try { rmSync(cwd, { recursive: true, force: true }); } catch {}
@@ -227,7 +227,7 @@ describe("Applicable tool profiles", () => {
 			activeToolNames = [...HOST_SEED_B];
 			apiCalls = [];
 			await runSession(f.cwd, f.mockCtx.sessionManager.getBranch() as unknown[]);
-			expectGoalProfile(ACTIVE_NO_TASKS);
+			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_B);
 
 			const ts = lifecycleHandlers.get("turn_start")!;
@@ -239,7 +239,7 @@ describe("Applicable tool profiles", () => {
 				await ts({}, ctx);
 				await bas({ systemPrompt: "", prompt: `turn-${i}`, systemPromptOptions: {} }, ctx);
 				await te({ message: { role: "assistant", stopReason: "stop", usage: { input: 0, output: 0 } } }, ctx);
-				expectGoalProfile(ACTIVE_NO_TASKS);
+				expectGoalProfile(WITH_TASKS);
 				expectHostUntouched(HOST_SEED_B);
 			}
 		} finally {
@@ -247,7 +247,7 @@ describe("Applicable tool profiles", () => {
 		}
 	});
 
-	it("blocking removes mutation tools", async () => {
+	it("blocking a goal leaves the list unchanged", async () => {
 		const f = testFixture();
 		try {
 			activeToolNames = [...HOST_SEED_A];
@@ -256,12 +256,11 @@ describe("Applicable tool profiles", () => {
 			const bas = lifecycleHandlers.get("before_agent_start")!;
 			await bas({ systemPrompt: "", prompt: "start", systemPromptOptions: {} }, f.mockCtx);
 
-			// update_goal(blocked) transitions active -> blocked; only creation/inspection remain.
 			const update = registeredTools.find((t) => t.name === "update_goal");
 			assert.ok(update);
 			const result = await (update.execute as Function)("update-b", { status: "blocked", reason: "test blocker" }, new AbortController().signal, undefined, f.mockCtx);
 			assert.ok(result.terminate === true, "blocked terminates the turn");
-			expectGoalProfile(BASE);
+			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_A);
 		} finally {
 			f.cleanup();
@@ -296,8 +295,7 @@ describe("Applicable tool profiles", () => {
 			const text = result.content?.[0]?.text ?? "";
 			assert.ok(text.includes("applies only to an active goal"),
 				`blocked from paused must be a state-aware failure, got: ${text.slice(0, 100)}`);
-			// The paused profile retains outcome and task-planning tools after rejection.
-			expectGoalProfile(ACTIVE_NO_TASKS);
+			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_A);
 		} finally {
 			f.cleanup();
@@ -305,7 +303,7 @@ describe("Applicable tool profiles", () => {
 	});
 
 	// ── Registration invariants ────────────────────────────────────────────
-	it("execution and transient drafting tools are registered with execute handlers", () => {
+	it("execution and drafting tools are registered with execute handlers", () => {
 		for (const name of FIVE_GOAL_TOOLS) {
 			const tool = registeredTools.find((t) => t.name === name);
 			assert.ok(tool, `Tool "${name}" must be registered`);
@@ -334,7 +332,7 @@ describe("Applicable tool profiles", () => {
 	});
 
 	// ── update_goal_task execution keeps the profile fixed ────────────────
-	it("update_goal_task executes and the five-tool profile stays fixed", async () => {
+	it("update_goal_task executes and the list stays fixed", async () => {
 		const f = testFixture();
 		try {
 			const now = new Date().toISOString();
@@ -381,7 +379,7 @@ describe("Applicable tool profiles", () => {
 				`update_goal_task should report t1 complete. Got: ${text1}`);
 
 			// After executing update_goal_task, the profile and host set are unchanged.
-			expectGoalProfile(FIVE_GOAL_TOOLS);
+			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_A);
 		} finally {
 			f.cleanup();
@@ -401,7 +399,7 @@ describe("Applicable tool profiles", () => {
 			await bas({ systemPrompt: "", prompt: "seed", systemPromptOptions: {} }, f.mockCtx);
 			const get = registeredTools.find((t) => t.name === "get_goal");
 			await (get!.execute as Function)("get-1", {}, new AbortController().signal, undefined, f.mockCtx);
-			expectGoalProfile(ACTIVE_NO_TASKS);
+			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_B);
 		} finally {
 			f.cleanup();

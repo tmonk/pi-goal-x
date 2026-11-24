@@ -431,7 +431,7 @@ export function registerGoalCommands(core: GoalCore): void {
 		}
 
 		/**
-		 * After any mutation: reinstall the fixed three/five tool profile when
+		 * After any mutation: reinstall the goal tool list when
 		 * the effective disableTasks value changed since the last install, and
 		 * refresh the UI. This is the central settings side-effect hook — no
 		 * ad hoc per-row refresh code.

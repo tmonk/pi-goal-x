@@ -32,7 +32,7 @@ handlers from their dedicated modules:
 | `goal-auditor.ts` | Independent pi auditor agent prompt/config/decision parsing and completion audit execution |
 | `goal-ledger.ts` | Single-file goal ledger append/read/reconstruction (18 event types incl. `task_reopened`) |
 | `prompts/goal-draft-prompts.ts` | Drafting prompt/confirmation text helpers (goalDraftingPrompt, buildDraftConfirmationText, renderConfirmationTasks, GoalDraftingFocus) |
-| `goal-drafting.ts` | Guided drafting orchestration: durable `pi-goal-draft` session entries (survive compaction/tree navigation), resume/replace/cancel protection, transient drafting profile, `goal_question`/`goal_questionnaire`/`propose_goal_draft` tools, per-draft auditor selection |
+| `goal-drafting.ts` | Guided drafting orchestration: durable `pi-goal-draft` session entries (survive compaction/tree navigation), resume/replace/cancel protection, `goal_question`/`goal_questionnaire`/`propose_goal_draft` tools, per-draft auditor selection |
 | `goal-questionnaire.ts` | Structured question/answer UI (`runGoalQuestionnaire`, `showProposalDialog`) used by the drafting tools and confirmations |
 | `goal-tool-names.ts` | The five published tool-name constants, lifecycle-dependent profiles, work/progress classification, post-stop allowlist |
 | `goal-detail.ts` | Lossless objective/task/history paging with content-bound cursors |
@@ -170,8 +170,8 @@ prompt/criteria level:
 
 ## Creation and tweaking
 
-`/goal [seed]` and `/sisyphus [seed]` begin guided drafting. The temporary
-draft profile exposes only question/questionnaire/proposal tools. The agent
+`/goal [seed]` and `/sisyphus [seed]` begin guided drafting. The tool list does
+not change, but the goal tools are blocked until the draft ends. The agent
 clarifies intent, proposes the full objective and an optional task tree, and
 the user explicitly confirms or continues refining. `/goal-direct` and
 `/sisyphus-direct` bypass this only when the objective is already final.
