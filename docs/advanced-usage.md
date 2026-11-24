@@ -101,6 +101,10 @@ Worktrees pointing to the same root share goals, archives, ledger and locks; foc
 
 Token usage shown in the dashboard is cumulative across goal turns. The model receives a separate context snapshot when Pi can supply one; unavailable context is never reported as zero. Retained snapshots are bounded and newer snapshots supersede older ones.
 
+## Language
+
+The text shown in the host UI can be translated. English is the default. Set `locale` in your project or global settings, or set `PI_GOAL_LOCALE` for the session. Precedence is environment, project, global, then English. Text without a translation, and everything sent to the model, stays in English. No translations ship yet; the steps for adding one are in `specs/2026-11-24-localisation/TECH.md`.
+
 ## Diagnostics and recovery
 
 Use `/goal-status verbose` for effective settings and storage location, `/goal-status health` or `/goal-recovery` to check for problems, and `/goal-refresh` to reload saved goals and settings after external changes. `/goal-recovery repair` offers repairs after confirmation.
