@@ -83,6 +83,7 @@
     "./tests/network-error-backoff.test.ts",
     "./tests/no-status-refresh-timer.test.ts",
     "./tests/overflow-regression.test.ts",
+    "./tests/questionnaire-state.test.ts",
     "./tests/session-checkpoint-growth.test.ts",
     "./tests/session-checkpoint-recovery.test.ts",
     "./tests/session-state-growth.test.ts",
