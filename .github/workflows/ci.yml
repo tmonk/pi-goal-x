@@ -83,7 +83,7 @@ jobs:
           retention-days: 5
           if-no-files-found: ignore
 
-  # The walkthrough cases are independent, so they run in three groups.
+  # The walkthrough cases are independent, so they run in four groups.
   # scripts/test-ci.mjs checks that every case is in exactly one group.
   controls:
     runs-on: ubuntu-latest
@@ -92,9 +92,10 @@ jobs:
       fail-fast: false
       matrix:
         cases:
-          - controls-ui settings-paths editor-controls command-shortcuts
+          - controls-ui
+          - settings-paths
           - together goal-first goal-first-finish native-interrupt
-          - dialog-keys answer-editing foreign-focus
+          - editor-controls command-shortcuts dialog-keys answer-editing foreign-focus
     steps:
       - uses: actions/checkout@v5
       - id: setup
