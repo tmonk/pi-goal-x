@@ -103,6 +103,10 @@ export class GoalScheduler {
 		this.core.clearActiveAccounting();
 		ctx.ui.notify(reason, "warning");
 	}
+	/** Pause the focused goal because it cannot go on by itself, and say why. */
+	pauseForError(ctx: ExtensionContext, reason: string): void {
+		this.safe(ctx, () => this.pause(ctx, reason));
+	}
 	private allowanceReason(ctx: ExtensionContext): string {
 		return this.limit(ctx) === 0 ? commandInstructions("Automatic continuation disabled by maxAutonomousRuns=0. Change the setting in /goal-settings, then use /goal-resume.", this.core.loadedCommands) : commandInstructions("Autonomous-run allowance exhausted. Increase or remove maxAutonomousRuns, or use /goal-resume to renew.", this.core.loadedCommands);
 	}

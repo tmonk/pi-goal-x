@@ -10,6 +10,7 @@ import {
 	goalEventMessageId,
 	hasAbortedAssistantMessage,
 	hasErrorAssistantMessage,
+	providerErrorText,
 	hasNetworkErrorAssistantMessage,
 	isAbortedAssistantMessage,
 	isErrorAssistantMessage,
@@ -85,6 +86,7 @@ export function registerGoalEvents(core: GoalCore): void {
 	});
 	let continuationAfterSettleFor: string | null = null;
 	let networkErrorRecoveryAfterSettleFor: string | null = null;
+	let errorPauseAfterSettle: { goalId: string; reason: string } | null = null;
 
 	registerGoalContext(pi, (input, ctx) => {
 		const filtered = filterGoalSessionContext(input);
@@ -578,6 +580,7 @@ export function registerGoalEvents(core: GoalCore): void {
 		core.runningGoalId = null;
 		continuationAfterSettleFor = null;
 		networkErrorRecoveryAfterSettleFor = null;
+		errorPauseAfterSettle = null;
 		if (core.scheduler.isDenied()) return;
 
 		// Account for any tokens from aborted in-flight assistant messages so
@@ -614,9 +617,14 @@ export function registerGoalEvents(core: GoalCore): void {
 			networkErrorRecoveryAfterSettleFor = core.state.goal.id;
 			return;
 		}
+		// Any other provider error cannot be retried automatically. Pause once Pi
+		// settles (it may still retry by itself) so the goal does not sit there
+		// looking "running" with nothing scheduled.
 		if (hasErrorAssistantMessage(event.messages)) {
 			core.persist(ctx);
 			core.updateUI(ctx);
+			const detail = providerErrorText(event.messages);
+			errorPauseAfterSettle = { goalId: core.state.goal.id, reason: `The provider returned an error${detail ? `: ${detail}` : ""}.` };
 			return;
 		}
 		core.runtime.clearNetworkErrorBackoff();
@@ -635,6 +643,8 @@ export function registerGoalEvents(core: GoalCore): void {
 		continuationAfterSettleFor = null;
 		const networkErrorGoalId = networkErrorRecoveryAfterSettleFor;
 		networkErrorRecoveryAfterSettleFor = null;
+		const errorPause = errorPauseAfterSettle;
+		errorPauseAfterSettle = null;
 		if (core.scheduler.isDenied()) {
 			core.runningGoalId = null;
 			core.runtime.setCheckpoint(null);
@@ -656,6 +666,10 @@ export function registerGoalEvents(core: GoalCore): void {
 		core.scheduler.settled(ctx, !!goalId && core.isActionableContinuationGoal(goalId));
 		if (resumedInterruptedTurn) core.scheduler.schedule(ctx);
 		if (goalId && core.isActionableContinuationGoal(goalId)) return;
+		if (errorPause && core.isActionableContinuationGoal(errorPause.goalId)) {
+			core.scheduler.pauseForError(ctx, commandInstructions(`${errorPause.reason} Goal paused. Use /goal-resume to try again.`, core.loadedCommands));
+			return;
+		}
 		if (!networkErrorGoalId || !core.isActionableContinuationGoal(networkErrorGoalId)) return;
 		const recovery = loadGoalSettings(ctx.cwd).networkRecovery;
 		const policy = recovery
@@ -671,10 +685,7 @@ export function registerGoalEvents(core: GoalCore): void {
 			return;
 		}
 		// Only reachable under a configured bounded cap (maxAttempts > 0).
-		ctx.ui.notify(
-			"Provider network errors persisted after all recovery attempts. The goal remains active; resume it when the provider is healthy.",
-			"warning",
-		);
+		core.scheduler.pauseForError(ctx, commandInstructions("Provider network errors persisted after all recovery attempts. Goal paused. Use /goal-resume when the provider works again.", core.loadedCommands));
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
