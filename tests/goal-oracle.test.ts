@@ -10,7 +10,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 
 import {
@@ -22,6 +21,7 @@ import {
 import { createGoal } from "../extensions/goal-record.ts";
 import { buildLedgerIndex } from "../extensions/goal-ledger-index.ts";
 import type { GoalLedgerEvent } from "../extensions/goal-ledger.ts";
+import { tempDir } from "./support/fs.ts";
 
 /** Oracle consult state exactly as the shipped ledger index projects it. */
 function oracleStateForFingerprint(events: readonly GoalLedgerEvent[], goalId: string, fingerprint: string) {
@@ -175,7 +175,7 @@ describe("consult-state reconstruction", () => {
 
 describe("journey: actionable-advice keeps the goal active, then allows block after follow-up work", () => {
 	it("demonstrates the full actionable journey", async () => {
-		const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "goal-oracle-j1-")));
+		const dir = fs.realpathSync(tempDir("goal-oracle-j1-"));
 		try {
 			const g = createGoal({ objective: "Journey: actionable advice.", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 23, 9, 0, 0));
 			g.id = "journey-actionable";
@@ -229,7 +229,7 @@ describe("journey: actionable-advice keeps the goal active, then allows block af
 
 describe("journey: needs-human blocks immediately", () => {
 	it("demonstrates the needs-human journey", () => {
-		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "goal-oracle-j2-"));
+		const dir = tempDir("goal-oracle-j2-");
 		try {
 			const g = createGoal({ objective: "Journey: needs human.", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 23, 9, 30, 0));
 			g.id = "journey-human";

@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { atomicRenamer, renameAtomic, renameAtomicSync } from "../extensions/storage/atomic-rename.ts";
 import { atomicWriteGoalFile } from "../extensions/storage/goal-files.ts";
+import { tempDir } from "./support/fs.ts";
 
 function simulated(code: string, failures = Infinity, directory = false) {
 	let attempts = 0, inspections = 0;
@@ -71,7 +71,7 @@ test("a directory destination is a permanent Windows failure", async () => {
 });
 
 test("native replacement preserves data and goal-file permissions; failed writes clean owned temps", async t => {
-	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "goal-atomic-"));
+	const cwd = tempDir("goal-atomic-");
 	t.after(() => fs.rmSync(cwd, {recursive: true, force: true}));
 	const source = path.join(cwd, "source");
 	const target = path.join(cwd, "target");
@@ -101,7 +101,7 @@ test("native replacement preserves data and goal-file permissions; failed writes
 });
 
 test("a temporary-file collision does not delete someone else's file", t => {
-	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "goal-atomic-collision-"));
+	const cwd = tempDir("goal-atomic-collision-");
 	t.after(() => fs.rmSync(cwd, {recursive: true, force: true}));
 	fs.mkdirSync(path.join(cwd, ".pi/goals"), {recursive: true});
 	t.mock.method(Date, "now", () => 1234);

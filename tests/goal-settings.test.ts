@@ -2,7 +2,6 @@
  * Tests for the goal settings system (.pi/goal-settings.json + env var overrides).
  */
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -143,7 +142,7 @@ test("goalSettingsPath: respects PI_GOAL_SETTINGS_FILE env var", () => {
 // ── loadGoalSettingsFileConfig ──────────────────────────────────────────
 
 function withTempDir(fn: (dir: string) => void): void {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "goal-settings-test-"));
+	const dir = tempDir("goal-settings-test-");
 	try {
 		fn(dir);
 	} finally {
@@ -365,6 +364,7 @@ import {
 	verificationContractBlock,
 } from "../extensions/prompts/goal-prompts.ts";
 import { createGoal } from "../extensions/goal-record.ts";
+import { tempDir } from "./support/fs.ts";
 
 function goalWithTaskList(overrides: Partial<GoalRecord> & { objective?: string } = {}): GoalRecord {
 	const g: GoalRecord = {

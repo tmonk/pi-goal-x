@@ -10,16 +10,16 @@ import { skipWhenRoot } from "./support/permissions.ts";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 
 import { type SettingsScope } from "../extensions/settings/schema.ts";
 import { resolveAgentDir, goalGlobalSettingsPath, goalSettingsPath, readSettingsLayer, invalidateGoalSettingsCache } from "../extensions/settings/files.ts";
 import { loadGoalSettings, loadSettingsSnapshot } from "../extensions/settings/resolve.ts";
 import { mutateSettingsLayer, SettingsMutationError } from "../extensions/settings/mutate.ts";
+import { tempDir } from "./support/fs.ts";
 
 function withTempDir(fn: (dir: string) => void): void {
-	const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "goal-layered-")));
+	const dir = fs.realpathSync(tempDir("goal-layered-"));
 	try {
 		fn(dir);
 	} finally {

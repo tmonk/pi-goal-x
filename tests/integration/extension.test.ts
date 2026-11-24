@@ -10,8 +10,7 @@
 
 import { skipWhenRoot } from "../support/permissions.ts";
 import { createExtensionHarness } from "../support/extension-harness.ts";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, appendFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, appendFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -19,6 +18,7 @@ import assert from "node:assert/strict";
 import { createGoal, goalFocusDetails } from "../../extensions/goal-record.ts";
 import { activePathForGoal, parseGoalFile, serializeGoalFile, writeActiveGoalFile } from "../../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../../extensions/goal-ledger.ts";
+import { activeGoalFiles, ledgerEvents, removeDir, tempDir } from "../support/fs.ts";
 
 interface HarnessOptions {
 	cwd: string;
@@ -82,7 +82,7 @@ function installedProfileExcludes(history: string[][], names: string[]): boolean
 }
 
 function fixture(opts: { objective?: string; skipAuditor?: boolean; tasksEnabled?: boolean } = {}) {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-int-"));
+	const cwd = tempDir("goal-int-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	if (opts.tasksEnabled === false) {
 		writeFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ disableTasks: true }));
@@ -97,24 +97,8 @@ function fixture(opts: { objective?: string; skipAuditor?: boolean; tasksEnabled
 	const sessionEntries = [
 		{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") },
 	];
-	const cleanup = () => { try { rmSync(cwd, { recursive: true, force: true }); } catch {} };
+	const cleanup = () => { removeDir(cwd); };
 	return { cwd, goal: written, sessionEntries, cleanup };
-}
-
-function activeGoalFiles(cwd: string): string[] {
-	try {
-		return readdirSync(path.join(cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
-	} catch {
-		return [];
-	}
-}
-
-function ledgerEvents(cwd: string): Array<Record<string, unknown>> {
-	try {
-		return readFileSync(goalLedgerPath({ cwd }), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
-	} catch {
-		return [];
-	}
 }
 
 describe("five-tool handler integration", () => {
@@ -122,7 +106,7 @@ describe("five-tool handler integration", () => {
 		// The fixed profile is installed at session_start; extension loading
 		// itself must not touch the active-tool API (host compatibility).
 		let getActiveToolsCalls = 0;
-		const cwd = mkdtempSync(path.join(tmpdir(), "goal-int-load-"));
+		const cwd = tempDir("goal-int-load-");
 		mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 		try {
 			const isolated = createExtensionHarness({
@@ -142,7 +126,7 @@ describe("five-tool handler integration", () => {
 			}
 			assert.ok(getActiveToolsCalls >= 1, "profile install at session_start calls getActiveTools once");
 		} finally {
-			try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+			removeDir(cwd);
 		}
 	});
 

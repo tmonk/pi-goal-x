@@ -10,8 +10,7 @@
  */
 
 import { skipWhenRoot } from "../support/permissions.ts";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -23,6 +22,7 @@ import { parseGoalFile, readActiveGoalPool } from "../../extensions/storage/goal
 import { deriveGoalDashboardModel } from "../../extensions/widgets/goal-dashboard-model.ts";
 import { renderCompactDashboard, renderExpandedDashboard } from "../../extensions/widgets/goal-dashboard-renderer.ts";
 import { deriveAuditorDashboardModel } from "../../extensions/widgets/auditor-dashboard-model.ts";
+import { activeGoalFiles, removeDir, tempDir } from "../support/fs.ts";
 
 const theme = {
 	fg: (_color: string, value: string) => value,
@@ -53,14 +53,6 @@ function createHarness(cwd: string, opts: { runCompletionAuditor?: (...args: any
 			await h.emit("turn_end", message);
 		},
 	});
-}
-
-function activeGoalFiles(cwd: string): string[] {
-	try {
-		return readdirSync(path.join(cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
-	} catch {
-		return [];
-	}
 }
 
 function archivedGoalFiles(cwd: string): string[] {
@@ -96,7 +88,7 @@ function dashboardText(goal: GoalRecord, expanded: boolean, cwd: string): string
 }
 
 test("full guided lifecycle: create → focus → tasks → audit → archive (§19.9)", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-lifecycle-e2e-"));
+	const cwd = tempDir("goal-lifecycle-e2e-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const staged: StageRecord[] = [];
 	const h = createHarness(cwd, {
@@ -259,12 +251,12 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 		const archivedRecord = parseGoalFile(path.join(cwd, ".pi", "goals", "archived", archived[0]!));
 		assert.equal(archivedRecord?.status, "complete", "archived record is complete and durable");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
 test("archive failure never reports success; the complete record stays recoverable (§16.6)", skipWhenRoot, async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-archive-fail-"));
+	const cwd = tempDir("goal-archive-fail-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const h = createHarness(cwd, {
 		runCompletionAuditor: async () => ({ approved: true, disapproved: false, output: "ok\n<approved/>", model: "mock/auditor" }),
@@ -302,6 +294,6 @@ test("archive failure never reports success; the complete record stays recoverab
 		assert.equal(remaining.status, "complete");
 	} finally {
 				await import("node:fs/promises").then(async (fs) => { await fs.chmod(path.join(cwd, ".pi", "goals", "archived"), 0o755).catch(() => {}); });
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });

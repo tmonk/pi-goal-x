@@ -1,8 +1,6 @@
 /** The goal tool list is fixed: only disableTasks changes it, and host tools are never touched. */
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -15,6 +13,7 @@ import {
 import { writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { createExtensionHarness } from "./support/extension-harness.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { removeDir, tempDir } from "./support/fs.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,7 +28,7 @@ function seedHostTools(names: readonly string[]): void {
 }
 
 function testFixture() {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-tool-vis-"));
+	const cwd = tempDir("goal-tool-vis-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 
 	const goal = createGoal({
@@ -48,7 +47,7 @@ function testFixture() {
 	];
 
 	const mockCtx = host.createContext({ cwd, sessionEntries });
-	const cleanup = () => { try { rmSync(cwd, { recursive: true, force: true }); } catch {} };
+	const cleanup = () => { removeDir(cwd); };
 
 	return { cwd, goal: written, mockCtx, cleanup };
 }
@@ -114,7 +113,7 @@ describe("Fixed goal tool list", () => {
 	});
 
 	it("a session with no focused goal gets the same list", async () => {
-		const cwd = mkdtempSync(path.join(tmpdir(), "goal-tool-vis-nogoal-"));
+		const cwd = tempDir("goal-tool-vis-nogoal-");
 		try {
 			mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 			seedHostTools(HOST_SEED_A);
@@ -122,7 +121,7 @@ describe("Fixed goal tool list", () => {
 			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_A);
 		} finally {
-			try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+			removeDir(cwd);
 		}
 	});
 
@@ -157,7 +156,7 @@ describe("Fixed goal tool list", () => {
 
 	it("with tasks disabled, every status gets the list without task tools", async () => {
 		for (const status of ["active", "paused", "complete"] as const) {
-			const cwd = mkdtempSync(path.join(tmpdir(), "goal-tool-vis-notasks-"));
+			const cwd = tempDir("goal-tool-vis-notasks-");
 			try {
 				mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 				writeFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ disableTasks: true }));
@@ -177,7 +176,7 @@ describe("Fixed goal tool list", () => {
 				expectGoalProfile(WITHOUT_TASKS);
 				expectHostUntouched(HOST_SEED_B);
 			} finally {
-				try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+				removeDir(cwd);
 			}
 		}
 	});

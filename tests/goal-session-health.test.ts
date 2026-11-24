@@ -12,9 +12,9 @@ import {
 	readSessionCheckpointHealth,
 } from "../extensions/goal-session-health.ts";
 import { checkpointTriggerPrompt } from "../extensions/prompts/goal-prompts.ts";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import * as path from "node:path";
+import { tempDir } from "./support/fs.ts";
 
 function entry(overrides: Record<string, unknown>): Record<string, unknown> {
 	return {
@@ -72,7 +72,7 @@ describe("inspectCheckpointHealth", () => {
 
 describe("readSessionCheckpointHealth", () => {
 	it("reads a session JSONL including header and malformed lines", () => {
-		const dir = mkdtempSync(path.join(tmpdir(), "goal-health-"));
+		const dir = tempDir("goal-health-");
 		const file = path.join(dir, "session.jsonl");
 		const header = JSON.stringify({ type: "session", id: "s1", cwd: dir });
 		const v2 = JSON.stringify(entry({ content: checkpointTriggerPrompt("g1"), details: { version: 2, kind: "checkpoint", goalId: "g1" } }));

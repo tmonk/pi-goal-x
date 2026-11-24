@@ -5,8 +5,7 @@
  */
 
 import { createExtensionHarness } from "./support/extension-harness.ts";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -14,7 +13,7 @@ import assert from "node:assert/strict";
 import { convertFlatTasks, mergeTasksWithExisting } from "../extensions/goal-task-tree.ts";
 import { createGoal, goalFocusDetails, normalizeGoalRecord, type GoalRecord, type GoalTask } from "../extensions/goal-record.ts";
 import { parseGoalFile, serializeGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
-import { goalLedgerPath } from "../extensions/goal-ledger.ts";
+import { ledgerEvents, removeDir, tempDir } from "./support/fs.ts";
 
 // ── Tool execution harness (mirrors goal-task-tools.test.ts) ────────────────
 
@@ -23,7 +22,7 @@ function createHarness(cwd: string, sessionEntries: unknown[]) {
 }
 
 function fixtureWithTasks(tasks: Array<Record<string, unknown>>, opts: { pauseReason?: string; status?: "active" | "paused" } = {}) {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-lifecycle-"));
+	const cwd = tempDir("goal-lifecycle-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const goal = createGoal({ objective: "Lifecycle goal", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 5, 9, 0, 0));
 	goal.taskList = { tasks: tasks as any, blockCompletion: false, proposedAt: new Date().toISOString() };
@@ -34,7 +33,7 @@ function fixtureWithTasks(tasks: Array<Record<string, unknown>>, opts: { pauseRe
 	}
 	const written = writeActiveGoalFile({ cwd }, goal);
 	const sessionEntries = [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") }];
-	const cleanup = () => { try { rmSync(cwd, { recursive: true, force: true }); } catch {} };
+	const cleanup = () => { removeDir(cwd); };
 	return { cwd, goal: written, sessionEntries, cleanup };
 }
 
@@ -46,14 +45,6 @@ function activeGoal(cwd: string): GoalRecord | null {
 function activeFile(cwd: string): string {
 	const files = readdirSync(path.join(cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
 	return path.join(cwd, ".pi", "goals", files[0]!);
-}
-
-function ledgerEvents(cwd: string): Array<Record<string, unknown>> {
-	try {
-		return readFileSync(goalLedgerPath({ cwd }), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
-	} catch {
-		return [];
-	}
 }
 
 async function startSession(cwd: string, sessionEntries: unknown[]) {
@@ -303,7 +294,7 @@ test("mergeTasksWithExisting preserves status, evidence, and timestamps", () => 
 // ── §19.8 persistence and migration ─────────────────────────────────────────
 
 test("legacy goal files load without currentTaskId and preserve task state", () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-legacy-"));
+	const cwd = tempDir("goal-legacy-");
 	try {
 		mkdirSync(path.join(cwd, ".pi", "goals"), { recursive: true });
 		const goal = createGoal({ objective: "Legacy goal", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 5, 9, 0, 0));
@@ -330,7 +321,7 @@ test("legacy goal files load without currentTaskId and preserve task state", () 
 });
 
 test("currentTaskId persists through write→parse round trips", () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-persist-"));
+	const cwd = tempDir("goal-persist-");
 	try {
 		mkdirSync(path.join(cwd, ".pi", "goals"), { recursive: true });
 		const goal = createGoal({ objective: "Persist goal", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 5, 9, 0, 0));

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import test from "node:test";
 
 import { createGoal } from "../extensions/goal-record.ts";
@@ -14,16 +13,17 @@ import {
 	GOALS_DIR,
 	RECOVERY_BACKUP_DIR,
 } from "../extensions/goal-recovery.ts";
+import { removeDir, tempDir } from "./support/fs.ts";
 
 function tempCtx(): GoalFileContext {
-	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "goal-recovery-"));
+	const cwd = tempDir("goal-recovery-");
 	fs.mkdirSync(path.join(cwd, GOALS_DIR, "archived"), { recursive: true });
 	fs.mkdirSync(path.join(cwd, GOALS_DIR, ".locks"), { recursive: true });
 	return { cwd };
 }
 
 function cleanup(ctx: GoalFileContext): void {
-	try { fs.rmSync(ctx.cwd, { recursive: true, force: true }); } catch {}
+	removeDir(ctx.cwd);
 }
 
 function writeGoal(ctx: GoalFileContext, objective = "healthy goal"): void {

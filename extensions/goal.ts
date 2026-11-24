@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { runGoalCompletionAuditor } from "./goal-auditor.ts";
+import type { runGoalCompletionAuditor } from "./goal-auditor.ts";
 import { registerGoalCommands } from "./goal-commands.ts";
 import { registerGoalEvents } from "./goal-events.ts";
 import {

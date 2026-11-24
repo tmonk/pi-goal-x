@@ -5,22 +5,21 @@
  */
 
 import { createExtensionHarness } from "./support/extension-harness.ts";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createGoal, goalFocusDetails } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
-import { goalLedgerPath } from "../extensions/goal-ledger.ts";
+import { activeGoalFiles, ledgerEvents, removeDir, tempDir } from "./support/fs.ts";
 
 function createHarness(cwd: string, sessionEntries: unknown[]) {
 	return createExtensionHarness({ cwd, sessionEntries, sessionId: "budget-test-session", systemPrompt: "base prompt" });
 }
 
 function fixture() {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-budget-"));
+	const cwd = tempDir("goal-budget-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const goal = createGoal({
 		objective: "=== Goal ===\nObjective: Budgeted goal",
@@ -33,21 +32,8 @@ function fixture() {
 	const sessionEntries = [
 		{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") },
 	];
-	const cleanup = () => { try { rmSync(cwd, { recursive: true, force: true }); } catch {} };
+	const cleanup = () => { removeDir(cwd); };
 	return { cwd, goal: written, sessionEntries, cleanup };
-}
-
-function activeGoalFiles(cwd: string): string[] {
-	try {
-		return readdirSync(path.join(cwd, ".pi", "goals")).filter((n) => n.startsWith("active_goal_"));
-	} catch {
-		return [];
-	}
-}
-
-function ledgerEvents(cwd: string): Array<Record<string, unknown>> {
-	if (!existsSync(goalLedgerPath({ cwd }))) return [];
-	return readFileSync(goalLedgerPath({ cwd }), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
 }
 
 function turnEndMessage(tokens: number) {
@@ -108,7 +94,7 @@ test("budget reached marks the goal budget_limited exactly once with ledger + on
 });
 
 test("goal without a budget never transitions", async () => {
-	const cwd = mkdtempSync(path.join(tmpdir(), "goal-nobudget-"));
+	const cwd = tempDir("goal-nobudget-");
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	try {
 		const goal = createGoal({ objective: "No budget", autoContinue: true, sisyphus: false }, Date.UTC(2026, 7, 3, 10, 0, 0));
@@ -124,7 +110,7 @@ test("goal without a budget never transitions", async () => {
 		assert.equal(disk.status, "active", "no budget → no transition");
 		assert.equal(ledgerEvents(cwd).filter((e) => e.type === "goal_budget_limited").length, 0);
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
