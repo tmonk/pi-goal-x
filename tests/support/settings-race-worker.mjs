@@ -4,7 +4,7 @@
  */
 
 import { workerData } from "node:worker_threads";
-import { mutateSettingsLayer } from "../extensions/goal-settings.ts";
+import { mutateSettingsLayer } from "../../extensions/goal-settings.ts";
 
 const { globalFile, key, iterations } = workerData;
 

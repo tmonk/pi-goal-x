@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const run = promisify(execFile);
-const worker = fileURLToPath(new URL("../session-safety-worker.mjs", import.meta.url));
+const worker = fileURLToPath(new URL("../support/session-safety-worker.mjs", import.meta.url));
 // Each mode runs its own worker and temp directory, so run a few at once.
 // child-fork waits longest, so it starts first.
 describe("real SDK: goal session safety", { concurrency: 4 }, () => {

@@ -14,7 +14,7 @@ import {
 import { loadSettingsSnapshot, mutateSettingsLayer, SettingsMutationError, invalidateGoalSettingsCache } from "../extensions/goal-settings.ts";
 import { syncTerminalInputPause } from "../extensions/goal-terminal-input.ts";
 import { GoalControlsDialog, commandControlsFingerprint } from "../extensions/widgets/goal-controls-dialog.ts";
-import { createMockTheme, createMockTUI } from "./tui-test-utils.ts";
+import { createMockTheme, createMockTUI } from "./support/tui-test-utils.ts";
 import { goalPrompt } from "../extensions/prompts/goal-prompts.ts";
 import { goalDialogControls } from "../extensions/goal-dialog-controls.ts";
 import { showEscapeDialog } from "../extensions/widgets/goal-escape-dialog.ts";

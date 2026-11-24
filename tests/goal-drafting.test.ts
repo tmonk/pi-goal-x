@@ -20,7 +20,7 @@ import { goalSettingsPath } from "../extensions/goal-settings.ts";
 import { proposalText, DRAFT_ENTRY, hasActiveDraft, type ActiveGoalDraft } from "../extensions/goal-drafting.ts";
 import { createGoal, type GoalRecord } from "../extensions/goal-record.ts";
 import { goalDraftingPrompt } from "../extensions/prompts/goal-draft-prompts.ts";
-import { createMockTheme } from "./tui-test-utils.ts";
+import { createMockTheme } from "./support/tui-test-utils.ts";
 
 type Harness = ReturnType<typeof createHarness>;
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {stabilizationHarness} from "./stabilization-utils.ts";
+import {stabilizationHarness} from "./support/stabilization-utils.ts";
 import {planUpdateGoal} from "../extensions/goal-tool-inputs.ts";
 import {mutateSettingsLayer} from "../extensions/goal-settings.ts";
 

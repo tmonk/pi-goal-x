@@ -20,7 +20,7 @@ import {
 	cleanupFixture,
 	makeGoalRecord,
 } from "./bench-common.mjs";
-import { createMockExtensionContext, createMockTUI, createMockTheme, invokeCustomFactory, renderComponent } from "../../tests/tui-test-utils.ts";
+import { createMockExtensionContext, createMockTUI, createMockTheme, invokeCustomFactory, renderComponent } from "../../tests/support/tui-test-utils.ts";
 import { renderConfirmationTasks } from "../../extensions/goal-task-confirmation.ts";
 import { showEscapeDialog } from "../../extensions/widgets/goal-escape-dialog.ts";
 import { renderGoalWidgetLines, GoalWidgetComponent } from "../../extensions/widgets/goal-widget.ts";

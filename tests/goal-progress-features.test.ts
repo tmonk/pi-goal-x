@@ -1,7 +1,3 @@
-/**
- * F1–F6 feature tests (task 5).
- */
-
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,7 +11,7 @@ import { createGoal } from "../extensions/goal-record.ts";
 import { readGoalLedger } from "../extensions/goal-ledger.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { renderGoalWidgetLines } from "../extensions/widgets/goal-widget.ts";
-import { createMockTheme } from "./tui-test-utils.ts";
+import { createMockTheme } from "./support/tui-test-utils.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
 const theme = createMockTheme() as unknown as Theme;
@@ -73,7 +69,7 @@ function ledgerText(cwd: string): string {
 	}
 }
 
-describe("F1 task detail block (get_goal mirror)", () => {
+describe("task detail block (get_goal mirror)", () => {
 	it("shows counts, next pending with contracts, and recent completions", () => {
 		const goal = makeGoal({ objective: "F1 test" });
 		goal.taskList = {
@@ -92,7 +88,7 @@ describe("F1 task detail block (get_goal mirror)", () => {
 	});
 });
 
-describe("F2 objective→task bootstrap", () => {
+describe("objective→task bootstrap", () => {
 	it("derives tasks from checklist markers", () => {
 		const tasks = deriveTasksFromObjective("- [ ] first\n- [ ] second\n- [ ] third");
 		assert.equal(tasks?.length, 3);
@@ -111,7 +107,7 @@ describe("F2 objective→task bootstrap", () => {
 	});
 });
 
-describe("F7 auditor toggle (Ctrl+Shift+A)", () => {
+describe("auditor toggle (Ctrl+Shift+A)", () => {
 	it("toggleGoalAuditor flips per-goal skipAuditor, persists it, records the event, and notifies", async () => {
 		const cwd = fixtureCwd();
 		try {
@@ -171,7 +167,7 @@ describe("F7 auditor toggle (Ctrl+Shift+A)", () => {
 	});
 });
 
-describe("F4 sisyphus ordered-step widget", () => {
+describe("sisyphus ordered-step widget", () => {
 	it("renders the Step N/M badge and current-step highlight", () => {
 		const goal = makeGoal({ objective: "1. a\n2. b\n3. c", sisyphus: true });
 		goal.taskList = {
@@ -192,7 +188,7 @@ describe("F4 sisyphus ordered-step widget", () => {
 	});
 });
 
-describe("F5 stall detector", () => {
+describe("stall detector", () => {
 	it("emits a [GOAL STALLED] note + ledger event after the timeout; off by default", async () => {
 		const cwd = fixtureCwd();
 		try {
@@ -240,7 +236,7 @@ describe("F5 stall detector", () => {
 	});
 });
 
-describe("F6 token-budget threshold alerts", () => {
+describe("token-budget threshold alerts", () => {
 	it("emits goal_budget_warning events at 50/75/90%", async () => {
 		const cwd = fixtureCwd();
 		try {

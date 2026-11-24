@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {TuiMainScreen} from "@earendil-works/pi-tui/dist/tui-main-screen.js";
-import {stabilizationHarness, deferred} from "./stabilization-utils.ts";
-import {createMockTheme} from "./tui-test-utils.ts";
+import {stabilizationHarness, deferred} from "./support/stabilization-utils.ts";
+import {createMockTheme} from "./support/tui-test-utils.ts";
 import {mutateSettingsLayer} from "../extensions/goal-settings.ts";
 
 for (const surface of ["dialog", "overlay", "foreign-editor"]) for (const mode of ["ordinary", "audit", "wait", "recovery"]) for (const pauseOrder of ["together", "goal-first", "turn-first"]) test(`all Goal shortcuts yield to ${surface} during ${mode}, ${pauseOrder}`, async () => {

@@ -5,7 +5,7 @@ import {taskCompletionBlockWarning} from "../extensions/goal-policy.ts";
 import {goalPromptParts} from "../extensions/prompts/goal-prompts.ts";
 import {buildGoalAuditorPrompt} from "../extensions/goal-auditor.ts";
 import type {GoalTask} from "../extensions/goal-record.ts";
-import {stabilizationHarness} from "./stabilization-utils.ts";
+import {stabilizationHarness} from "./support/stabilization-utils.ts";
 
 test("nested counts agree with an independent flat reference for every display mode", () => {
 	let seed = 0x110, id = 0;

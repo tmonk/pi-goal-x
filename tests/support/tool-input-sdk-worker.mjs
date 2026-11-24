@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {validateToolArguments} from '@earendil-works/pi-ai';
-import goalExtension from '../extensions/goal.ts';
-import {createGoal,goalFocusDetails} from '../extensions/goal-record.ts';
-import {writeActiveGoalFile,parseGoalFile} from '../extensions/storage/goal-files.ts';
+import goalExtension from '../../extensions/goal.ts';
+import {createGoal,goalFocusDetails} from '../../extensions/goal-record.ts';
+import {writeActiveGoalFile,parseGoalFile} from '../../extensions/storage/goal-files.ts';
 
 let cases=0;
 async function fixture(run){

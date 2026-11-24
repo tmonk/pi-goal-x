@@ -8,9 +8,9 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
-import goalExtension from '../extensions/goal.ts';
-import { createGoal, goalFocusDetails } from '../extensions/goal-record.ts';
-import { writeActiveGoalFile } from '../extensions/storage/goal-files.ts';
+import goalExtension from '../../extensions/goal.ts';
+import { createGoal, goalFocusDetails } from '../../extensions/goal-record.ts';
+import { writeActiveGoalFile } from '../../extensions/storage/goal-files.ts';
 
 // An active goal edits every request. Pi must still receive a mid-session prompt change as a
 // separate system message, so the leading prompt (the provider's cached prefix) stays byte-identical.

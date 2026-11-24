@@ -4,7 +4,7 @@ import { contextUsageLine, modelBudgetLine } from "../extensions/goal-accounting
 import { createGoal } from "../extensions/goal-record.ts";
 import { goalPromptParts } from "../extensions/prompts/goal-prompts.ts";
 import { LiveTailRetention } from "../extensions/goal-live-retention.ts";
-import {stabilizationHarness, deferred} from "./stabilization-utils.ts";
+import {stabilizationHarness, deferred} from "./support/stabilization-utils.ts";
 import {mutateSettingsLayer, effectiveSettingsReport, loadGoalSettings} from "../extensions/goal-settings.ts";
 import {readFileSync, existsSync} from "node:fs";
 import path from "node:path";
