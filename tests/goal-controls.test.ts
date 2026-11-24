@@ -309,7 +309,7 @@ test("modal key capture and Kitty repeats cannot pause a goal; live key edits ta
 	const h = fixture();
 	try {
 		await h.start();
-		h.core.enterGoalModal(); assert.equal(h.press(ESC), undefined); h.core.exitGoalModal();
+		h.core.state.enterModal(); assert.equal(h.press(ESC), undefined); h.core.state.exitModal();
 		h.mutate("project", "set", ["keybindings", "pause"], "f6");
 		h.press("\x1b[57369;1:2u");
 		assert.equal(h.core.state.goal?.status, "active");
@@ -330,18 +330,18 @@ test("argument-taking command shortcuts ask for input and release modal isolatio
 	const h = fixture({ keybindings: { commands: { "goal-direct": "f6" } } });
 	try {
 		let answer: string | undefined = "Create the file requested through a shortcut.";
-		h.ctx.ui.input = async () => { assert.ok(h.core.goalModalDepth > 0); return answer; };
+		h.ctx.ui.input = async () => { assert.ok(h.core.state.goalModalDepth > 0); return answer; };
 		syncTerminalInputPause(h.core, h.ctx);
 		h.press(F6); await new Promise(resolve => setTimeout(resolve, 0));
 		assert.equal(h.core.state.goal?.objective, answer);
-		assert.equal(h.core.goalModalDepth, 0);
+		assert.equal(h.core.state.goalModalDepth, 0);
 		const id = h.core.state.goal!.id;
 		answer = undefined; h.press(F6); await new Promise(resolve => setTimeout(resolve, 0));
 		assert.equal(h.core.state.goal?.id, id);
-		assert.equal(h.core.goalModalDepth, 0);
+		assert.equal(h.core.state.goalModalDepth, 0);
 		h.ctx.ui.input = async () => { throw new Error("Input closed"); };
 		h.press(F6); await new Promise(resolve => setTimeout(resolve, 0));
-		assert.equal(h.core.goalModalDepth, 0);
+		assert.equal(h.core.state.goalModalDepth, 0);
 		assert.ok(h.notifications.some(message => message.includes("Input closed")));
 	} finally { h.close(); }
 });
@@ -551,7 +551,7 @@ test("every remapped slash action and command shortcut reaches its stable handle
 			syncTerminalInputPause(h.core, h.ctx); h.press(F6);
 			await new Promise(resolve => setTimeout(resolve, 0));
 			assert.deepEqual(calls.shift(), [id, ["goal-direct", "sisyphus-direct", "goal-tweak"].includes(id) ? "From shortcut" : ""]);
-			assert.equal(h.core.goalModalDepth, 0);
+			assert.equal(h.core.state.goalModalDepth, 0);
 		} finally { h.close(); }
 	}
 });
@@ -568,12 +568,12 @@ test("custom dashboard, audit and dialog keys dispatch every advertised action",
 				continue;
 			}
 			let called: string | undefined;
-			h.core.isDashboardExpanded = () => action.context === "expanded";
-			h.core.toggleDashboardExpanded = () => { called = "toggleExpand"; };
-			h.core.toggleGoalAuditor = () => { called = "toggleAuditor"; };
-			h.core.abortAudit = () => { called = "interruptAudit"; };
-			if (action.context === "audit") h.core.auditProgress = {} as never;
-			h.core.goalWidgetComponentRef.current = {
+			h.core.view.isDashboardExpanded = () => action.context === "expanded";
+			h.core.view.toggleDashboardExpanded = () => { called = "toggleExpand"; };
+			h.core.lifecycle.toggleAuditor = () => { called = "toggleAuditor"; };
+			h.core.view.abortAudit = () => { called = "interruptAudit"; };
+			if (action.context === "audit") h.core.view.auditProgress = {} as never;
+			h.core.view.widgetRef.current = {
 				handleNavigationKey: (key: string) => { called = key; return true; },
 				handleCompactScrollKey: (key: string) => { called = key; return true; }, invalidate() {},
 			} as never;

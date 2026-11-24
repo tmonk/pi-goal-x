@@ -22,7 +22,48 @@ import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
 import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "./goal-drafting.ts";
 import { formatRecoveryReport, runRecoveryReport, runRecoveryRepair } from "./goal-recovery.ts";
 import { formatCheckpointHealthReport, readSessionCheckpointHealth } from "./goal-session-health.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type {
+	GoalCommandInvoker,
+	GoalContinuationControl,
+	GoalControlWarnings,
+	GoalModalAccess,
+	GoalOperationGuard,
+	GoalPoolAccess,
+	GoalRecordWriter,
+	GoalRunControl,
+	GoalTurnStopMarker,
+	FocusSlice,
+	HostSlice,
+	InterruptionSlice,
+	LifecycleSlice,
+	RuntimeSlice,
+	SchedulerSlice,
+	StateSlice,
+	ViewSlice,
+} from "./goal-core-types.ts";
+import type { SettingsMenuCore } from "./goal-settings-menu.ts";
+import type { GoalDraftingCore } from "./goal-drafting.ts";
+
+/** What the slash commands read and change. */
+export type GoalCommandsCore = SettingsMenuCore &
+	GoalDraftingCore &
+	GoalCommandInvoker &
+	GoalControlWarnings &
+	GoalContinuationControl &
+	GoalRunControl &
+	GoalPoolAccess &
+	GoalOperationGuard &
+	GoalModalAccess &
+	GoalRecordWriter &
+	GoalTurnStopMarker &
+	HostSlice<"registerCommand"> &
+	StateSlice<"activeAudit" | "openGoals"> &
+	FocusSlice<"setFocus" | "setGoal"> &
+	LifecycleSlice<"archive" | "create" | "syncPromptFromDisk"> &
+	InterruptionSlice<"reset"> &
+	RuntimeSlice<"clearPostCompactReminder" | "getCheckpointGoalId" | "setCheckpoint"> &
+	SchedulerSlice<"resume" | "refreshSettings"> &
+	ViewSlice<"goalForDisplay">;
 
 export interface GoalRefreshState {
 	poolIds: Iterable<string>;
@@ -65,7 +106,7 @@ function sessionFileOf(ctx: ExtensionContext): string | undefined {
  * paths are registered at load time; aliases and subcommands share the same
  * handler and argument completion. /goal-settings remains the recovery entry.
  */
-export function registerGoalCommands(core: GoalCore): void {
+export function registerGoalCommands(core: GoalCommandsCore): void {
 	const { pi } = core;
 	type Definition = { description: string; handler: (args: string, ctx: ExtensionContext) => Promise<void> };
 	const actions = new Map<GoalCommandId, Definition>();
@@ -73,9 +114,9 @@ export function registerGoalCommands(core: GoalCore): void {
 
 	/** Ask the user to pick one of `open`; `onPicked` runs while the modal is still open. False when they decline. */
 	async function pickOpenGoal(ctx: ExtensionContext, title: string, open: GoalRecord[], onPicked: (goalId: string) => void): Promise<boolean> {
-		const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
+		const labels = open.map((item) => goalSelectorLabel(item, core.state.focusedGoalId));
 		const byLabel = new Map(labels.map((label, index) => [label, open[index]?.id]));
-		core.enterGoalModal();
+		core.state.enterModal();
 		try {
 			const selected = await ctx.ui.select(title, labels);
 			const selectedId = selected ? byLabel.get(selected) : undefined;
@@ -86,26 +127,26 @@ export function registerGoalCommands(core: GoalCore): void {
 			onPicked(selectedId);
 			return true;
 		} finally {
-			core.exitGoalModal();
+			core.state.exitModal();
 		}
 	}
 
 	async function chooseOpenGoal(ctx: ExtensionContext, title: string): Promise<GoalRecord | null> {
 		core.reconcileFocusedGoalFromDisk(ctx);
 		if (core.state.goal && core.state.goal.status !== "complete") return core.state.goal;
-		const open = core.openGoals();
+		const open = core.state.openGoals();
 		if (open.length === 0) return null;
 		if (open.length === 1) {
 			const only = open[0];
 			if (!only) return null;
-			core.setFocusedGoalId(only.id, ctx, "selected");
+			core.focus.setFocus(only.id, ctx, "selected");
 			return core.state.goal;
 		}
 		if (!ctx.hasUI) {
 			ctx.ui.notify(buildUnfocusedOpenGoalsSummary(open.length), "warning");
 			return null;
 		}
-		const picked = await pickOpenGoal(ctx, title, open, (goalId) => core.setFocusedGoalId(goalId, ctx, "selected"));
+		const picked = await pickOpenGoal(ctx, title, open, (goalId) => core.focus.setFocus(goalId, ctx, "selected"));
 		return picked ? core.state.goal : null;
 	}
 
@@ -116,12 +157,12 @@ export function registerGoalCommands(core: GoalCore): void {
 	 */
 	async function pickWhenUnfocused(ctx: ExtensionContext, title: string): Promise<"ready" | "cancelled" | "none"> {
 		if (core.state.goal) return "ready";
-		if (otherOpenGoalCount(core.goalsById, null) === 0) return "none";
+		if (otherOpenGoalCount(core.state.goalsById, null) === 0) return "none";
 		return (await chooseOpenGoal(ctx, title)) ? "ready" : "cancelled";
 	}
 
 	async function focusGoalCommand(ctx: ExtensionContext): Promise<void> {
-		const open = core.openGoals();
+		const open = core.state.openGoals();
 		if (open.length === 0) {
 			ctx.ui.notify(`No open goals. Use ${commandHint("goal", core.loadedCommands)} to draft one, or ${commandHint("goal-direct", core.loadedCommands)} <objective> to start immediately.`, "warning");
 			return;
@@ -129,17 +170,17 @@ export function registerGoalCommands(core: GoalCore): void {
 		if (open.length === 1) {
 			const only = open[0];
 			if (!only) return;
-			core.setFocusedGoalId(only.id, ctx, "selected");
+			core.focus.setFocus(only.id, ctx, "selected");
 			core.armFocusedContinuation(ctx);
 			ctx.ui.notify(`Focused goal: ${oneLineSummary(only)}`, "info");
 			return;
 		}
 		if (!ctx.hasUI) {
-			ctx.ui.notify(buildGoalListText(core.goalsById, core.focusedGoalId), "info");
+			ctx.ui.notify(buildGoalListText(core.state.goalsById, core.state.focusedGoalId), "info");
 			return;
 		}
 		const picked = await pickOpenGoal(ctx, "Focus open goal", open, (goalId) => {
-			core.setFocusedGoalId(goalId, ctx, "selected");
+			core.focus.setFocus(goalId, ctx, "selected");
 			core.armFocusedContinuation(ctx);
 		});
 		if (picked) ctx.ui.notify(`Focused goal: ${oneLineSummary(core.state.goal)}`, "info");
@@ -155,18 +196,18 @@ export function registerGoalCommands(core: GoalCore): void {
 			wasBusy = !ctx.isIdle();
 		} catch {}
 		if (detachedGoalId && wasBusy) core.runtime.markTurnStopped(detachedGoalId);
-		core.setFocusedGoalId(null, ctx, "unfocused", { recordLedger: false });
+		core.focus.setFocus(null, ctx, "unfocused", { recordLedger: false });
 		core.runningGoalId = null;
 		core.runtime.setCheckpoint(null);
 		core.runtime.clearPostCompactReminder();
-		core.activeAudit?.cancel("Goal cleared during completion audit.");
+		core.state.activeAudit?.cancel("Goal cleared during completion audit.");
 		if (detachedGoalId && wasBusy) {
 			try {
 				ctx.abort?.();
 			} catch {}
 		}
 		if (!current) {
-			const openCount = otherOpenGoalCount(core.goalsById, null);
+			const openCount = otherOpenGoalCount(core.state.goalsById, null);
 			ctx.ui.notify(openCount > 0 ? buildUnfocusedOpenGoalsSummary(openCount) : detailedSummary(null, core.loadedCommands), "info");
 			return;
 		}
@@ -189,7 +230,7 @@ export function registerGoalCommands(core: GoalCore): void {
 		clearGoalDrafting(core, ctx);
 		core.clearContinuationState();
 		core.clearActiveAccounting();
-		core.replaceGoal({ objective, autoContinue: true, sisyphus: mode === "sisyphus" }, ctx, true, verificationContract);
+		core.lifecycle.create({ objective, autoContinue: true, sisyphus: mode === "sisyphus" }, ctx, true, verificationContract);
 	}
 
 	async function runGoalRecovery(rawArgs: string, ctx: ExtensionContext): Promise<void> {
@@ -268,9 +309,9 @@ export function registerGoalCommands(core: GoalCore): void {
 
 	async function showGoalStatus(rawArgs: string, ctx: ExtensionContext): Promise<void> {
 		core.reconcileFocusedGoalFromDisk(ctx);
-		if (core.state.goal) core.syncGoalPromptFromDisk(ctx);
-		const view = core.goalForDisplay() ?? core.state.goal;
-		const otherCount = otherOpenGoalCount(core.goalsById, core.focusedGoalId);
+		if (core.state.goal) core.lifecycle.syncPromptFromDisk(ctx);
+		const view = core.view.goalForDisplay() ?? core.state.goal;
+		const otherCount = otherOpenGoalCount(core.state.goalsById, core.state.focusedGoalId);
 		const verbose = /^\s*verbose\b/i.test(rawArgs);
 		const health = /^\s*health\b/i.test(rawArgs);
 		const ledger = readGoalLedger(ctx);
@@ -280,7 +321,7 @@ export function registerGoalCommands(core: GoalCore): void {
 			maxAutonomousRuns: loadGoalSettings(ctx.cwd).maxAutonomousRuns,
 			idleContinuationBackoff: loadGoalSettings(ctx.cwd).idleContinuationBackoff,
 			goal: view,
-			focused: view !== null && core.focusedGoalId === view.id,
+			focused: view !== null && core.state.focusedGoalId === view.id,
 			otherOpenGoals: otherCount,
 			ledgerEvents: ledger.events,
 			ledgerMalformed: ledger.malformed,
@@ -357,7 +398,7 @@ export function registerGoalCommands(core: GoalCore): void {
 		}
 		// Snapshot the selected goal id and focus revision before asking.
 		const target = core.state.goal;
-		const focusToken = core.focusedOperationToken(target.id);
+		const focusToken = core.state.focusToken(target.id);
 		// Headless behavior is explicit: guidance without mutation. Clearing
 		// requires an interactive confirmation (follow-up Stage 2).
 		if (!ctx.hasUI) {
@@ -373,13 +414,13 @@ export function registerGoalCommands(core: GoalCore): void {
 		// archive. Cancellation above changes no file, focus entry, ledger
 		// entry, or runtime state.
 		core.reconcileFocusedGoalFromDisk(ctx);
-		if (!core.isFocusedOperationCurrent(focusToken) || !core.state.goal || core.state.goal.id !== target.id) {
+		if (!core.state.isTokenCurrent(focusToken) || !core.state.goal || core.state.goal.id !== target.id) {
 			ctx.ui.notify("Goal changed while confirming; nothing was cleared.", "warning");
 			return;
 		}
-		const archived = core.archiveCurrentGoal(ctx, "user");
+		const archived = core.lifecycle.archive(ctx, "user");
 		const didArchive = !!archived;
-		core.setGoal(null, ctx, true, "cleared");
+		core.focus.setGoal(null, ctx, true, "cleared");
 		const msg = clearGoalCommandMessage({ archived: didArchive });
 		ctx.ui.notify(msg, didArchive ? "info" : "warning");
 	}
@@ -448,7 +489,7 @@ export function registerGoalCommands(core: GoalCore): void {
 		description: "List all open goals and the current focus.",
 		handler: async (_rawArgs, ctx) => {
 			core.reconcileFocusedGoalFromDisk(ctx);
-			ctx.ui.notify(buildGoalListText(core.goalsById, core.focusedGoalId), "info");
+			ctx.ui.notify(buildGoalListText(core.state.goalsById, core.state.focusedGoalId), "info");
 			core.updateUI(ctx);
 		},
 	});
@@ -521,9 +562,9 @@ export function registerGoalCommands(core: GoalCore): void {
 	core.invokeGoalCommand = async (id, args, ctx) => {
 		const action = actions.get(id);
 		if (!action) return;
-		core.enterGoalModal();
+		core.state.enterModal();
 		try { await action.handler(args, ctx); }
-		finally { core.exitGoalModal(); }
+		finally { core.state.exitModal(); }
 	};
 	const roots = [...actions.keys()].flatMap(id => commandPaths(core.loadedCommands, id).map(route => route.split(" ")[0]!));
 	for (const root of new Set([...roots, "goal-settings"])) {

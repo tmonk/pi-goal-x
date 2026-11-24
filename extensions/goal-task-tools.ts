@@ -8,7 +8,26 @@ import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-age
 import { Text } from "@earendil-works/pi-tui";
 
 import type { GoalTaskUpdateSpec } from "./goal-service.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type {
+	GoalDiskSync,
+	GoalFocusedGoalAccess,
+	GoalModalAccess,
+	GoalOperationGuard,
+	GoalTurnStopMarker,
+	GoalUiRefresh,
+	HostSlice,
+	ServiceSlice,
+} from "./goal-core-types.ts";
+
+/** What the task tools read and change. */
+export type TaskToolsCore = HostSlice<"registerTool"> &
+	GoalFocusedGoalAccess &
+	GoalOperationGuard &
+	GoalModalAccess &
+	GoalUiRefresh &
+	GoalDiskSync &
+	GoalTurnStopMarker &
+	ServiceSlice<"apply" | "updateTask" | "updateTasks">;
 import { goalDetails, renderGoalResult } from "./goal-format.ts";
 import { statusLabel, truncateText } from "./goal-display.ts";
 import { loadGoalSettings } from "./settings/resolve.ts";
@@ -23,13 +42,13 @@ import {
 import { nowIso, currentTaskIdIsPending, type GoalTask } from "./goal-record.ts";
 import { convertFlatTasks, countTasks, mergeTasksWithExisting, renderTaskLines, taskTreeSchema, type FlatTaskInput } from "./goal-task-tree.ts";
 
-function progressSpec(input: TaskProgressInput, core: GoalCore, ctx: ExtensionContext): GoalTaskUpdateSpec {
+function progressSpec(input: TaskProgressInput, core: TaskToolsCore, ctx: ExtensionContext): GoalTaskUpdateSpec {
 	const settings = loadGoalSettings(ctx.cwd);
 	const now = nowIso();
 	const evidence = input.evidence?.trim().slice(0, 200) || undefined;
 	const reason = input.reason?.trim();
 	return {
-		taskId: input.task_id, focusToken: core.focusedOperationToken(core.state.goal!.id),
+		taskId: input.task_id, focusToken: core.state.focusToken(core.state.goal!.id),
 		...(input.status === "start" ? {setCurrentTaskId: input.task_id} : {}),
 		validate: task => {
 			if (input.status === "start" && task.status !== "pending") return {ok: false, message: `Task "${task.id}" is ${task.status}; only pending tasks can be started.`};
@@ -66,7 +85,7 @@ function progressSpec(input: TaskProgressInput, core: GoalCore, ctx: ExtensionCo
 
 // ── Tool registration ─
 
-export function registerTaskTools(core: GoalCore): void {
+export function registerTaskTools(core: TaskToolsCore): void {
 	const { pi } = core;
 
 	// ── set_goal_tasks: flat parent-linked structural task-tree tool ───────────
@@ -102,18 +121,18 @@ export function registerTaskTools(core: GoalCore): void {
 			const taskLines = renderTaskLines(converted.tasks);
 			const gateLabel = blockCompletion ? " (blockCompletion enabled)" : "";
 			const proposalText = [`Proposed task list${gateLabel}:`, "", ...taskLines].join("\n");
-			const taskListFocus = core.focusedOperationToken(core.state.goal.id);
+			const taskListFocus = core.state.focusToken(core.state.goal.id);
 			// Task-only confirmation: the complete result is the user's decision.
 			// No auditor toggle and no goal-state mutation happen here.
-			core.enterGoalModal();
+			core.state.enterModal();
 			let dialogResult: TaskConfirmationResult;
 			try {
 				dialogResult = await showTaskConfirmation(ctx, proposalText);
 			} finally {
-				core.exitGoalModal();
+				core.state.exitModal();
 			}
-			if (!core.isFocusedOperationCurrent(taskListFocus)) {
-				return core.focusedOperationCancelledResult("Task list proposal", taskListFocus);
+			if (!core.state.isTokenCurrent(taskListFocus)) {
+				return core.state.cancelledResult("Task list proposal", taskListFocus);
 			}
 			if (dialogResult.decision !== "confirm") return reply("Task list kept unchanged.");
 			const applyResult = core.goalService.apply(ctx, {
@@ -201,7 +220,7 @@ export function registerTaskTools(core: GoalCore): void {
 			const settings = loadGoalSettings(ctx.cwd);
 			const now = nowIso();
 			const taskId = params.task_id;
-			const taskFocus = core.focusedOperationToken(core.state.goal.id);
+			const taskFocus = core.state.focusToken(core.state.goal.id);
 			/** Apply one task update; on success refresh the UI and report `done()`. */
 			const updateOne = (spec: Omit<GoalTaskUpdateSpec, "focusToken" | "taskId">, done: () => string) => {
 				const result = core.goalService.updateTask(ctx, { focusToken: taskFocus, taskId, ...spec });

@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 /** Filter after Pi restores system and tool state, including on the first request. */
 export function registerGoalContext(
-	pi: ExtensionAPI,
+	pi: Pick<ExtensionAPI, "on">,
 	transform: (messages: unknown[], ctx: ExtensionContext) => unknown[] | null,
 ): void {
 	pi.on("context_with_system", (event, ctx) => {

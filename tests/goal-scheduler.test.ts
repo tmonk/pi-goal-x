@@ -34,7 +34,7 @@ async function fixture(t: TestContext, limit?: number, owner = "owner", existing
 		pi: { getActiveTools: () => ["read", "write", "bash"], events },
 	});
 	const { core, ctx } = harness;
-	await core.loadState(ctx);
+	await core.focus.load(ctx);
 	core.scheduler.attach(ctx);
 	t.after(() => {
 		core.scheduler.shutdown(); core.runtime.clearContinuationState();
@@ -65,7 +65,7 @@ for (const start of ["creation", "resume"] as const) {
 	test(`strict ${start} starts automatically and still allows only one repair`, async t => {
 		const h = await fixture(t);
 		t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
-		if (start === "creation") h.core.replaceGoal({ objective: "Work automatically", autoContinue: true, sisyphus: false }, h.ctx);
+		if (start === "creation") h.core.lifecycle.create({ objective: "Work automatically", autoContinue: true, sisyphus: false }, h.ctx);
 		else assert.equal(h.core.scheduler.resume(h.ctx), true);
 		t.mock.timers.tick(1);
 		assert.equal(h.sent.length, 1);
@@ -356,7 +356,7 @@ test("readiness polling, failure after claim, and active-time waiting", async t 
 	h.core.scheduler.resume(ctx); t.mock.timers.tick(1); h.admit(); h.wait(); h.core.scheduler.settled(ctx);
 	const before = h.core.state.goal!.usage.activeSeconds;
 	t.mock.timers.tick(500);
-	assert.equal(h.core.goalForDisplay()?.usage.activeSeconds, before);
+	assert.equal(h.core.view.goalForDisplay()?.usage.activeSeconds, before);
 });
 
 
@@ -494,7 +494,7 @@ test("work in an earlier tool turn resets idle pacing for the entire logical run
 	// A second agent_start can occur during native retry or compaction.
 	h.begin();
 	await h.handlers.turn_start!({}, h.ctx);
-	assert.equal(h.core.goalWorkToolCalledThisTurn, false, "last-turn flag alone misses earlier work");
+	assert.equal(h.core.state.goalWorkToolCalledThisTurn, false, "last-turn flag alone misses earlier work");
 	h.core.goalService.flushTurn(h.ctx);
 	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
 	assert.equal(h.sent.length, 2, "the completed execution continues immediately");
@@ -536,7 +536,7 @@ test("restoring a paced goal preserves its deadline; explicit resume clears it",
 	h.core.scheduler.settled(h.ctx);
 	t.mock.timers.tick(10_000);
 	h.core.scheduler.shutdown();
-	await h.core.loadState(h.ctx);
+	await h.core.focus.load(h.ctx);
 	h.core.scheduler.restore(h.ctx);
 	t.mock.timers.tick(19_999);
 	assert.equal(h.sent.length, 1);
@@ -584,9 +584,9 @@ test("idle pacing excludes waiting time from accounting and respects changed run
 	h.begin(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); h.admit();
 	h.core.scheduler.settled(h.ctx);
 	const before = h.core.state.goal!.usage.activeSeconds;
-	h.core.beginAccounting();
+	h.core.progress.begin();
 	t.mock.timers.tick(20_000);
-	assert.equal(h.core.goalForDisplay()?.usage.activeSeconds, before);
+	assert.equal(h.core.view.goalForDisplay()?.usage.activeSeconds, before);
 	writeProjectSettings(h.cwd, { maxAutonomousRuns: 1 });
 	t.mock.timers.tick(10_000);
 	assert.equal(h.sent.length, 1);
@@ -600,8 +600,8 @@ for (const action of ["pause", "unfocus", "replace", "shutdown"] as const) test(
 	h.begin(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); h.admit();
 	h.core.scheduler.settled(h.ctx);
 	if (action === "pause") h.core.pauseActiveGoal(h.ctx);
-	else if (action === "unfocus") h.core.setFocusedGoalId(null, h.ctx, "unfocused");
-	else if (action === "replace") h.core.replaceGoal({ objective: "Replacement goal", autoContinue: false, sisyphus: false }, h.ctx);
+	else if (action === "unfocus") h.core.focus.setFocus(null, h.ctx, "unfocused");
+	else if (action === "replace") h.core.lifecycle.create({ objective: "Replacement goal", autoContinue: false, sisyphus: false }, h.ctx);
 	else h.core.scheduler.shutdown();
 	t.mock.timers.tick(300_000);
 	assert.equal(h.sent.length, 1);
@@ -961,10 +961,10 @@ test('native retries retain the original run while a replacement waits for its o
 	t.mock.timers.enable({apis:['setTimeout','Date']});
 	const original=h.core.state.goal!.id;
 	h.begin();
-	h.core.replaceGoal({objective:'Replacement work',autoContinue:true,sisyphus:false},h.ctx);
+	h.core.lifecycle.create({objective:'Replacement work',autoContinue:true,sisyphus:false},h.ctx);
 	const replacement=h.core.state.goal!.id;
 	assert.notEqual(replacement,original);
-	h.core.accountProgress(h.ctx,{completedTurnTokens:128});
+	h.core.progress.charge(h.ctx,{completedTurnTokens:128});
 	assert.equal(h.core.state.goal?.usage.tokensUsed,0,'an old run cannot charge the replacement');
 	assert.equal(h.core.accounting.goalId,null,'replacement time starts with its own run');
 	assert.deepEqual(h.core.state.goal?.scheduler?.decision,{kind:'ready',purpose:'kickoff'});
@@ -984,7 +984,7 @@ test('native retries retain the original run while a replacement waits for its o
 test("no automatic continuation is sent while a draft is in progress", async t => {
 	const h = await fixture(t);
 	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
-	h.core.replaceGoal({ objective: "Work automatically", autoContinue: true, sisyphus: false }, h.ctx);
+	h.core.lifecycle.create({ objective: "Work automatically", autoContinue: true, sisyphus: false }, h.ctx);
 	await startGoalDrafting(h.core, h.ctx, "tweak", "Add a constraint", h.core.state.goal!);
 	assert.equal(hasActiveDraft(h.core), true);
 	h.core.scheduler.settled(h.ctx);

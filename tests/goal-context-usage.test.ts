@@ -42,12 +42,12 @@ for (const mode of ["ordinary", "audit", "wait"]) test(`registered context toggl
 		if (mode === "audit") {completion = h.call("update_goal", {status: "complete"}); await started.promise;}
 		if (mode === "wait") {
 			mutateSettingsLayer({scope: "project", cwd: h.cwd, mutation: {op: "set", path: ["strictExecutionContract"], value: true}});
-			h.core.updateFocusedGoal({...h.core.state.goal!, autoContinue: true}, h.ctx);
+			h.core.focus.updateFocused({...h.core.state.goal!, autoContinue: true}, h.ctx);
 			h.core.scheduler.begin(h.ctx);
 			assert.equal(h.core.scheduler.declare(h.ctx, {kind: "wait", reason: "External producer", deadline: new Date(Date.now() + 60000).toISOString()}).terminate, true);
 			assert.equal(h.core.state.goal?.scheduler?.phase, "waiting");
 		}
-		const audit = h.core.activeAudit, animation = h.core.auditAnimationTimer;
+		const audit = h.core.state.activeAudit, animation = h.core.view.auditAnimationTimer;
 		const base = [{role: "user", content: "history", timestamp: 1}];
 		const capture = async () => (await h.event("context_with_system", {messages: base})).messages;
 		const first = await capture();
@@ -68,8 +68,8 @@ for (const mode of ["ordinary", "audit", "wait"]) test(`registered context toggl
 		assert.equal(h.toolInstalls, installs);
 		assert.deepEqual(h.core.state.goal, goal);
 		assert.deepEqual(h.ledger(), ledger);
-		assert.equal(h.core.activeAudit, audit);
-		assert.equal(h.core.auditAnimationTimer, animation);
+		assert.equal(h.core.state.activeAudit, audit);
+		assert.equal(h.core.view.auditAnimationTimer, animation);
 		assert.equal(audit?.controller.signal.aborted ?? false, false);
 		assert.equal(h.sent.length, 0);
 	} finally {pending.resolve({approved: false, output: "More verification needed."}); await completion; await h.cleanup();}
@@ -82,7 +82,7 @@ test("display on/off preserves registered accounting, budgets and compaction sta
 		try {
 			mutateSettingsLayer({scope: "project", cwd: h.cwd, mutation: {op: "set", path: ["showContextUsage"], value: showContextUsage}});
 			await h.start();
-			h.core.updateFocusedGoal({...h.core.state.goal!, tokenBudget: 15}, h.ctx);
+			h.core.focus.updateFocused({...h.core.state.goal!, tokenBudget: 15}, h.ctx);
 			await h.event("before_agent_start", {prompt: "work", systemPrompt: "stable", systemPromptOptions: {}});
 			await h.event("agent_start"); await h.event("turn_start");
 			await h.event("context_with_system", {messages: [{role: "user", content: "work", timestamp: 1}]});

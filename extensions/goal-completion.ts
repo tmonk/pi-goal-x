@@ -11,7 +11,37 @@ import {mergeGoalPromptFromDisk} from "./storage/goal-files.ts";
 import {isStaleExtensionContextError} from "./goal-session-safety.ts";
 import {goalStorageContext} from "./storage/goal-root.ts";
 import {showEscapeDialog} from "./widgets/goal-escape-dialog.ts";
-import type {GoalCore, ActiveGoalAudit} from "./goal-state.ts";
+import type { ActiveGoalAudit } from "./goal-session-state.ts";
+import type {
+	GoalAuditQueue,
+	GoalAuditStateAccess,
+	GoalDependencies,
+	GoalDiskSync,
+	GoalFocusedGoalAccess,
+	GoalModalAccess,
+	GoalOperationGuard,
+	GoalProgressCharge,
+	GoalRecordWriter,
+	GoalRunningGoal,
+	GoalTurnStopMarker,
+	GoalUiRefresh,
+	ServiceSlice,
+} from "./goal-core-types.ts";
+
+/** What the completion flow and its audit read and change. */
+export type GoalCompletionCore = GoalFocusedGoalAccess &
+	GoalOperationGuard &
+	GoalModalAccess &
+	GoalAuditStateAccess &
+	GoalAuditQueue &
+	GoalDependencies &
+	GoalUiRefresh &
+	GoalDiskSync &
+	GoalRunningGoal &
+	GoalTurnStopMarker &
+	GoalRecordWriter &
+	GoalProgressCharge &
+	ServiceSlice<"flushForAudit">;
 
 type CompletionOptions = {
 	goal: GoalRecord;
@@ -22,14 +52,14 @@ type CompletionOptions = {
 };
 
 /** One completion transaction, using current usage and the audited disk revision. */
-function commitCompletion(core: GoalCore, ctx: ExtensionContext, opts: CompletionOptions): AgentToolResult<unknown> {
-	if (!core.isFocusedOperationCurrent(opts.focus)) return core.focusedOperationCancelledResult("Goal completion", opts.focus);
+function commitCompletion(core: GoalCompletionCore, ctx: ExtensionContext, opts: CompletionOptions): AgentToolResult<unknown> {
+	if (!core.state.isTokenCurrent(opts.focus)) return core.state.cancelledResult("Goal completion", opts.focus);
 	core.reconcileFocusedGoalFromDisk(ctx);
 	if (core.state.goal?.revision !== opts.goal.revision) return {
 		content: [{type: "text", text: "Goal completion failed: the goal changed during the audit. Recheck the current requirements and retry."}],
 		details: goalDetails(core.state.goal), terminate: false,
 		};
-	core.accountProgress(ctx);
+	core.progress.charge(ctx);
 	let result;
 	try {
 		result = core.goalService.apply(ctx, {
@@ -48,7 +78,7 @@ function commitCompletion(core: GoalCore, ctx: ExtensionContext, opts: Completio
 }
 
 /** Capture one audit owner; every outcome and callback belongs to that owner. */
-export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContext, completionSummary?: string): Promise<AgentToolResult<unknown>> {
+export async function runGoalCompletionFlow(core: GoalCompletionCore, ctx: ExtensionContext, completionSummary?: string): Promise<AgentToolResult<unknown>> {
 	const flushError = core.goalService.flushForAudit(ctx);
 	if (flushError) return {content: [{type: "text", text: flushError}], details: goalDetails(core.state.goal)};
 	core.reconcileFocusedGoalFromDisk(ctx);
@@ -60,7 +90,7 @@ export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContex
 	if (warning) return {content: [{type: "text", text: warning}], details: goalDetails(core.state.goal)};
 
 	const target = mergeGoalPromptFromDisk(ctx, core.state.goal);
-	const focus = core.focusedOperationToken(target.id);
+	const focus = core.state.focusToken(target.id);
 	const storage = goalStorageContext(ctx);
 	const config = loadGoalSettingsFileConfig(ctx.cwd);
 	const label = config.provider || config.model || config.thinkingLevel
@@ -68,10 +98,10 @@ export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContex
 	const auditId = randomUUID();
 	const append = (event: GoalLedgerEvent) => core.goalService.appendEvents(storage, [event], {immediate: true});
 	const message = (phase: string, text: string, auditor = label) => core.auditMessages.enqueue(ctx, {customType: GOAL_AUDIT_ENTRY, content: text, display: true, details: {phase, goalId: target.id, auditor}});
-	const cancelled = () => core.focusedOperationCancelledResult("Goal completion", focus);
+	const cancelled = () => core.state.cancelledResult("Goal completion", focus);
 	const persistenceError = (): AgentToolResult<unknown> => ({isError: true, content: [{type: "text", text: "The audit outcome could not be persisted. The goal remains open; inspect the storage diagnostic and retry."}], details: goalDetails(core.state.goal), terminate: false});
 	append({type: "completion_requested", goalId: target.id, at: nowIso()});
-	core.activeAudit?.cancel("A newer completion attempt replaced this audit.");
+	core.state.activeAudit?.cancel("A newer completion attempt replaced this audit.");
 
 	const skipReason = target.skipAuditor ? "per-goal auditor disabled" : config.disabled ? "auditor disabled in settings" : undefined;
 	if (skipReason) {
@@ -88,22 +118,22 @@ export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContex
 			settle({type: "audit_result", auditId, goalId: target.id, verdict: "error", report: reason, at: nowIso()});
 		},
 		};
-	const current = () => core.activeAudit === run && core.isFocusedOperationCurrent(focus) && run.phase !== "settled";
+	const current = () => core.state.activeAudit === run && core.state.isTokenCurrent(focus) && run.phase !== "settled";
 	function settle(event: GoalLedgerEvent): boolean {
 		if (run.phase === "settling" || run.phase === "settled") return false;
 		run.phase = "settling";
 		try {return append(event);}
 		finally {
 			run.phase = "settled";
-			if (core.activeAudit === run) {
-				core.activeAudit = null;
-				core.stopAuditAnimation();
-				core.auditProgress = null;
-				core.goalWidgetComponentRef.current?.invalidate();
+			if (core.state.activeAudit === run) {
+				core.state.activeAudit = null;
+				core.view.stopAuditAnimation();
+				core.view.auditProgress = null;
+				core.view.widgetRef.current?.invalidate();
 			}
 		}
 	}
-	core.activeAudit = run;
+	core.state.activeAudit = run;
 	try {
 		if (!append({type: "audit_started", auditId, goalId: target.id, provider: config.provider, model: config.model, thinkingLevel: config.thinkingLevel, at: nowIso()})) {
 			run.cancel("Audit could not start because its ledger entry failed.");
@@ -111,15 +141,15 @@ export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContex
 		}
 		message("started", `Auditor: I am starting the independent completion audit.\nGoal id: ${target.id}\nAuditor model: ${label}`);
 		const startedAt = Date.now();
-		core.clearAuditResult();
-		core.auditProgress = {recentOutput: [], phase: "running", elapsedMs: 0, auditorLabel: label};
-		core.stopAuditAnimation();
-		core.auditAnimationTimer = setInterval(() => {
-			if (!current() || !core.auditProgress) return;
-			core.auditProgress.elapsedMs = Date.now() - startedAt;
-			core.goalWidgetComponentRef.current?.invalidate();
+		core.view.clearAuditResult();
+		core.view.auditProgress = {recentOutput: [], phase: "running", elapsedMs: 0, auditorLabel: label};
+		core.view.stopAuditAnimation();
+		core.view.auditAnimationTimer = setInterval(() => {
+			if (!current() || !core.view.auditProgress) return;
+			core.view.auditProgress.elapsedMs = Date.now() - startedAt;
+			core.view.widgetRef.current?.invalidate();
 		}, 80);
-		core.auditAnimationTimer.unref?.();
+		core.view.auditAnimationTimer.unref?.();
 		const ledger = goalRuntimeEvents(storage, target.id);
 		const tail = latestEventsForGoal(ledger, target.id, 8);
 		const previous = latestSettledAuditorResultForGoal(ledger, target.id);
@@ -129,21 +159,21 @@ export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContex
 		try {
 			auditor = await (core.dependencies.runCompletionAuditor ?? runGoalCompletionAuditor)({ctx, goal: target, detailedSummary: detailedSummary(target), completionSummary: completionSummary?.trim() || undefined, settings, warmContext, signal: run.controller.signal, onProgress: progress => {
 				if (!current() || run.phase !== "running") return;
-				core.auditProgress = {...progress, elapsedMs: Date.now() - startedAt};
-				core.goalWidgetComponentRef.current?.invalidate();
+				core.view.auditProgress = {...progress, elapsedMs: Date.now() - startedAt};
+				core.view.widgetRef.current?.invalidate();
 			}});
 		} catch (error) {auditor = {approved: false, disapproved: false, output: "", error: error instanceof Error ? error.message : String(error)};}
 		if (!current()) return cancelled();
-		core.stopAuditAnimation();
-		core.auditProgress = null;
+		core.view.stopAuditAnimation();
+		core.view.auditProgress = null;
 
 		if (run.controller.signal.aborted || auditor.error === "Auditor aborted.") {
 			run.phase = "awaiting-choice";
 			core.updateUI(ctx);
-			core.enterGoalModal();
+			core.state.enterModal();
 			let choice;
 			try {choice = await showEscapeDialog(ctx, target.objective);}
-			finally {if (current()) core.exitGoalModal();}
+			finally {if (current()) core.state.exitModal();}
 			if (!current()) return cancelled();
 			if (choice === "complete_without_audit") {
 				if (!settle({type: "audit_skipped", auditId, goalId: target.id, reason: "user_aborted", provider: config.provider, model: config.model, thinkingLevel: config.thinkingLevel, at: nowIso()})) return persistenceError();
@@ -156,7 +186,7 @@ export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContex
 		}
 		const verdict = auditor.approved ? "approved" : auditor.error ? "error" : "disapproved";
 		if (!settle({type: "audit_result", auditId, goalId: target.id, verdict, report: auditor.output || auditor.error || "Auditor produced no output.", at: nowIso()})) return persistenceError();
-		core.setAuditResult(verdict, auditor.output || auditor.error || "Auditor produced no output.");
+		core.view.setAuditResult(verdict, auditor.output || auditor.error || "Auditor produced no output.");
 		if (!auditor.approved) {
 			const text = ["Goal audit rejected.", "", "Goal completion rejected by independent auditor.", auditor.model ? `Auditor model: ${auditor.model}${auditor.thinkingLevel ? `:${auditor.thinkingLevel}` : ""}` : undefined, auditor.error ? `Auditor error: ${auditor.error}` : undefined, "", auditor.output || "Auditor produced no approval marker."].filter(line => line !== undefined).join("\n");
 			message("rejected", text, auditor.model);

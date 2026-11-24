@@ -66,7 +66,7 @@ export async function run(baseline) {
 			for (let i = 0; i < 6; i++) {
 				beginFsCount();
 				const t0 = performance.now();
-				await core.loadState(ctx);
+				await core.focus.load(ctx);
 				samples.push(performance.now() - t0);
 				opSamples.push(endFsCount());
 			}
@@ -80,7 +80,7 @@ export async function run(baseline) {
 			for (let i = 0; i < 3; i++) {
 				beginFsCount();
 				const t0 = performance.now();
-				await withLatency(25, () => core.loadState(ctx));
+				await withLatency(25, () => core.focus.load(ctx));
 				latSamples.push(performance.now() - t0);
 				latOps.push(endFsCount());
 			}
