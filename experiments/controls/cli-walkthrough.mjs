@@ -111,6 +111,16 @@ async function controlsWalkthrough(){
   await h.keys(TAB,'Resume',ENTER,ENTER,'\x15','work continue',ENTER);
   await h.saved(c=>c.commands?.['goal-resume'],['work continue']);
   await h.send('\x12');await h.expect('Reloaded keybindings');
+ return {case:'controls-ui',passed:true,sdk:piVersion,directory:path.relative(repository,h.cwd),requests:h.requests().length,checks:['settings-entry','alias','reload','record-key','conflict','scope','inherit','narrow-preview','turn-first','custom-resume-saved']};
+ }finally{await h.stop();}
+}
+
+// The second half starts from the settings the first half ends with (turn-first pausing, F6 to pause
+// and a custom resume command) in the same narrow terminal, so it can run in its own job.
+async function controlsRunWalkthrough(){
+ const h=await boot('controls-run',{pauseOrder:'turn-first',keybindings:{pause:['f6']},commands:{'goal-tweak':['goal-tweak','goal edit'],'goal-resume':['work continue']}});
+ try{
+  await h.resize(20,72);
   await h.send('/goal-direct Create greeting.txt containing exactly Hello from goal followed by a newline. Verify it.\r');
   await until(()=>h.requests().length===1,'first running request');await h.send(F6);
   await until(()=>h.goals()[0]?.scheduler?.phase==='interrupted','turn-only hold persisted');
@@ -129,7 +139,7 @@ async function controlsWalkthrough(){
   await until(()=>fs.existsSync(path.join(h.cwd,'greeting.txt'))&&h.goals().length===0,'custom resume reaches audited completion',20000);
   await h.capture('08-complete');
   assert.equal(fs.readFileSync(path.join(h.cwd,'greeting.txt'),'utf8'),'Hello from goal\n');
-  return {case:'controls-ui',passed:true,sdk:piVersion,directory:path.relative(repository,h.cwd),requests:h.requests().length,checks:['settings-entry','alias','reload','record-key','conflict','scope','inherit','narrow-preview','turn-first','held-time','cancel-edit','custom-resume','audited-completion']};
+  return {case:'controls-run',passed:true,sdk:piVersion,directory:path.relative(repository,h.cwd),requests:h.requests().length,checks:['held-time','cancel-edit','custom-resume','audited-completion']};
  }finally{await h.stop();}
 }
 
@@ -182,7 +192,16 @@ async function settingsPathsWalkthrough(){
   await h.keys(ENTER,ENTER);await h.saved(c=>c.commands,undefined);
   await h.keys('Goal settings',ENTER,DOWN,DOWN,ENTER);await h.saved(c=>c.commands?.['goal-settings'],[]);
   await h.expect('recovery only');await h.capture('settings-recovery');
-  await h.send('\x12');await h.expect('Reloaded keybindings');
+  return {case:'settings-paths',passed:true,sdk:piVersion,directory:path.relative(repository,h.cwd),requests:0,checks:['invalid-command','correct-input','replace','alias','disable','default','reset-back','reset-cancel','reset-commands','settings-recovery']};
+ }finally{await h.stop();}
+}
+
+// The second half starts where the first ends: the settings command disabled (recovery only) in the
+// same narrow terminal. It runs in its own job.
+async function settingsKeysWalkthrough(){
+ const h=await boot('settings-keys',{commands:{'goal-settings':[]}});
+ try{
+  await h.resize(20,72);
   await h.send('/goal-settings controls\r');await h.expect('Goal controls');
   await h.keys('\x1b[F',ENTER,ENTER);await h.saved(c=>c.commands,undefined);
   await h.keys(TAB,'Pause /',ENTER,ENTER,ESC);await h.saved(c=>c.keybindings,undefined);
@@ -205,7 +224,7 @@ async function settingsPathsWalkthrough(){
   await h.keys(ENTER,DOWN,ENTER);await h.saved(c=>c.pauseOrder,undefined);
   await h.capture('pause-inherited');
   assert.equal(h.requests().length,0,'configuration never asks the model');
-  return {case:'settings-paths',passed:true,sdk:piVersion,directory:path.relative(repository,h.cwd),requests:0,checks:['invalid-command','correct-input','replace','alias','disable','default','reset-back','reset-cancel','reset-commands','settings-recovery','capture-cancel','preview-cancel','additional-key','invalid-key','comma-roundtrip','disable-key','default-key','scope','inherit-key','reset-global','saved-pause-selection','inherit-pause','narrow-provenance']};
+  return {case:'settings-keys',passed:true,sdk:piVersion,directory:path.relative(repository,h.cwd),requests:0,checks:['capture-cancel','preview-cancel','additional-key','invalid-key','comma-roundtrip','disable-key','default-key','scope','inherit-key','reset-global','saved-pause-selection','inherit-pause','narrow-provenance']};
  }finally{await h.stop();}
 }
 
@@ -293,7 +312,7 @@ async function foreignFocusWalkthrough(){
 
 // Each case owns its Pi process, provider, sessions and both settings layers.
 // The cases mostly wait on the terminal, so run up to four at once.
-const available=[['controls-ui',controlsWalkthrough],['settings-paths',settingsPathsWalkthrough],['editor-controls',editorWalkthrough],['command-shortcuts',commandShortcutWalkthrough],['together',()=>pauseWalkthrough('together')],['goal-first',()=>pauseWalkthrough('goal-first')],['goal-first-finish',()=>pauseWalkthrough('goal-first',true)],['native-interrupt',nativeInterruptWalkthrough],['dialog-keys',dialogKeysWalkthrough],['answer-editing',answerEditingWalkthrough]];
+const available=[['controls-ui',controlsWalkthrough],['controls-run',controlsRunWalkthrough],['settings-paths',settingsPathsWalkthrough],['settings-keys',settingsKeysWalkthrough],['editor-controls',editorWalkthrough],['command-shortcuts',commandShortcutWalkthrough],['together',()=>pauseWalkthrough('together')],['goal-first',()=>pauseWalkthrough('goal-first')],['goal-first-finish',()=>pauseWalkthrough('goal-first',true)],['native-interrupt',nativeInterruptWalkthrough],['dialog-keys',dialogKeysWalkthrough],['answer-editing',answerEditingWalkthrough]];
 available.push(['foreign-focus',foreignFocusWalkthrough]);
 const requested=process.argv.slice(2);
 assert.ok(requested.every(name=>available.some(([id])=>id===name)),'Unknown walkthrough case');

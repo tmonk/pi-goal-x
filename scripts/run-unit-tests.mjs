@@ -14,6 +14,7 @@ const wantWriteManifest = process.argv.includes("--write-manifest");
 // `--shard=1/2` runs half of the files; CI uses it to spread the suite over jobs.
 const shard = process.argv.find((arg) => arg.startsWith("--shard="))?.slice("--shard=".length);
 if (shard && !/^[1-9]\d*\/[1-9]\d*$/.test(shard)) throw new Error("Bad --shard value: " + shard);
+if (shard && Number(shard.split("/")[0]) > Number(shard.split("/")[1])) throw new Error("Bad --shard value: " + shard);
 
 function discover(directory) {
 	return readdirSync(directory, { withFileTypes: true })
@@ -34,6 +35,28 @@ const testFiles = suite === "integration"
 			// The slow end-to-end files go first so they overlap with the many quick ones.
 			? [...e2eFiles, ...integrationFiles, ...unitFiles]
 			: unitFiles;
+
+// `--shard=1/4` runs a share of the files. Each file gets a rough cost (the two slowest files, then
+// end-to-end, integration and unit files) and goes to the shard with the least work so far, so no
+// shard is left holding all the slow ones. The shards together cover every file exactly once.
+const SLOWEST = ["tests/e2e/goal-session-safety.test.ts", "tests/goal-cache-simulation.test.ts"];
+function shardFiles(files, shardSpec) {
+	if (!shardSpec) return files;
+	const [index, count] = shardSpec.split("/").map(Number);
+	const cost = (file) => {
+		const name = rel(file).slice(2);
+		return SLOWEST.includes(name) ? 8 : name.startsWith("tests/e2e/") ? 3 : name.startsWith("tests/integration/") ? 2 : 1;
+	};
+	const load = new Array(count).fill(0);
+	const mine = [];
+	for (const file of [...files].sort((a, b) => cost(b) - cost(a) || a.localeCompare(b))) {
+		const target = load.indexOf(Math.min(...load));
+		load[target] += cost(file);
+		if (target === index - 1) mine.push(file);
+	}
+	return mine.sort();
+}
+const shardedFiles = shardFiles(testFiles, shard);
 
 if (testFiles.length === 0) {
 	throw new Error("No " + suite + " test files were discovered.");
@@ -89,14 +112,13 @@ const result = spawnSync(
 		"--import", pathToFileURL(join(projectRoot, "scripts", "test-adapter-hooks.mjs")).href,
 		"--experimental-strip-types",
 		"--test",
-		...(shard ? ["--test-shard=" + shard] : []),
-		...testFiles,
+		...shardedFiles,
 	],
 	{ cwd: projectRoot, stdio: "inherit" },
 );
 
 const elapsedMs = Date.now() - startedAt;
-console.log(`[runner] ${testFiles.length} test file(s) discovered; suite finished in ${elapsedMs} ms.`);
+console.log(`[runner] ${shardedFiles.length} of ${testFiles.length} test file(s) run; suite finished in ${elapsedMs} ms.`);
 console.log("[runner] Timings are evidence on this machine, not machine-independent performance promises.");
 
 if (result.error) throw result.error;
