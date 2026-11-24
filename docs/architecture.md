@@ -12,7 +12,13 @@ handlers from their dedicated modules:
 | Module | Responsibility |
 |---|---|
 | `goal.ts` | Thin installer: renderers, core, commands, tools (`registerCoreTools`, `registerTaskTools`, `registerDraftingTools`) and events |
-| `goal-state.ts` | `GoalCore`: all mutable state (pool, focus, audit/UI flags), `GoalService`/`GoalRuntime`/`GoalAccounting` wiring, persistence and reconciliation closures, widget status |
+| `goal-state.ts` | `GoalCore` facade and wiring: builds the services below and the `GoalService`/`GoalRuntime`/`GoalAccounting` |
+| `goal-session-state.ts` | `GoalSessionState`: the pool, focus, revision and per-session flags; no I/O |
+| `goal-view.ts` | `GoalView`: dashboard widget, footer status, audit progress and result cards |
+| `goal-focus.ts` | `GoalFocus`: change focus, drop a goal, restore focus when a session starts |
+| `goal-lifecycle.ts` | `GoalLifecycle`: create, stop, pause, archive, auditor toggle, save |
+| `goal-progress.ts` | `GoalProgress`: charge tokens and time, enter `budget_limited` |
+| `goal-watch.ts` | `GoalWatch`: stall and budget warnings |
 | `goal-core-tools.ts` | `create_goal` / `get_goal` / `update_goal` executors plus the blocked flow |
 | `goal-completion.ts` | The completion transaction: `runGoalCompletionFlow` (audit orchestration) + shared `commitGoalCompletion` |
 | `goal-task-tools.ts` | `set_goal_tasks` / `update_goal_task` executors plus flat parent-linked conversion, id-stable merge, `countTasks` |
