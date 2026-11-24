@@ -3,8 +3,8 @@
 > **Historical document (superseded 2026-08-03).** This records the pre-0.22
 > componentization baseline and intentionally contains removed drafting tools,
 > modules, and commands. It is not current API or test documentation. See
-> [`docs/architecture.md`](architecture.md) and the
-> [2026-08-04 hardening plan](../specs/2026-08-04-goal-simplification-hardening/TECH.md).
+> [`docs/architecture.md`](../../docs/architecture.md) and the
+> [2026-08-04 hardening plan](../2026-08-04-goal-simplification-hardening/TECH.md).
 
 This document records the current safety net for the `pi-goal` componentization work.
 
