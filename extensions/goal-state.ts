@@ -1,68 +1,40 @@
-import { GoalInterruption } from "./goal-interruption.ts";
-import { commandHint, type GoalCommandId, type GoalCommands } from "./goal-controls.ts";
-import * as path from "node:path";
-import { goalStorageContext } from "./storage/goal-root.ts";
-import { type AgentToolResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { FOCUS_ENTRY, STATE_ENTRY, GOAL_EVENT_ENTRY, goalDetails } from "./goal-format.ts";
-import { loadGoalSettings } from "./goal-settings.ts";
-import {
-	ALL_REGISTERED_GOAL_TOOLS,
-	applicableGoalTools,
-} from "./goal-tool-names.ts";
-import { budgetReached } from "./goal-accounting.ts";
-import {
-	asRecord,
-	cloneGoal,
-	createGoal,
-	goalFocusDetails,
-	normalizeGoalFocusEntry,
-	normalizeGoalRecord,
-	nowIso,
-	type GoalCreationConfig,
-	type GoalEventDetails,
-	type GoalFocusEntry,
-	type GoalFocusReason,
-	type GoalRecord,
-	type GoalStatus,
-	type StopReason,
-} from "./goal-record.ts";
-import {
-	mergeGoalPromptFromDisk,
-	readActiveGoalPoolAsync,
-	sanitizeGoalPaths,
-} from "./storage/goal-files.ts";
-import { GoalService } from "./goal-service.ts";
-import { goalActivityEvents } from "./goal-ledger.ts";
+import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { GoalAccounting } from "./goal-accounting.ts";
-import { newGoalScheduler } from "./goal-scheduler-state.ts";
-import { GoalScheduler } from "./goal-scheduler.ts";
+import type { runGoalCompletionAuditor } from "./goal-auditor.ts";
+import type { GoalCommandId, GoalCommands } from "./goal-controls.ts";
+import { GoalFocus } from "./goal-focus.ts";
+import { GOAL_EVENT_ENTRY } from "./goal-format.ts";
+import { GoalInterruption } from "./goal-interruption.ts";
+import { GoalLifecycle } from "./goal-lifecycle.ts";
+import { GoalProgress } from "./goal-progress.ts";
+import type {
+	GoalCreationConfig,
+	GoalEventDetails,
+	GoalFocusReason,
+	GoalRecord,
+	GoalStatus,
+	StopReason,
+} from "./goal-record.ts";
 import { GoalRuntime } from "./goal-runtime.ts";
+import { GoalScheduler } from "./goal-scheduler.ts";
+import { GoalService } from "./goal-service.ts";
 import { GoalAuditMessages } from "./goal-session-safety.ts";
-import {
-	focusedGoalFromPool,
-	openGoalsFromPool,
-	otherOpenGoalCount,
-	resolveSessionFocus,
-} from "./goal-pool.ts";
-import { buildGoalRunningNotification } from "./widgets/goal-notifications.ts";
-import { GOAL_WIDGET_KEY, GoalWidgetComponent, liveDisplayGoal, makeGoalWidgetFactory, type AuditorWidgetProgress } from "./widgets/goal-widget.ts";
+import { GoalSessionState, type ActiveGoalAudit } from "./goal-session-state.ts";
+import { ALL_REGISTERED_GOAL_TOOLS, applicableGoalTools } from "./goal-tool-names.ts";
+import { GoalView, type AuditResultCard } from "./goal-view.ts";
+import { GoalWatch } from "./goal-watch.ts";
 import type { AuditVerdict } from "./widgets/auditor-dashboard-model.ts";
-import { runGoalCompletionAuditor } from "./goal-auditor.ts";
+import type { AuditorWidgetProgress, GoalWidgetComponent } from "./widgets/goal-widget.ts";
 
-
+export type { ActiveGoalAudit };
 
 /**
- * The shared mutable core of the goal extension. All state lives here; the
- * tools/commands/events/widget modules receive this core and operate on it.
- * `state.goal` mirrors the old `state` object: reading returns the focused
- * goal, assigning replaces it in the pool and updates the focus.
+ * What tools, commands, events and widgets use to reach the session. It is a
+ * facade: the state lives in `GoalSessionState`, and each group of behavior
+ * lives in its own service (`GoalFocus`, `GoalLifecycle`, `GoalProgress`,
+ * `GoalView`, `GoalWatch`). `createGoalCore` builds them and wires them together.
+ * `state.goal` reads the focused goal; assigning it replaces the goal in the pool.
  */
-export interface ActiveGoalAudit {
-	controller: AbortController;
-	phase: "running" | "awaiting-choice" | "settling" | "settled";
-	cancel(reason: string): void;
-}
-
 export interface GoalCore {
 	pi: ExtensionAPI;
 	dependencies: { runCompletionAuditor?: typeof runGoalCompletionAuditor };
@@ -77,7 +49,7 @@ export interface GoalCore {
 	auditAnimationTimer: ReturnType<typeof setInterval> | null;
 	activeAudit: ActiveGoalAudit | null;
 	/** §15.4: finished audit result card shown briefly before the dashboard returns. */
-	auditResult: { verdict: AuditVerdict; report: string; at: string } | null;
+	auditResult: AuditResultCard | null;
 	setAuditResult(verdict: AuditVerdict, report: string): void;
 	clearAuditResult(): void;
 	goalModalDepth: number;
@@ -148,77 +120,72 @@ export interface GoalCore {
 	checkStall(ctx: ExtensionContext): string;
 }
 
+/**
+ * Advertises the goal tools. Only the disableTasks setting changes the list;
+ * goal status, focus and drafting never do, so the cached prompt prefix
+ * survives them. Host tools are left alone, and nothing is set when the list is
+ * already right.
+ */
+function installToolProfile(pi: ExtensionAPI, session: GoalSessionState, tasksEnabled: boolean): void {
+	try {
+		const current = new Set(pi.getActiveTools());
+		for (const knownGoalTool of ALL_REGISTERED_GOAL_TOOLS) current.delete(knownGoalTool);
+		for (const goalTool of applicableGoalTools(tasksEnabled)) current.add(goalTool);
+		const next = [...current].sort();
+		const before = [...pi.getActiveTools()].sort();
+		if (next.length !== before.length || next.some((name, index) => name !== before[index])) {
+			pi.setActiveTools([...current]);
+		}
+		// Recorded so the settings menu can tell when disableTasks really changed.
+		session.tasksEnabled = tasksEnabled;
+	} catch (err) {
+		console.error("[pi-goal] installGoalToolProfile error:", err instanceof Error ? err.message : String(err));
+	}
+}
+
 export function createGoalCore(
 	pi: ExtensionAPI,
 	dependencies: { runCompletionAuditor?: typeof runGoalCompletionAuditor } = {},
 ): GoalCore {
-	let goalsById = new Map<string, GoalRecord>();
-	let focusedGoalId: string | null = null;
-	let focusRevision = 0;
-	let hasExplicitSessionFocus = false;
+	const session = new GoalSessionState();
+	const accounting = new GoalAccounting();
 
-	function assignFocusedGoalId(next: string | null): void {
-		if (focusedGoalId !== next) {
-			focusRevision += 1;
-			activeAudit?.cancel("Goal focus changed during completion audit.");
-		}
-		focusedGoalId = next;
-	}
-
-	function focusedOperationToken(goalId: string): { goalId: string; revision: number } {
-		return { goalId, revision: focusRevision };
-	}
-
-	function isFocusedOperationCurrent(token: { goalId: string; revision: number }): boolean {
-		return focusedGoalId === token.goalId && focusRevision === token.revision;
-	}
-
-	function focusedOperationCancelledResult(action: string, token: { goalId: string; revision: number }) {
-		return {
-			content: [{
-				type: "text" as const,
-				text: `${action} cancelled because goal ${token.goalId} is no longer focused in this session. The shared goal was not modified.`,
-			}],
-			details: goalDetails(state.goal),
-			terminate: true,
-		};
-	}
-
-	const state = {
-		get goal(): GoalRecord | null {
-			return focusedGoalFromPool(goalsById, focusedGoalId);
-		},
-		set goal(next: GoalRecord | null) {
-			if (next) {
-				goalsById.set(next.id, next);
-				assignFocusedGoalId(next.id);
-				return;
-			}
-			if (focusedGoalId) goalsById.delete(focusedGoalId);
-			assignFocusedGoalId(null);
-		},
+	// The services need each other, so the ones built later are reached through
+	// these functions, which are only called after everything exists.
+	const clearActiveAccounting = () => accounting.clear();
+	const clearContinuationState = (resetNetworkErrorBackoff = true) => {
+		scheduler?.cancelTimer();
+		runtime.clearContinuationState(resetNetworkErrorBackoff);
 	};
+	const clearStoppedRuntimeState = () => {
+		clearContinuationState();
+		clearActiveAccounting();
+	};
+	const updateUI = (ctx: ExtensionContext) => view.update(ctx);
+	const getCommands = () => core.loadedCommands;
+	const isActionableContinuationGoal = (goalId: string | null | undefined): goalId is string =>
+		!!goalId && session.goal?.id === goalId && session.goal.status === "active" && session.goal.autoContinue && !interruption?.isHeld(goalId);
 
 	/**
-	 * Sole mutation boundary for goal records. All goal-file writes, ledger
-	 * appends, and ordered write→ledger→memory commits route through this
+	 * The one way goal records are written. Every goal-file write, ledger
+	 * append, and ordered write, ledger, memory commit goes through this
 	 * service; handlers keep validation and runtime/UI effects.
 	 */
 	const goalService = new GoalService({
-		getFocused: () => state.goal,
+		getFocused: () => session.goal,
 		setFocused: (goal) => {
-			state.goal = goal;
+			session.goal = goal;
 		},
-		getPool: () => goalsById,
+		getPool: () => session.goalsById,
 		replacePool: (pool) => {
-			goalsById = pool;
+			session.goalsById = pool;
 		},
-		getFocusedGoalId: () => focusedGoalId,
-		assignFocusedGoalId: (goalId) => assignFocusedGoalId(goalId),
-		focusToken: (goalId) => focusedOperationToken(goalId),
-		isTokenCurrent: (token) => isFocusedOperationCurrent(token),
-		appendFocusEntry: (goalId, reason) => appendFocusEntry(goalId, reason),
-		onFocusedGoalLost: (lostGoalId, ctx) => {
+		getFocusedGoalId: () => session.focusedGoalId,
+		assignFocusedGoalId: (goalId) => session.assignFocusedGoalId(goalId),
+		focusToken: (goalId) => session.focusToken(goalId),
+		isTokenCurrent: (token) => session.isTokenCurrent(token),
+		appendFocusEntry: (goalId, reason) => focus.appendEntry(goalId, reason),
+		onFocusedGoalLost: (_lostGoalId, ctx) => {
 			clearStoppedRuntimeState();
 			updateUI(ctx as unknown as ExtensionContext);
 		},
@@ -230,61 +197,12 @@ export function createGoalCore(
 			clearContinuationState();
 			clearActiveAccounting();
 		},
+		// Ledger appends never roll back the state write, but a failure stays visible.
 		onDiagnostic: (diagnostic) => {
-			// Non-fatal failure sink: ledger appends must never roll back the
-			// authoritative state write, but they stay observable.
 			console.warn(`[pi-goal] ${diagnostic.source} diagnostic: ${diagnostic.message}`);
 		},
 	});
-	let runningGoalId: string | null = null;
-	let terminalInputUnsubscribe: (() => void) | null = null;
-	let auditProgress: AuditorWidgetProgress | null = null;
-	let auditAnimationTimer: ReturnType<typeof setInterval> | null = null;
-	let auditResult: { verdict: AuditVerdict; report: string; at: string } | null = null;
-	let auditResultClearTimer: ReturnType<typeof setTimeout> | null = null;
 
-	function setAuditResult(verdict: AuditVerdict, report: string): void {
-		const result = { verdict, report, at: nowIso() };
-		auditResult = result;
-		if (auditResultClearTimer) clearTimeout(auditResultClearTimer);
-		// Short-lived foreground display (§2.5): the card is visible while the
-		// user reads it, then the normal dashboard returns automatically.
-		auditResultClearTimer = setTimeout(() => {
-			if (auditResult !== result) return;
-			auditResult = null;
-			auditResultClearTimer = null;
-			goalWidgetComponentRef.current?.invalidate();
-		}, 6000);
-		auditResultClearTimer.unref?.();
-		goalWidgetComponentRef.current?.invalidate();
-	}
-
-	function clearAuditResult(): void {
-		if (auditResultClearTimer) clearTimeout(auditResultClearTimer);
-		auditResultClearTimer = null;
-		auditResult = null;
-	}
-	let activeAudit: ActiveGoalAudit | null = null;
-	function invalidateSession(): void {
-		focusRevision += 1;
-		activeAudit?.cancel("Session replaced or shut down during completion audit.");
-	}
-
-	let goalModalDepth = 0;
-	// §10: unified dashboard expansion state (compact vs expanded task view),
-	// owned by the core so it survives host-side widget re-instantiation.
-	let dashboardExpanded = false;
-
-	// Per-turn flags reset in turn_start (#4, C9 fix).
-	// goalWorkToolCalledThisTurn: tracks meaningful work attempts for Oracle.
-	// Scheduler idle pacing accumulates activity across the whole logical run.
-	// turn-stop guard, stale checkpoint, continuation scheduling, and one-time
-	// steering reminders live in `runtime` (extensions/goal-runtime.ts);
-	// token/time accounting lives in `accounting` (extensions/goal-accounting.ts).
-	let goalWorkToolCalledThisTurn = false;
-
-	let scheduler: GoalScheduler;
-	let interruption: GoalInterruption;
 	const runtime = new GoalRuntime({
 		authorize: ctx => scheduler.claim(ctx),
 		recover: ctx => scheduler.recover(ctx),
@@ -300,740 +218,145 @@ export function createGoalCore(
 				{ triggerTurn: true, deliverAs: "followUp" },
 			);
 		},
-		getGoal: () => state.goal,
-		isActionable: (goalId) => isActionableContinuationGoal(goalId),
+		getGoal: () => session.goal,
+		isActionable: isActionableContinuationGoal,
 	});
-	const accounting = new GoalAccounting();
 
-	// Whether the task tools are advertised, decided once at session start from
-	// settings (disableTasks). Stage 4 replaces them with the two task tools.
-	let tasksEnabled = true;
-
-	// Transient runtime state: set when the user aborts a running audit via
-	// Escape. No ledger event is appended from the low-level abort callback;
-	// the completion flow appends exactly one canonical event after the
-	// user's dialog choice (follow-up Stage 2).
-
-	/**
-	 * Advertise the goal tools. Only the disableTasks setting changes the list;
-	 * goal status, focus and drafting never do, so the cached prompt prefix
-	 * survives them. Host tools are left alone, and nothing is set when the list
-	 * is already right. tasksEnabled records what was installed so the settings
-	 * menu can tell when disableTasks really changed.
-	 */
-	function installGoalToolProfile(tasksEnabledArg: boolean): void {
-		try {
-			const current = new Set(pi.getActiveTools());
-			for (const knownGoalTool of ALL_REGISTERED_GOAL_TOOLS) current.delete(knownGoalTool);
-			for (const goalTool of applicableGoalTools(tasksEnabledArg)) current.add(goalTool);
-			const next = [...current].sort();
-			const before = [...pi.getActiveTools()].sort();
-			if (next.length !== before.length || next.some((name, index) => name !== before[index])) {
-				pi.setActiveTools([...current]);
-			}
-			tasksEnabled = tasksEnabledArg;
-		} catch (err) {
-			console.error("[pi-goal] installGoalToolProfile error:", err instanceof Error ? err.message : String(err));
-		}
-	}
-
-	function stopAuditAnimation(): void {
-		if (auditAnimationTimer) {
-			clearInterval(auditAnimationTimer);
-			auditAnimationTimer = null;
-		}
-	}
-
-	function abortAudit(_ctx: ExtensionContext): void {
-		if (!activeAudit || activeAudit.phase !== "running") return;
-		activeAudit.phase = "awaiting-choice";
-		activeAudit.controller.abort();
-		stopAuditAnimation();
-		auditProgress = null;
-		goalWidgetComponentRef.current?.invalidate();
-	}
-
-	function clearContinuationTimer(): void {
-		runtime.clearContinuationTimer();
-	}
-
-	function clearContinuationState(resetNetworkErrorBackoff = true): void {
-		scheduler?.cancelTimer();
-		runtime.clearContinuationState(resetNetworkErrorBackoff);
-	}
-
-	function clearActiveAccounting(): void {
-		accounting.clear();
-	}
-
-	function advanceTurnSeq(): void {
-		runtime.advanceTurn();
-	}
-
-	function currentTurnStoppedGoalId(): string | null {
-		return runtime.currentTurnStoppedGoalId();
-	}
-
-	function isActionableContinuationGoal(goalId: string | null | undefined): goalId is string {
-		return !!goalId && state.goal?.id === goalId && state.goal.status === "active" && state.goal.autoContinue && !interruption?.isHeld(goalId);
-	}
-
-	function isStaleCheckpointBlockedToolCall(toolName: string): boolean {
-		return runtime.isStaleCheckpointBlocked(toolName);
-	}
-
-	function clearStoppedRuntimeState(): void {
-		clearContinuationState();
-		clearActiveAccounting();
-	}
-
-	function openGoals(): GoalRecord[] {
-		return openGoalsFromPool(goalsById);
-	}
-
-	function reconcileFocusedGoalFromDisk(ctx: ExtensionContext, opts: { preserveMemoryUsage?: boolean } = {}): boolean {
-		return goalService.reconcileFocused(ctx, opts);
-	}
-
-	let focusStorageRoot: string | undefined;
-	let externalFocusRoot = false;
-	function appendFocusEntry(goalId: string | null, reason: GoalFocusReason): void {
-		hasExplicitSessionFocus = true;
-		pi.appendEntry(FOCUS_ENTRY, { ...goalFocusDetails(goalId, reason), ...(externalFocusRoot ? { storageRoot: focusStorageRoot } : {}) });
-	}
-
-	function setFocusedGoalId(
-		goalId: string | null,
-		ctx: ExtensionContext,
-		reason: GoalFocusReason,
-		opts: { recordLedger?: boolean } = {},
-	): void {
-		const previousGoalId = focusedGoalId;
-		if (previousGoalId !== goalId) { interruption?.reset(); if (ctx.hasUI) ctx.ui.setStatus("goal-interrupt", undefined); scheduler.takeover(ctx); }
-		if (previousGoalId !== goalId) goalService.flushTurn(ctx); // P1-3: persist the old buffer before switching focus
-		assignFocusedGoalId(goalId && goalsById.has(goalId) ? goalId : null);
-		if (previousGoalId !== focusedGoalId) {
-			clearContinuationState();
-			clearActiveAccounting();
-		}
-		appendFocusEntry(focusedGoalId, reason);
-		// Append ledger event for focus changes
-		try {
-			if (opts.recordLedger !== false && focusedGoalId) {
-				goalService.appendEvents(ctx, [{ type: "goal_focused", goalId: focusedGoalId, reason, at: nowIso() }]);
-			} else if (opts.recordLedger !== false && previousGoalId) {
-				goalService.appendEvents(ctx, [{ type: "goal_unfocused", reason, at: nowIso() }]);
-			}
-		} catch {
-			// Ledger append failure should not crash focus change
-		}
-		updateUI(ctx);
-	}
-
-	function updateFocusedGoal(next: GoalRecord, ctx: ExtensionContext, shouldPersist = true): void {
-		goalsById.set(next.id, next);
-		assignFocusedGoalId(next.id);
-		if (shouldPersist) persist(ctx);
-		updateUI(ctx);
-	}
-
-	function armFocusedContinuation(ctx: ExtensionContext): void {
-		beginAccounting();
-		if (state.goal?.status === "active" && state.goal.autoContinue) queueContinuation(ctx, true);
-	}
-
-	function removeFocusedGoal(ctx: ExtensionContext, reason: GoalFocusReason): void {
-		goalService.flushTurn(ctx); // P1-3: persist pending mutations before the goal leaves the session
-		if (focusedGoalId) goalsById.delete(focusedGoalId);
-		assignFocusedGoalId(null);
-		clearStoppedRuntimeState();
-		appendFocusEntry(null, reason);
-		updateUI(ctx);
-	}
-
-	function beginAccounting(): void {
-		if (scheduler?.isDenied() || (runningGoalId && runningGoalId !== state.goal?.id)) { clearActiveAccounting(); return; }
-		if (scheduler?.isWaiting() || interruption?.isHeld()) { clearActiveAccounting(); return; }
-		if (!state.goal || (state.goal.status !== "active")) {
-			clearActiveAccounting();
-			return;
-		}
-		accounting.begin(state.goal.id);
-	}
-
-	function goalForDisplay(): GoalRecord | null {
-		// P1-12: extracted live-usage view.
-		return liveDisplayGoal(state.goal, accounting);
-	}
-
-	function accountProgress(ctx: ExtensionContext, opts: { completedTurnTokens?: number } = {}): void {
-		if (scheduler?.isDenied() || (runningGoalId && runningGoalId !== state.goal?.id)) { clearActiveAccounting(); return; }
-		// Skip disk reconciliation for complete goals — they are pending archival at turn_end.
-		if (state.goal?.activePath && state.goal?.status !== "complete" && !reconcileFocusedGoalFromDisk(ctx, { preserveMemoryUsage: true })) return;
-		if (!state.goal || state.goal.status !== "active" || !accounting.isActiveFor(state.goal.id)) {
-			beginAccounting();
-			return;
-		}
-
-		// Serialized idempotent charge: never double-charges the same interval.
-		const { tokens, seconds } = accounting.charge({ completedTurnTokens: opts.completedTurnTokens });
-		if (tokens === 0 && seconds === 0) return;
-
-		const next = cloneGoal(state.goal);
-		next.usage.tokensUsed += tokens;
-		next.usage.activeSeconds += seconds;
-		next.updatedAt = nowIso();
-		state.goal = next;
-		persist(ctx);
-
-		// One warning per accounting update, even when several thresholds are crossed.
-		const budgetGoal = state.goal;
-		if (budgetGoal && budgetGoal.status === "active" && typeof budgetGoal.tokenBudget === "number" && budgetGoal.tokenBudget > 0 && budgetGoal.usage.tokensUsed > 0) {
-			const pct = budgetGoal.usage.tokensUsed / budgetGoal.tokenBudget;
-			const crossed = [0.5, 0.75, 0.9].filter(threshold => pct >= threshold && !budgetWarningsFired.has(`${budgetGoal.id}:${budgetGoal.tokenBudget}:${threshold}`));
-			for (const threshold of crossed) budgetWarningsFired.add(`${budgetGoal.id}:${budgetGoal.tokenBudget}:${threshold}`);
-			if (crossed.length) {
-				try {
-					goalService.appendEvents(ctx, [{type: "goal_budget_warning", goalId: budgetGoal.id, budget: budgetGoal.tokenBudget, tokensUsed: budgetGoal.usage.tokensUsed, pct: Math.round(pct * 100), at: nowIso()}]);
-				} catch { /* Alert must never crash the turn. */ }
-				ctx.ui.notify(`Token budget ${Math.round(pct * 100)}% used (${budgetGoal.usage.tokensUsed}/${budgetGoal.tokenBudget} tokens). Use ${commandHint("goal-tweak", core.loadedCommands)} to change or remove the budget.`, "warning");
-			}
-		}
-
-		// Token-budget transition: when accounted usage reaches the budget, mark the
-		// goal budget_limited exactly once (status no longer active, so accounting
-		// stops and the transition cannot re-fire), emit the ledger event, arm the
-		// one-time wrap-up steering, and cancel pending continuations.
-		if (budgetGoal && budgetGoal.status === "active" && typeof budgetGoal.tokenBudget === "number" && budgetReached(budgetGoal)) {
-			const transition = goalService.apply(ctx, {
-				reconcile: false,
-				mutate: (g) => ({ ...g, status: "budget_limited" as const, updatedAt: nowIso() }),
-				ledger: (written) => [{
-					type: "goal_budget_limited",
-					goalId: written.id,
-					budget: budgetGoal.tokenBudget ?? 0,
-					tokensUsed: written.usage.tokensUsed,
-					at: written.updatedAt,
-				}],
-			});
-			if (transition.ok) {
-				runtime.armPostBudgetReminder();
-				runtime.clearContinuationState();
-				accounting.clear();
-				updateUI(ctx);
-			}
-		}
-	}
-
-	function syncGoalPromptFromDisk(ctx: ExtensionContext): boolean {
-		if (!state.goal || state.goal.status === "complete") return false;
-		const previousObjective = state.goal.objective;
-		state.goal = mergeGoalPromptFromDisk(ctx, state.goal);
-		return state.goal.objective !== previousObjective;
-	}
-
-	function persist(ctx?: ExtensionContext): void {
-		if (ctx) {
-			goalService.persist(ctx);
-		} else {
-			const current = state.goal;
-			if (current) state.goal = { ...current, updatedAt: nowIso() };
-		}
-		if (ctx) updateUI(ctx);
-	}
-
-	function refreshGoalDisplayFromDisk(ctx: ExtensionContext): void {
-		if (!state.goal || state.goal.status === "complete") return;
-		if (syncGoalPromptFromDisk(ctx)) {
-			state.goal = { ...state.goal, updatedAt: nowIso() };
-		}
-		updateUI(ctx);
-	}
-
-	const goalWidgetComponentRef: { current: GoalWidgetComponent | null } = { current: null };
-	let widgetRegistered = false;
-
-	function clearGoalWidget(ctx: ExtensionContext): void {
-		lastUiCtx = null;
-		widgetRegistered = false;
-		goalWidgetComponentRef.current = null;
-		if (ctx.hasUI) {
-			ctx.ui.setStatus("goal", undefined);
-			ctx.ui.setWidget(GOAL_WIDGET_KEY, undefined);
-		}
-	}
-
-	/**
-	 * Live above-editor widget for the active goal. Inspired by rpiv-todo's
-	 * TodoOverlay: register the widget once with a factory, read live state
-	 * via the closure at render time, and call `tui.requestRender()` on every
-	 * state change so the overlay refreshes without re-registration. Normal pi
-	 * renders still read current values through the closure; do not request
-	 * periodic renders just to tick elapsed time because terminal redraws pull
-	 * users out of scrollback while they review long goals and earlier context.
-	 *
-	 * Layout (sisyphus, running):
-	 *   ◆ Sisyphus  [▰▰▰▱▱] 3/5
-	 *   ├─ ⟡ extract validator … wire it … update tests.
-	 *   ├─ Status: sisyphus running · auto-continue · 14m 21s · 24.3k tokens
-	 *   └─ .pi/goals/active_goal_xxx.md
-	 *
-	 * Layout (paused with blocker):
-	 *   ⊘ Goal paused
-	 *   ├─ ⟡ improve benchmark coverage for the parser
-	 *   ├─ Status: paused (agent) · 2m 14s · 12.4k tokens
-	 *   ├─ Blocker: cannot find the tests directory
-	 *   └─ Suggested: ask the user for the test location
-	 */
-
-	let lastGoalActivityAt = Date.now();
-	let stallNotified = false;
-	const budgetWarningsFired = new Set<string>(); // "goalId:budget:threshold"
-
-	function touchGoalActivity(): void {
-		lastGoalActivityAt = Date.now();
-		stallNotified = false;
-	}
-
-	function checkStall(ctx: ExtensionContext): string {
-		if (!state.goal || state.goal.status !== "active" || !state.goal.autoContinue) return "";
-		const timeoutMinutes = loadGoalSettings(ctx.cwd).stallTimeoutMinutes ?? 0;
-		if (timeoutMinutes <= 0 || stallNotified) return "";
-		const idleMs = Date.now() - lastGoalActivityAt;
-		if (idleMs < timeoutMinutes * 60_000) return "";
-		stallNotified = true;
-		const goalId = state.goal.id;
-		try {
-			goalService.appendEvents(ctx, [{
-				type: "goal_stalled",
-				goalId,
-				reason: `No continuation or tool activity for ${timeoutMinutes} minute${timeoutMinutes === 1 ? "" : "s"}.`,
-				at: nowIso(),
-			}]);
-		} catch {
-			// Stall detection must never crash the turn.
-		}
-		ctx.ui.notify(`Goal stalled: no activity for ${timeoutMinutes} minute${timeoutMinutes === 1 ? "" : "s"}.`, "warning");
-		return `\n\n[GOAL STALLED goalId=${goalId}]\nNo continuation or tool activity for ${timeoutMinutes} minute${timeoutMinutes === 1 ? "" : "s"}. Report your progress or ask the user to pause or resume the goal.`;
-	}
-
-	let uiFlushScheduled = false;
-	let lastUiCtx: ExtensionContext | null = null;
-
-	/**
-	 * P1-9: coalesced widget updates. Multiple updateUI calls within one
-	 * synchronous block (a tool handler typically calls it 2–4 times) collapse
-	 * into a single microtask render; the final turn_end render still shows the
-	 * latest state. The render itself reads live state at flush time.
-	 */
-	function updateUI(ctx: ExtensionContext): void {
-		if (!ctx.hasUI) return;
-		lastUiCtx = ctx;
-		if (uiFlushScheduled) return;
-		uiFlushScheduled = true;
-		queueMicrotask(() => {
-			uiFlushScheduled = false;
-			if (lastUiCtx) renderUI(lastUiCtx);
-		});
-	}
-
-	function renderUI(ctx: ExtensionContext): void {
-		if (!interruption.isHeld()) ctx.ui.setStatus("goal-interrupt", undefined);
-		const totalOpen = otherOpenGoalCount(goalsById, null);
-		if (!state.goal && totalOpen === 0) {
-			clearGoalWidget(ctx);
-			return;
-		}
-		if (!state.goal) {
-			// PR #29: layered hideUnfocusedBanner suppresses BOTH the unfocused
-			// widget and the status hint. Focused dashboards and audit UI are
-			// unaffected; the model-facing [PI GOAL UNFOCUSED] prompt is unchanged.
-			if (loadGoalSettings(ctx.cwd).hideUnfocusedBanner === true) {
-				clearGoalWidget(ctx);
-				return;
-			}
-			ctx.ui.setStatus("goal", `goal: unfocused [${totalOpen} open] - ${commandHint("goal-focus", core.loadedCommands)}`);
-			showGoalWidget(ctx);
-			return;
-		}
-
-		// The goal widget is the single home for goal status: the status line
-		// lives in the compact/expanded dashboard (goal: <label> [<usage>]
-		// (+N open)), so the focused-goal footer segment is cleared — a stale
-		// unfocused hint or earlier status must not linger once a goal is
-		// focused. The unfocused branch above still sets its own hint.
-		ctx.ui.setStatus("goal", undefined);
-		showGoalWidget(ctx);
-	}
-
-	/** Register the widget once; later calls just ask it to re-render. */
-	function showGoalWidget(ctx: ExtensionContext): void {
-		if (!widgetRegistered) {
-			const goalCwd = ctx.cwd;
-			const storage = goalStorageContext(ctx);
-			ctx.ui.setWidget(
-				GOAL_WIDGET_KEY,
-				makeGoalWidgetFactory({
-					getGoal: () => goalForDisplay() ?? state.goal,
-					getOpenGoalCount: () => otherOpenGoalCount(goalsById, null),
-					getAuditorProgress: () => auditProgress,
-					getSettings: () => ({ ...loadGoalSettings(goalCwd), commands: core.loadedCommands }),
-					getStalled: () => stallNotified,
-					getExpanded: () => dashboardExpanded,
-					getLedgerEvents: () => state.goal ? goalActivityEvents(storage, state.goal.id) : [],
-					getAuditResult: () => auditResult,
-					componentRef: goalWidgetComponentRef,
-				}),
-				{ placement: "aboveEditor" },
-			);
-			widgetRegistered = true;
-		} else {
-			goalWidgetComponentRef.current?.update();
-		}
-	}
-
-	async function loadState(ctx: ExtensionContext): Promise<void> {
-		const revision = ++focusRevision;
-		const storage = goalStorageContext(ctx);
-		const entries = ctx.sessionManager.getBranch();
-		const settings = loadGoalSettings(storage.cwd);
-		const pool = await readActiveGoalPoolAsync(storage);
-		if (revision !== focusRevision) return;
-		// The host may invalidate a context while disk I/O is pending.
-		ctx.sessionManager.getSessionId?.();
-		focusStorageRoot = storage.goalStorageRoot;
-		externalFocusRoot = focusStorageRoot !== path.resolve(storage.cwd, ".pi/goals");
-		goalsById = pool;
-		tasksEnabled = !loadGoalSettings(ctx.cwd).disableTasks;
-		assignFocusedGoalId(null);
-		hasExplicitSessionFocus = false;
-		let focusEntry: GoalFocusEntry | null = null;
-		let legacyGoal: GoalRecord | null = null;
-		let legacyStateSeen = false;
-		for (let i = entries.length - 1; i >= 0; i--) {
-			const entry = entries[i] as { type?: string; customType?: string; data?: unknown };
-			if (entry.type !== "custom") continue;
-			if (!focusEntry && entry.customType === FOCUS_ENTRY) {
-				focusEntry = normalizeGoalFocusEntry(entry.data);
-			}
-			if (!legacyStateSeen && entry.customType === STATE_ENTRY) {
-				legacyGoal = normalizeGoalRecord(asRecord(entry.data)?.goal);
-				legacyStateSeen = true;
-			}
-			if (focusEntry && legacyStateSeen) break;
-		}
-		if (legacyGoal && legacyGoal.status !== "complete") {
-			legacyGoal = sanitizeGoalPaths(ctx, mergeGoalPromptFromDisk(ctx, legacyGoal));
-		}
-		if (focusEntry && (focusEntry.storageRoot ?? path.resolve(ctx.cwd, ".pi/goals")) !== focusStorageRoot) {
-			focusEntry = { ...focusEntry, focusedGoalId: null };
-			legacyGoal = null;
-		}
-		if (focusStorageRoot !== path.resolve(ctx.cwd, ".pi/goals")) legacyGoal = null;
-		hasExplicitSessionFocus = focusEntry !== null;
-		assignFocusedGoalId(resolveSessionFocus({ pool: goalsById, focusEntry, legacyGoal, autoSelectSingleGoal: settings.autoSelectSingleGoal }));
-		if (!focusEntry && focusedGoalId) {
-			try {
-				appendFocusEntry(focusedGoalId, legacyGoal?.id === focusedGoalId ? "migrated" : "selected");
-			} catch {}
-		}
-		for (const [id, current] of goalsById) {
-			if (current.status === "complete") {
-				goalsById.delete(id);
-			}
-		}
-		clearStoppedRuntimeState();
-		runningGoalId = null;
-		updateUI(ctx);
-	}
-
-	function setGoal(next: GoalRecord | null, ctx: ExtensionContext, shouldPersist = true, focusReason?: GoalFocusReason): void {
-		const previousGoalId = state.goal?.id ?? null;
-		state.goal = next;
-		const focusChanged = previousGoalId !== focusedGoalId;
-		if (focusChanged) {
-			clearContinuationState();
-			clearActiveAccounting();
-		}
-		if (focusReason && focusChanged) appendFocusEntry(focusedGoalId, focusReason);
-		if (!state.goal || (state.goal.status !== "active") || !state.goal.autoContinue) {
-			clearContinuationState();
-		}
-		if (!state.goal || state.goal.status === "paused" || state.goal.status === "complete") {
-			clearActiveAccounting();
-		}
-		if (shouldPersist) persist(ctx);
-		updateUI(ctx);
-	}
-
-	function archiveCurrentGoal(ctx: ExtensionContext, reason: StopReason | undefined): GoalRecord | null {
-		if (!state.goal) return null;
-		const result = goalService.apply(ctx, {
-			reconcile: false,
-			refreshFromDisk: true,
-			archive: true,
-			commitFocused: false,
-			mutate: (g) => {
-				const status = g.status === "complete" ? "complete" : "paused";
-				return { ...g, status, stopReason: reason };
-			},
-		});
-		return result.ok ? result.goal : null;
-	}
-
-	function stopActiveGoal(status: Exclude<GoalStatus, "active">, reason: StopReason | undefined, ctx: ExtensionContext): void {
-		if (!state.goal) return;
-		const result = goalService.apply(ctx, {
-			reconcile: false,
-			refreshFromDisk: true,
-			mutate: (g) => ({ ...g, status, stopReason: reason, updatedAt: nowIso() }),
-			ledger: (written) => status === "paused"
-				? [{
-					type: "goal_paused",
-					goalId: written.id,
-					reason: reason ?? "unknown",
-					suggestedAction: written.pauseSuggestedAction,
-					status,
-					at: written.updatedAt,
-				}]
-				: [],
-		});
-		if (result.ok) {
-			// setGoal() glue: a stopped goal can no longer queue continuations or
-			// accrue time, and the UI must reflect the new status immediately.
-			clearContinuationState();
-			clearActiveAccounting();
-			goalService.flushTurn(ctx); // P1-3: user-visible status change persists now, not at turn end
-			updateUI(ctx);
-		}
-	}
-
-	function pauseActiveGoal(ctx: ExtensionContext): void {
-		if (!state.goal || state.goal.status !== "active") return;
-		// User-initiated pause (Esc / aborted turn). Clear any stale agent pause reason.
-		state.goal = { ...state.goal, autoContinue: false, pauseReason: undefined, pauseSuggestedAction: undefined };
-		stopActiveGoal("paused", "user", ctx);
-		ctx.ui.notify("Goal paused.", "info");
-	}
-
-	/**
-	 * §auditor-toggle: flip the focused goal's independent-auditor setting.
-	 * Persisted per-goal (revision-safe via goalService.apply), recorded as an
-	 * auditor_toggled ledger event, reflected in the dashboard, and announced.
-	 * Inert when no goal is focused or the goal is complete; the widget's
-	 * modal-depth guard keeps it inert while a goal modal is open.
-	 */
-	function toggleGoalAuditor(ctx: ExtensionContext): void {
-		if (!state.goal) {
-			ctx.ui.notify("No focused goal to toggle the auditor for.", "info");
-			return;
-		}
-		if (state.goal.status === "complete") {
-			ctx.ui.notify("This goal is complete; the auditor no longer applies.", "info");
-			return;
-		}
-		const nextEnabled = state.goal.skipAuditor === true;
-		const result = goalService.apply(ctx, {
-			reconcile: false,
-			refreshFromDisk: true,
-			mutate: (g) => ({ ...g, skipAuditor: g.skipAuditor === true ? undefined : true, updatedAt: nowIso() }),
-			ledger: (written) => [{ type: "auditor_toggled" as const, goalId: written.id, enabled: nextEnabled, at: written.updatedAt }],
-		});
-		if (!result.ok) {
-			ctx.ui.notify("Could not toggle the auditor: " + result.message, "error");
-			return;
-		}
-		goalService.flushTurn(ctx); // P1-3: user-visible setting change persists now, not at turn end
-		updateUI(ctx);
-		ctx.ui.notify(nextEnabled ? "Auditor enabled for this goal." : "Auditor disabled for this goal.", "info");
-	}
-
-	function flushGoalTransaction(ctx: ExtensionContext): void {
-		goalService.flushTurn(ctx);
-	}
-
-	function queueContinuation(ctx: ExtensionContext, force = false): void {
-		void force;
-		scheduler.schedule(ctx);
-	}
-
-	function enterGoalModal(): void {
-		goalModalDepth++;
-	}
-
-	function exitGoalModal(): void {
-		goalModalDepth = Math.max(0, goalModalDepth - 1);
-	}
-
-	function replaceGoal(config: GoalCreationConfig, ctx: ExtensionContext, startNow = true, verificationContract?: string, tokenBudget?: number): void {
-		const goal = createGoal(config);
-		goal.scheduler = newGoalScheduler(ctx.sessionManager.getSessionId());
-		if (verificationContract) goal.verificationContract = verificationContract;
-		if (config.taskList) goal.taskList = config.taskList;
-		if (typeof tokenBudget === "number" && tokenBudget > 0) goal.tokenBudget = Math.floor(tokenBudget);
-		const result = goalService.create(ctx, {
-			goal,
-		ledger: [
-			{
-				type: "goal_created",
-				goalId: goal.id,
-				objective: goal.objective,
-				sisyphus: goal.sisyphus,
-				autoContinue: goal.autoContinue,
-				at: goal.createdAt,
-			},
-			...(goal.taskList ? [{
-				type: "task_list_set" as const,
-				goalId: goal.id,
-				taskCount: goal.taskList.tasks.length,
-				blockCompletion: goal.taskList.blockCompletion,
-				at: goal.createdAt,
-			}] : []),
-		],
-		});
-		if (result.focusChanged) appendFocusEntry(result.goalId, "created");
-		beginAccounting();
-		ctx.ui.notify(`${buildGoalRunningNotification(config)}\nBudget: ${goal.tokenBudget === undefined ? "none" : `${goal.tokenBudget} tokens`}`, "info");
-		if (startNow && state.goal?.autoContinue) scheduler.kickoff(ctx);
-	}
+	const watch = new GoalWatch({ session, goalService, getCommands });
+	const view = new GoalView({
+		session,
+		accounting,
+		isInterruptionHeld: () => interruption.isHeld(),
+		getCommands,
+		isStalled: () => watch.isStalled(),
+	});
+	const progress = new GoalProgress({
+		session,
+		accounting,
+		runtime,
+		goalService,
+		watch,
+		scheduler: () => scheduler,
+		interruption: () => interruption,
+		persist: ctx => lifecycle.persist(ctx),
+		updateUI,
+	});
+	const focus: GoalFocus = new GoalFocus({
+		pi,
+		session,
+		goalService,
+		interruption: () => interruption,
+		scheduler: () => scheduler,
+		persist: ctx => lifecycle.persist(ctx),
+		updateUI,
+		clearContinuationState,
+		clearActiveAccounting,
+		clearStoppedRuntimeState,
+	});
+	const lifecycle: GoalLifecycle = new GoalLifecycle({
+		session,
+		goalService,
+		focus: () => focus,
+		progress: () => progress,
+		scheduler: () => scheduler,
+		updateUI,
+		clearContinuationState,
+		clearActiveAccounting,
+	});
 
 	const core: GoalCore = {
 		pi,
 		dependencies,
-		state,
+		state: session,
 		sessionOwner: null,
-		get goalsById() {
-			return goalsById;
-		},
-		get focusedGoalId() {
-			return focusedGoalId;
-		},
-		get focusRevision() {
-			return focusRevision;
-		},
-		get hasExplicitSessionFocus() {
-			return hasExplicitSessionFocus;
-		},
-		set hasExplicitSessionFocus(value: boolean) {
-			hasExplicitSessionFocus = value;
-		},
-		get runningGoalId() {
-			return runningGoalId;
-		},
-		set runningGoalId(value: string | null) {
-			runningGoalId = value;
-		},
-		get auditProgress() {
-			return auditProgress;
-		},
-		set auditProgress(value: AuditorWidgetProgress | null) {
-			auditProgress = value;
-		},
-		get auditResult() {
-			return auditResult;
-		},
-		set auditResult(value: { verdict: AuditVerdict; report: string; at: string } | null) {
-			auditResult = value;
-		},
-		setAuditResult,
-		clearAuditResult,
-		get auditAnimationTimer() {
-			return auditAnimationTimer;
-		},
-		set auditAnimationTimer(value: ReturnType<typeof setInterval> | null) {
-			auditAnimationTimer = value;
-		},
-		get activeAudit() {
-			return activeAudit;
-		},
-		set activeAudit(value: ActiveGoalAudit | null) {
-			activeAudit = value;
-		},
-		get goalModalDepth() {
-			return goalModalDepth;
-		},
-		set goalModalDepth(value: number) {
-			goalModalDepth = value;
-		},
-		invalidateSession,
-
-		get goalWorkToolCalledThisTurn() {
-			return goalWorkToolCalledThisTurn;
-		},
-		set goalWorkToolCalledThisTurn(value: boolean) {
-			goalWorkToolCalledThisTurn = value;
-		},
-		get tasksEnabled() {
-			return tasksEnabled;
-		},
-		set tasksEnabled(value: boolean) {
-			tasksEnabled = value;
-		},
-		get terminalInputUnsubscribe() {
-			return terminalInputUnsubscribe;
-		},
-		set terminalInputUnsubscribe(value: (() => void) | null) {
-			terminalInputUnsubscribe = value;
-		},
-		toggleDashboardExpanded() {
-			dashboardExpanded = !dashboardExpanded;
-			goalWidgetComponentRef.current?.invalidate();
-		},
-		isDashboardExpanded() {
-			return dashboardExpanded;
-		},
-		goalWidgetComponentRef,
+		get goalsById() { return session.goalsById; },
+		get focusedGoalId() { return session.focusedGoalId; },
+		get focusRevision() { return session.focusRevision; },
+		get hasExplicitSessionFocus() { return session.hasExplicitSessionFocus; },
+		set hasExplicitSessionFocus(value: boolean) { session.hasExplicitSessionFocus = value; },
+		get runningGoalId() { return session.runningGoalId; },
+		set runningGoalId(value: string | null) { session.runningGoalId = value; },
+		get goalModalDepth() { return session.goalModalDepth; },
+		set goalModalDepth(value: number) { session.goalModalDepth = value; },
+		get goalWorkToolCalledThisTurn() { return session.goalWorkToolCalledThisTurn; },
+		set goalWorkToolCalledThisTurn(value: boolean) { session.goalWorkToolCalledThisTurn = value; },
+		get tasksEnabled() { return session.tasksEnabled; },
+		set tasksEnabled(value: boolean) { session.tasksEnabled = value; },
+		get activeAudit() { return session.activeAudit; },
+		set activeAudit(value: ActiveGoalAudit | null) { session.activeAudit = value; },
+		get auditProgress() { return view.auditProgress; },
+		set auditProgress(value: AuditorWidgetProgress | null) { view.auditProgress = value; },
+		get auditResult() { return view.auditResult; },
+		set auditResult(value: AuditResultCard | null) { view.auditResult = value; },
+		get auditAnimationTimer() { return view.auditAnimationTimer; },
+		set auditAnimationTimer(value: ReturnType<typeof setInterval> | null) { view.auditAnimationTimer = value; },
+		terminalInputUnsubscribe: null,
+		goalWidgetComponentRef: view.widgetRef,
 		goalService,
 		runtime,
 		get scheduler() { return scheduler; },
 		get interruption() { return interruption; },
 		auditMessages: new GoalAuditMessages(),
 		accounting,
-		assignFocusedGoalId,
-		focusedOperationToken,
-		isFocusedOperationCurrent,
-		focusedOperationCancelledResult,
-		installGoalToolProfile,
-		stopAuditAnimation,
-		abortAudit,
-		clearContinuationTimer,
+
+		assignFocusedGoalId: next => session.assignFocusedGoalId(next),
+		focusedOperationToken: goalId => session.focusToken(goalId),
+		isFocusedOperationCurrent: token => session.isTokenCurrent(token),
+		focusedOperationCancelledResult: (action, token) => session.cancelledResult(action, token),
+		invalidateSession: () => session.invalidate(),
+		enterGoalModal: () => session.enterModal(),
+		exitGoalModal: () => session.exitModal(),
+		openGoals: () => session.openGoals(),
+		installGoalToolProfile: tasksEnabled => installToolProfile(pi, session, tasksEnabled),
+
+		setAuditResult: (verdict, report) => view.setAuditResult(verdict, report),
+		clearAuditResult: () => view.clearAuditResult(),
+		stopAuditAnimation: () => view.stopAuditAnimation(),
+		abortAudit: () => view.abortAudit(),
+		toggleDashboardExpanded: () => view.toggleDashboardExpanded(),
+		isDashboardExpanded: () => view.isDashboardExpanded(),
+		goalForDisplay: () => view.goalForDisplay(),
+		updateUI,
+		clearGoalWidget: ctx => view.clear(ctx),
+
+		clearContinuationTimer: () => runtime.clearContinuationTimer(),
 		clearContinuationState,
 		clearActiveAccounting,
-		advanceTurnSeq,
-		currentTurnStoppedGoalId,
-		isActionableContinuationGoal,
-		isStaleCheckpointBlockedToolCall,
 		clearStoppedRuntimeState,
-		enterGoalModal,
-		exitGoalModal,
-		openGoals,
-		reconcileFocusedGoalFromDisk,
-		appendFocusEntry,
-		setFocusedGoalId,
-		updateFocusedGoal,
-		armFocusedContinuation,
-		removeFocusedGoal,
-		beginAccounting,
-		goalForDisplay,
-		accountProgress,
-		syncGoalPromptFromDisk,
-		persist,
-		refreshGoalDisplayFromDisk,
-		updateUI,
-		clearGoalWidget,
-		loadState,
-		setGoal,
-		archiveCurrentGoal,
-		stopActiveGoal,
-		pauseActiveGoal,
-		toggleGoalAuditor,
-		queueContinuation,
-		flushGoalTransaction,
-		touchGoalActivity,
-		checkStall,
-		replaceGoal,
+		advanceTurnSeq: () => runtime.advanceTurn(),
+		currentTurnStoppedGoalId: () => runtime.currentTurnStoppedGoalId(),
+		isActionableContinuationGoal,
+		isStaleCheckpointBlockedToolCall: toolName => runtime.isStaleCheckpointBlocked(toolName),
+		queueContinuation: ctx => scheduler.schedule(ctx),
+		armFocusedContinuation: ctx => {
+			progress.begin();
+			if (session.goal?.status === "active" && session.goal.autoContinue) scheduler.schedule(ctx);
+		},
+
+		appendFocusEntry: (goalId, reason) => focus.appendEntry(goalId, reason),
+		setFocusedGoalId: (goalId, ctx, reason, opts) => focus.setFocus(goalId, ctx, reason, opts),
+		updateFocusedGoal: (next, ctx, shouldPersist) => focus.updateFocused(next, ctx, shouldPersist),
+		removeFocusedGoal: (ctx, reason) => focus.removeFocused(ctx, reason),
+		setGoal: (next, ctx, shouldPersist, focusReason) => focus.setGoal(next, ctx, shouldPersist, focusReason),
+		loadState: ctx => focus.load(ctx),
+
+		reconcileFocusedGoalFromDisk: (ctx, opts) => goalService.reconcileFocused(ctx, opts),
+		syncGoalPromptFromDisk: ctx => lifecycle.syncPromptFromDisk(ctx),
+		refreshGoalDisplayFromDisk: ctx => lifecycle.refreshDisplayFromDisk(ctx),
+		persist: ctx => lifecycle.persist(ctx),
+		flushGoalTransaction: ctx => goalService.flushTurn(ctx),
+		replaceGoal: (config, ctx, startNow, verificationContract, tokenBudget) => lifecycle.create(config, ctx, startNow, verificationContract, tokenBudget),
+		archiveCurrentGoal: (ctx, reason) => lifecycle.archive(ctx, reason),
+		stopActiveGoal: (status, reason, ctx) => lifecycle.stop(status, reason, ctx),
+		pauseActiveGoal: ctx => lifecycle.pause(ctx),
+		toggleGoalAuditor: ctx => lifecycle.toggleAuditor(ctx),
+
+		beginAccounting: () => progress.begin(),
+		accountProgress: (ctx, opts) => progress.charge(ctx, opts),
+		touchGoalActivity: () => watch.touchActivity(),
+		checkStall: ctx => watch.checkStall(ctx),
 	};
-	interruption = new GoalInterruption(core);
-	scheduler = new GoalScheduler(core);
+	const interruption: GoalInterruption = new GoalInterruption(core);
+	const scheduler: GoalScheduler = new GoalScheduler(core);
 	return core;
 }
