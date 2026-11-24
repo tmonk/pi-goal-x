@@ -1,13 +1,12 @@
-import type { GoalLedgerEvent } from "./goal-ledger.ts";
+import type { GoalAuditEvent, GoalLedgerEvent } from "./goal-ledger-events.ts";
 import type { OracleConsultState } from "./goal-oracle.ts";
 import { isActivityEvent, sameActivityEvent } from "./goal-activity.ts";
 
-/** Bounded working set per goal; complete history remains in the JSONL ledger. */
-type GoalAuditEvent = Extract<GoalLedgerEvent, {type: "audit_started" | "audit_result" | "audit_skipped"}>;
 export function auditApplies(latestId: string | undefined, event: GoalAuditEvent): boolean {
 	return event.type === "audit_started" || (event.type === "audit_skipped" && event.reason === "disabled") || latestId === undefined || event.auditId === latestId;
 }
 
+/** Bounded working set per goal; complete history remains in the JSONL ledger. */
 export interface GoalLedgerIndex {
 	recent: GoalLedgerEvent[];
 	activity: GoalLedgerEvent[];
