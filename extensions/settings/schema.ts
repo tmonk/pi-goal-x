@@ -89,6 +89,8 @@ export interface GoalSettingsLayer {
 	provider?: string;
 	model?: string;
 	thinkingLevel?: ThinkingLevel;
+	/** Language for text shown in the UI, such as "zh-CN". Absent means English. */
+	locale?: string;
 	disabled?: boolean;
 	autoSelectSingleGoal?: boolean;
 	/** E3: load the project's own skills/extensions into auditor sessions (off by default = isolation). */
@@ -400,6 +402,7 @@ export function parseSettingsLayer(
 				break;
 			}
 			case "goalsRoot":
+			case "locale":
 			case "provider":
 			case "model": {
 				const parsed = asNonEmptyString(value);

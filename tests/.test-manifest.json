@@ -83,6 +83,7 @@
     "./tests/goal-update-objective.test.ts",
     "./tests/goal-widget-lifetime.test.ts",
     "./tests/goal-widget.test.ts",
+    "./tests/i18n.test.ts",
     "./tests/network-error-backoff.test.ts",
     "./tests/no-status-refresh-timer.test.ts",
     "./tests/overflow-regression.test.ts",

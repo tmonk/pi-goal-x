@@ -20,6 +20,7 @@ import { invalidateGoalLedgerCache, type GoalLedgerEvent } from "./goal-ledger.t
 import { shouldArmPostCompactReminder } from "./goal-policy.ts";
 import { invalidateGoalSettingsCache } from "./settings/files.ts";
 import { loadGoalSettings } from "./settings/resolve.ts";
+import { configureLocale } from "./i18n/locales.ts";
 import { asRecord, nowIso, type AssistantMessageLike, type GoalRecord } from "./goal-record.ts";
 import { goalSelectorLabel, otherOpenGoalCount } from "./goal-pool.ts";
 import { invalidateGoalPoolCache } from "./storage/goal-files.ts";
@@ -389,6 +390,7 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 
 	async function startSession(event: {reason?: string}, ctx: ExtensionContext): Promise<void> {
 		teardown(ctx);
+		configureLocale(loadGoalSettings(ctx.cwd).locale);
 		try {
 			const owner: SessionOwner = {ctx, manager: ctx.sessionManager, storage: goalStorageContext(ctx), keys: new Set()};
 			session = owner;
