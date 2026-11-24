@@ -1,3 +1,5 @@
+import { t } from "./i18n/index.ts";
+
 
 /**
  * Bound a custom dialog using the regular renderer's frame cache when
@@ -66,7 +68,8 @@ export function findProposalPresentationSegments(lines: string[], tailStart: num
 	// so pull the tail start back to it when present.
 	let effectiveTail = tailStart;
 	for (let i = tailStart - 1; i > tasksEnd; i--) {
-		if (/Auditor (enabled|disabled).*to toggle/.test(stripAnsiCodes(lines[i]!))) {
+		// The toggle line is "● <label>  (press ...)"; its words are translated, so match the bullet.
+		if (/^\s*[●○] /.test(stripAnsiCodes(lines[i]!))) {
 			effectiveTail = i;
 			break;
 		}
@@ -170,7 +173,7 @@ function fitDialogViewport(
 	const hiddenBelow = contentEnd - (s + contentWindow);
 	const viewport = lines.slice(s, s + contentWindow);
 	if (hiddenAbove > 0 && viewport.length > 0) {
-		viewport[0] = dimStyle(`▲ ${hiddenAbove} more`);
+		viewport[0] = dimStyle(t("▲ {count} more", { count: hiddenAbove }));
 	}
 	if (hiddenBelow > 0) {
 		// The reserved bottom edge row advertises the scroll affordance — it
@@ -178,7 +181,7 @@ function fitDialogViewport(
 		// dashboard's `… +N more task` rows) and gives way to the border at the
 		// end. The footer hint sits directly above the border, so it is only
 		// visible when the end is reached (never while clipped — geometry).
-		viewport.push(dimStyle(`… +${hiddenBelow} more · ${scrollHint} scroll`));
+		viewport.push(dimStyle(t("… +{count} more · {hint} scroll", { count: hiddenBelow, hint: scrollHint })));
 	} else {
 		viewport.push(lines[lines.length - 1]!);
 	}

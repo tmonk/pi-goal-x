@@ -52,6 +52,7 @@ import { activeDraft, clearGoalDrafting, setActiveDraft, type ActiveGoalDraft } 
 import { convertFlatTasks, countTasks, mergeTasksWithExisting, taskTreeSchema, type FlatTaskInput } from "./goal-task-tree.ts";
 import { dropKey } from "./goal-tool-inputs.ts";
 import { PROPOSE_DRAFT_TOOL_NAME, QUESTIONNAIRE_TOOL_NAME } from "./goal-tool-names.ts";
+import { t } from "./i18n/index.ts";
 
 function proposedTaskList(core: DraftingToolsCore, ctx: ExtensionContext, tasks: FlatTaskInput[] | undefined, blockCompletion: boolean | undefined): { ok: true; value?: GoalTaskList } | { ok: false; message: string } {
 	if (tasks === undefined) return { ok: true };
@@ -306,23 +307,23 @@ function renderProposalCall(core: DraftingToolsCore, args: { objective?: unknown
 	// path persists (extracted).
 	let taskBlock: { header: string; lines: string[] } | null = null;
 	if (flatTasks.length > 0) {
-		taskBlock = { header: "Tasks proposed for confirmation:", lines: flatTasks.map((t) => `[ ] ${t.id}: ${t.title}`) };
+		taskBlock = { header: t("Tasks proposed for confirmation:"), lines: flatTasks.map((task) => `[ ] ${task.id}: ${task.title}`) };
 	} else if (activeDraft(core)?.mode === "tweak") {
 		const retained = core.state.goal?.taskList?.tasks;
 		if (retained && retained.length > 0) {
-			taskBlock = { header: "Current task list (retained unchanged):", lines: renderConfirmationTasks(retained, 0) };
+			taskBlock = { header: t("Current task list (retained unchanged):"), lines: renderConfirmationTasks(retained, 0) };
 		}
 	} else {
 		const derived = deriveTasksFromObjective(extractVerificationContract(objective).objective) ?? [];
 		if (derived.length > 0) {
-			taskBlock = { header: "Tasks derived from the objective (confirm or ask the agent to adjust):", lines: renderConfirmationTasks(derived, 0) };
+			taskBlock = { header: t("Tasks derived from the objective (confirm or ask the agent to adjust):"), lines: renderConfirmationTasks(derived, 0) };
 		}
 	}
 	if (taskBlock) {
 		text += "\n\n" + theme.fg("toolTitle", theme.bold(taskBlock.header)) + "\n" + theme.fg("toolOutput", taskBlock.lines.join("\n"));
 	}
-	if (args?.auto_continue === false) text += "\n\n" + theme.fg("muted", "Automatic continuation: disabled");
-	if (args?.block_completion === true) text += "\n\n" + theme.fg("muted", "Block completion on pending tasks: enabled");
+	if (args?.auto_continue === false) text += "\n\n" + theme.fg("muted", t("Automatic continuation: disabled"));
+	if (args?.block_completion === true) text += "\n\n" + theme.fg("muted", t("Block completion on pending tasks: enabled"));
 	return new Text(text, 0, 0);
 }
 
