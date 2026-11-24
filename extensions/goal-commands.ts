@@ -1,14 +1,11 @@
 import { GOAL_COMMANDS, commandHint, commandPaths, commandProblems, commandRoutes, matchCommandRoute, type GoalCommandId } from "./goal-controls.ts";
 import { showGoalControls } from "./widgets/goal-controls-dialog.ts";
+import { handleSettingsMenu } from "./goal-settings-menu.ts";
 import { goalStoragePath, goalStorageRoot } from "./storage/goal-root.ts";
 import { existsSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { extractVerificationContract, sisyphusObjectiveSufficient } from "./goal-contract.ts";
 import { detailedSummary, oneLineSummary } from "./goal-format.ts";
-import { type GoalSettings, type SettingsScope } from "./settings/schema.ts";
-import { goalSettingsPath, goalGlobalSettingsPath } from "./settings/files.ts";
-import { loadGoalSettings, loadSettingsSnapshot, envOverrideFor } from "./settings/resolve.ts";
-import { mutateSettingsLayer, type SettingsMutation } from "./settings/mutate.ts";
 import {
 	buildGoalListText,
 	buildUnfocusedOpenGoalsSummary,
@@ -19,12 +16,13 @@ import { clearGoalCommandMessage } from "./goal-policy.ts";
 import { invalidateGoalLedgerCache, readGoalLedger } from "./goal-ledger.ts";
 import { buildGoalStatusText } from "./goal-status.ts";
 import { invalidateGoalSettingsCache, loadGoalSettingsFileConfig } from "./settings/files.ts";
-import { effectiveSettingsReport } from "./settings/resolve.ts";
+import { loadGoalSettings, effectiveSettingsReport } from "./settings/resolve.ts";
 import { invalidateGoalPoolCache, readActiveGoalPool } from "./storage/goal-files.ts";
 import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
 import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "./goal-drafting.ts";
 import { formatRecoveryReport, runRecoveryReport, runRecoveryRepair } from "./goal-recovery.ts";
 import { formatCheckpointHealthReport, readSessionCheckpointHealth } from "./goal-session-health.ts";
+import type { GoalCore } from "./goal-state.ts";
 
 export interface GoalRefreshState {
 	poolIds: Iterable<string>;
@@ -57,16 +55,6 @@ export function diffGoalRefreshState(before: GoalRefreshState, after: GoalRefres
 	}
 	return changes;
 }
-import {
-	AUDITOR_THINKING_LEVELS,
-	buildAuditorModelChoices,
-	configuredAuditorModelKey,
-	filterAuditorModelChoices,
-	parseManualAuditorModel,
-	thinkingLevelChoices,
-	type AuditorChoice,
-} from "./auditor-selector.ts";
-import type { GoalCore } from "./goal-state.ts";
 
 function sessionFileOf(ctx: ExtensionContext): string | undefined {
 	return (ctx.sessionManager as { getSessionFile?: () => string | undefined } | undefined)?.getSessionFile?.();
@@ -83,6 +71,25 @@ export function registerGoalCommands(core: GoalCore): void {
 	const actions = new Map<GoalCommandId, Definition>();
 	const define = (id: GoalCommandId, definition: Definition): void => { actions.set(id, definition); };
 
+	/** Ask the user to pick one of `open`; `onPicked` runs while the modal is still open. False when they decline. */
+	async function pickOpenGoal(ctx: ExtensionContext, title: string, open: GoalRecord[], onPicked: (goalId: string) => void): Promise<boolean> {
+		const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
+		const byLabel = new Map(labels.map((label, index) => [label, open[index]?.id]));
+		core.enterGoalModal();
+		try {
+			const selected = await ctx.ui.select(title, labels);
+			const selectedId = selected ? byLabel.get(selected) : undefined;
+			if (!selectedId) {
+				ctx.ui.notify("Goal focus unchanged.", "info");
+				return false;
+			}
+			onPicked(selectedId);
+			return true;
+		} finally {
+			core.exitGoalModal();
+		}
+	}
+
 	async function chooseOpenGoal(ctx: ExtensionContext, title: string): Promise<GoalRecord | null> {
 		core.reconcileFocusedGoalFromDisk(ctx);
 		if (core.state.goal && core.state.goal.status !== "complete") return core.state.goal;
@@ -98,21 +105,19 @@ export function registerGoalCommands(core: GoalCore): void {
 			ctx.ui.notify(buildUnfocusedOpenGoalsSummary(open.length), "warning");
 			return null;
 		}
-		const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
-		const byLabel = new Map(labels.map((label, index) => [label, open[index]?.id]));
-		core.enterGoalModal();
-		try {
-			const selected = await ctx.ui.select(title, labels);
-			const selectedId = selected ? byLabel.get(selected) : undefined;
-			if (!selectedId) {
-				ctx.ui.notify("Goal focus unchanged.", "info");
-				return null;
-			}
-			core.setFocusedGoalId(selectedId, ctx, "selected");
-			return core.state.goal;
-		} finally {
-			core.exitGoalModal();
-		}
+		const picked = await pickOpenGoal(ctx, title, open, (goalId) => core.setFocusedGoalId(goalId, ctx, "selected"));
+		return picked ? core.state.goal : null;
+	}
+
+	/**
+	 * When no goal is focused but open goals exist, let the user pick one.
+	 * "cancelled" means they declined; "none" means there is nothing to pick;
+	 * "ready" leaves `core.state.goal` as the command should act on it.
+	 */
+	async function pickWhenUnfocused(ctx: ExtensionContext, title: string): Promise<"ready" | "cancelled" | "none"> {
+		if (core.state.goal) return "ready";
+		if (otherOpenGoalCount(core.goalsById, null) === 0) return "none";
+		return (await chooseOpenGoal(ctx, title)) ? "ready" : "cancelled";
 	}
 
 	async function focusGoalCommand(ctx: ExtensionContext): Promise<void> {
@@ -133,22 +138,11 @@ export function registerGoalCommands(core: GoalCore): void {
 			ctx.ui.notify(buildGoalListText(core.goalsById, core.focusedGoalId), "info");
 			return;
 		}
-		const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
-		const byLabel = new Map(labels.map((label, index) => [label, open[index]?.id]));
-		core.enterGoalModal();
-		try {
-			const selected = await ctx.ui.select("Focus open goal", labels);
-			const selectedId = selected ? byLabel.get(selected) : undefined;
-			if (!selectedId) {
-				ctx.ui.notify("Goal focus unchanged.", "info");
-				return;
-			}
-			core.setFocusedGoalId(selectedId, ctx, "selected");
+		const picked = await pickOpenGoal(ctx, "Focus open goal", open, (goalId) => {
+			core.setFocusedGoalId(goalId, ctx, "selected");
 			core.armFocusedContinuation(ctx);
-		} finally {
-			core.exitGoalModal();
-		}
-		ctx.ui.notify(`Focused goal: ${oneLineSummary(core.state.goal)}`, "info");
+		});
+		if (picked) ctx.ui.notify(`Focused goal: ${oneLineSummary(core.state.goal)}`, "info");
 	}
 
 	function unfocusGoalCommand(ctx: ExtensionContext): void {
@@ -309,14 +303,11 @@ export function registerGoalCommands(core: GoalCore): void {
 
 	async function handleGoalPause(ctx: ExtensionContext): Promise<void> {
 		core.reconcileFocusedGoalFromDisk(ctx);
-		if (!core.state.goal) {
-			if (otherOpenGoalCount(core.goalsById, null) > 0) {
-				const selected = await chooseOpenGoal(ctx, "Pause which open goal?");
-				if (!selected) return;
-			} else {
-				ctx.ui.notify("No goal is set.", "warning");
-				return;
-			}
+		const pick = await pickWhenUnfocused(ctx, "Pause which open goal?");
+		if (pick === "cancelled") return;
+		if (pick === "none") {
+			ctx.ui.notify("No goal is set.", "warning");
+			return;
 		}
 		const currentGoal = core.state.goal;
 		if (!currentGoal) return;
@@ -340,10 +331,7 @@ export function registerGoalCommands(core: GoalCore): void {
 		const text = rawArgs.trim();
 		if (text) core.pi.sendUserMessage(text, { deliverAs: ctx.isIdle() ? "followUp" : "steer" });
 		core.reconcileFocusedGoalFromDisk(ctx);
-		if (!core.state.goal && otherOpenGoalCount(core.goalsById, null) > 0) {
-			const selected = await chooseOpenGoal(ctx, "Resume or focus open goal");
-			if (!selected) return;
-		}
+		if (await pickWhenUnfocused(ctx, "Resume or focus open goal") === "cancelled") return;
 		if (!core.state.goal) { ctx.ui.notify("No goal is focused.", "warning"); return; }
 		if (!core.scheduler.resume(ctx)) return;
 		ctx.ui.notify("Goal resumed; autonomous allowance renewed.", "info");
@@ -360,307 +348,9 @@ export function registerGoalCommands(core: GoalCore): void {
 		}
 	}
 
-	/**
-	 * One declarative row table for the settings menu (follow-up Stage 1).
-	 * Rendering and dispatch both derive from SETTING_ROWS so the displayed
-	 * fields and the selectable fields can never drift apart. Rows are grouped
-	 * into sections (Goal behavior / Task tracking / Completion auditor). All
-	 * eight persisted fields are present and operable.
-	 */
-	type SettingRow = {
-		key: keyof GoalSettings | string;
-		label: string;
-		section: "Goal behavior" | "Task tracking" | "Completion auditor" | "Blocker Oracle" | "Advanced execution";
-		kind: "boolean" | "modelSelector" | "thinking" | "positiveInteger";
-		/** Settings path for the mutation (defaults to [key]). */
-		path?: string[];
-		help?: string;
-	};
-
-	const SETTING_ROWS: readonly SettingRow[] = [
-		{ key: "autoSelectSingleGoal", label: "autoSelectSingleGoal", section: "Goal behavior", kind: "boolean" },
-		{ key: "hideUnfocusedBanner", label: "hideUnfocusedBanner", section: "Goal behavior", kind: "boolean" },
-		{ key: "hideUnfocusedPrompt", label: "hideUnfocusedPrompt", section: "Goal behavior", kind: "boolean" },
-		{ key: "disableContracts", label: "disableContracts", section: "Goal behavior", kind: "boolean" },
-		{ key: "strictExecutionContract", label: "explicit execution contracts (opt-in)", section: "Goal behavior", kind: "boolean" },
-		{ key: "maxAutonomousRuns", label: "autonomous run allowance", section: "Goal behavior", kind: "positiveInteger" },
-		{ key: "showAutonomousRuns", label: "show autonomous runs line", section: "Goal behavior", kind: "boolean" },
-		{ key: "showContextUsage", label: "show context usage line", section: "Goal behavior", kind: "boolean" },
-		{ key: "stallTimeoutMinutes", label: "stall timeout (minutes)", section: "Goal behavior", kind: "positiveInteger" },
-		{ key: "objectiveMaxChars", label: "max objective length (0 = none)", section: "Goal behavior", kind: "positiveInteger" },
-		{ key: "idleContinuationBackoff", label: "slow repeated idle replies (opt-in)", section: "Advanced execution", kind: "boolean",
-			help: "Slows repeated replies without recognized work. May delay reasoning or custom tools. For a hard stop, set an autonomous run allowance." },
-		{ key: "disableTasks", label: "disableTasks", section: "Task tracking", kind: "boolean" },
-		{ key: "subtaskDepth", label: "subtaskDepth", section: "Task tracking", kind: "positiveInteger" },
-		{ key: "disabled", label: "auditor disabled", section: "Completion auditor", kind: "boolean" },
-		{ key: "provider", label: "provider", section: "Completion auditor", kind: "modelSelector" },
-		{ key: "model", label: "model", section: "Completion auditor", kind: "modelSelector" },
-		{ key: "thinkingLevel", label: "thinking_level", section: "Completion auditor", kind: "thinking" },
-		// Issue #26: opt-in blocker Oracle. Disabled by default; provider/model
-		// must BOTH be set explicitly — the executor model is never used silently.
-		{ key: "oracleEnabled", label: "oracle enabled", section: "Blocker Oracle", kind: "boolean", path: ["oracle", "enabled"] },
-		{ key: "oracleProviderModel", label: "oracle provider/model", section: "Blocker Oracle", kind: "modelSelector", path: ["oracle"] },
-		{ key: "oracleThinkingLevel", label: "oracle thinking_level", section: "Blocker Oracle", kind: "thinking", path: ["oracle", "thinkingLevel"] },
-		{ key: "oracleProjectResources", label: "oracle project resources", section: "Blocker Oracle", kind: "boolean", path: ["oracle", "projectResources"] },
-		{ key: "oracleMaxFailedAttemptsPerBlocker", label: "max failed attempts per blocker", section: "Blocker Oracle", kind: "positiveInteger", path: ["oracle", "maxFailedAttemptsPerBlocker"] },
-	];
-
-	function settingsValue(config: GoalSettings, key: keyof GoalSettings | string): string {
-		if (key === "idleContinuationBackoff" || key === "strictExecutionContract" || key === "disabled" || key === "disableTasks" || key === "disableContracts" || key === "autoSelectSingleGoal" || key === "auditorProjectResources" || key === "hideUnfocusedBanner" || key === "hideUnfocusedPrompt" || key === "showAutonomousRuns" || key === "showContextUsage") {
-			return config[key] === true ? "true" : "false";
-		}
-		if (key === "subtaskDepth") return config.subtaskDepth !== undefined ? String(config.subtaskDepth) : "1";
-		if (key === "maxAutonomousRuns") return config.maxAutonomousRuns === 0 ? "0 (disabled)" : String(config.maxAutonomousRuns ?? "unlimited (default)");
-		if (key === "stallTimeoutMinutes") return config.stallTimeoutMinutes !== undefined ? String(config.stallTimeoutMinutes) : "0";
-		if (key === "objectiveMaxChars") return config.objectiveMaxChars !== undefined ? String(config.objectiveMaxChars) : "0";
-		if (key === "keybindings") return config.keybindings ? `${config.keybindings.dashboard.toggleExpand}, ${config.keybindings.dashboard.scrollUp}, ${config.keybindings.dashboard.scrollDown}` : "(default)";
-		const value = (config as Record<string, unknown>)[key];
-		return typeof value === "string" ? value : "(default)";
-	}
-
-	async function handleSettingsMenu(ctx: ExtensionContext): Promise<void> {
-		if (!ctx.hasUI) {
-			// Headless: read-only report of both layer paths.
-			ctx.ui.notify(
-				`Settings — project file: ${goalSettingsPath(ctx.cwd)}\nGlobal file: ${goalGlobalSettingsPath()}`,
-				"info",
-			);
-			return;
-		}
-
-		/**
-		 * After any mutation: reinstall the goal tool list when
-		 * the effective disableTasks value changed since the last install, and
-		 * refresh the UI. This is the central settings side-effect hook — no
-		 * ad hoc per-row refresh code.
-		 */
-		const applyEffectiveSettings = (): void => {
-			const tasksEnabledNow = !loadGoalSettings(ctx.cwd).disableTasks;
-			if (tasksEnabledNow !== core.tasksEnabled) {
-				core.installGoalToolProfile(tasksEnabledNow);
-			}
-			// PR #29: settings changes must be visible immediately — the banner
-			// hide/restore happens through this coalesced UI refresh.
-			core.updateUI(ctx);
-		};
-
-		const applyMutation = (scope: SettingsScope, mutation: SettingsMutation): boolean => {
-			try {
-				mutateSettingsLayer({ scope, cwd: ctx.cwd, mutation });
-				applyEffectiveSettings();
-				if (mutation.path[0] === "idleContinuationBackoff") core.scheduler.refreshSettings(ctx);
-				return true;
-			} catch (err) {
-				ctx.ui.notify(`Settings change failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
-				return false;
-			}
-		};
-
-		const scopePath = (scope: SettingsScope): string =>
-			scope === "global" ? goalGlobalSettingsPath() : goalSettingsPath(ctx.cwd);
-
-		core.enterGoalModal();
-		try {
-			let scope: SettingsScope = "project";
-			while (true) {
-				const snapshot = loadSettingsSnapshot(ctx.cwd);
-				const localLayer = snapshot[scope].layer as Record<string, unknown>;
-				const options: string[] = [];
-				options.push(`─── Editing: ${scope} (${scopePath(scope)}) ───`);
-				options.push(`Scope: ${scope} (select to switch)`);
-				options.push("Controls: commands, keys and pause order…");
-				let lastSection: string | null = null;
-				const pathOf = (row: SettingRow): string[] => row.path ?? [String(row.key)];
-				const valueAtPath = (obj: unknown, path: string[]): unknown => {
-					let cursor: unknown = obj;
-					for (const segment of path) {
-						if (!cursor || typeof cursor !== "object") return undefined;
-						cursor = (cursor as Record<string, unknown>)[segment];
-					}
-					return cursor;
-				};
-				for (const row of SETTING_ROWS) {
-					if (row.section !== lastSection) {
-						options.push(`─── ${row.section} ───`);
-						lastSection = row.section;
-					}
-					const envVar = typeof row.key === "string" ? envOverrideFor(row.key as keyof GoalSettings) : null;
-					if (envVar) {
-						options.push(`  ${row.label}: ${settingsValue(snapshot.value, row.key)} (environment; read-only)`);
-						continue;
-					}
-					const rowPath = pathOf(row);
-					const provenance = snapshot.provenance.get(rowPath.join("."));
-					let source: string;
-					if (provenance?.source === "global") source = scope === "project" ? "(inherited from global)" : "(global override)";
-					else if (provenance?.source === "project") source = scope === "project" ? "(project override)" : "(project; edit via project scope)";
-					else source = "(default)";
-					const hasLocalOverride = valueAtPath(localLayer, rowPath) !== undefined;
-					if (hasLocalOverride && provenance?.source === scope) source = `(${scope} override)`;
-					// Nested rows render their leaf value directly.
-					const displayValue = row.path
-						? String(valueAtPath(snapshot.value, rowPath) ?? "(default)")
-						: settingsValue(snapshot.value, row.key);
-					options.push(`  ${row.label}: ${displayValue} ${source}`);
-				}
-				options.push("Done");
-				const selected = await ctx.ui.select("Goal settings", options);
-				if (!selected || selected === "Done") break;
-				if (selected.startsWith("Controls:")) { if (await showGoalControls(core, ctx, scope)) return; continue; }
-				if (selected.startsWith("───")) continue; // headers are not rows
-				const trimmed = selected.trim();
-				if (trimmed.startsWith("Scope:")) {
-					scope = scope === "project" ? "global" : "project";
-					continue;
-				}
-				const colon = trimmed.indexOf(":");
-				if (colon === -1) continue;
-				const label = trimmed.slice(0, colon).trim();
-				const row = SETTING_ROWS.find((r) => r.label === label);
-				if (!row) continue;
-				const envVarForRow2 = envOverrideFor(row.key as keyof GoalSettings);
-				if (envVarForRow2) {
-					ctx.ui.notify(`${row.label} is read-only: overridden by the ${envVarForRow2} env var.`, "warning");
-					continue;
-				}
-				// Per-row settings path (flat keys default to [key]; nested Blocker
-				// Oracle rows carry explicit paths).
-				const rowPath = row.path ?? [String(row.key)];
-				const pathKeyStr = rowPath.join(".");
-				const localValueAtPath = (() => {
-					let cursor: unknown = localLayer;
-					for (const segment of rowPath) {
-						if (!cursor || typeof cursor !== "object") return undefined;
-						cursor = (cursor as Record<string, unknown>)[segment];
-					}
-					return cursor;
-				})();
-
-				const inheritLabel = scope === "project" ? "Use inherited value" : "Use default (delete global override)";
-				const hasLocalOverride = localValueAtPath !== undefined;
-
-				if (row.kind === "boolean") {
-					const effective = snapshot.provenance.get(pathKeyStr)?.value === true;
-					const actions = [
-						`Set ${scope} override to true`,
-						`Set ${scope} override to false`,
-					];
-					if (hasLocalOverride) actions.push(inheritLabel);
-					actions.push("Cancel");
-					const action = await ctx.ui.select(`${row.label} (${scope})${row.help ? `\n${row.help}` : ""}`, actions);
-					if (!action || action === "Cancel") continue;
-					if (action === inheritLabel) {
-						applyMutation(scope, { op: "unset", path: rowPath });
-						continue;
-					}
-					const value = action.endsWith("true");
-					if (value !== effective || !hasLocalOverride) {
-						applyMutation(scope, { op: "set", path: rowPath, value });
-					}
-					continue;
-				}
-
-				if (row.kind === "positiveInteger") {
-					const min = row.path ? 1 : ((row.key === "stallTimeoutMinutes" || row.key === "objectiveMaxChars" || row.key === "maxAutonomousRuns") ? 0 : 1);
-					const actions = [`Set ${scope} override...`];
-					if (hasLocalOverride) actions.push(inheritLabel);
-					actions.push("Cancel");
-					const action = await ctx.ui.select(`${row.label} (${scope})${row.help ? `\n${row.help}` : ""}`, actions);
-					if (!action || action === "Cancel") continue;
-					if (action === inheritLabel) {
-						applyMutation(scope, { op: "unset", path: rowPath });
-						continue;
-					}
-					const input = await ctx.ui.input(`Set ${row.label}`, String(snapshot.provenance.get(pathKeyStr)?.value ?? min));
-					if (input === undefined) continue;
-					// Full-string decimal validation: rejects 1.5, 1x, negatives,
-					// infinity, and unsafe integers alike.
-					const value = input.trim();
-					if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < min) {
-						ctx.ui.notify(`${row.label} must be an integer >= ${min} (e.g. ${min}, ${min + 1}, ${min + 2})`, "warning");
-						continue;
-					}
-					// Oracle attempt cap is bounded at 3 by the settings parser.
-					if (row.path?.[0] === "oracle" && Number(value) > 3) {
-						ctx.ui.notify(`${row.label} must be an integer between 1 and 3`, "warning");
-						continue;
-					}
-					applyMutation(scope, { op: "set", path: rowPath, value: Number(value) });
-					continue;
-				}
-
-				if (row.kind === "thinking") {
-					const currentValue = settingsValue(snapshot.value, row.key);
-					const levels = thinkingLevelChoices(currentValue === "(default)" ? undefined : currentValue);
-					const picked = await ctx.ui.select(`Set ${row.label} (${scope})`, levels);
-					if (!picked) continue;
-					const choice = picked.trim().replace(/^\u2713\s+/, "");
-					if (choice === "(default)") {
-						if (hasLocalOverride) applyMutation(scope, { op: "unset", path: rowPath });
-						continue;
-					}
-					if (!(AUDITOR_THINKING_LEVELS as readonly string[]).includes(choice)) {
-						ctx.ui.notify(`thinking_level must be one of: ${AUDITOR_THINKING_LEVELS.join(", ")} (or "(default)")`, "warning");
-						continue;
-					}
-					applyMutation(scope, { op: "set", path: rowPath, value: choice });
-					continue;
-				}
-
-				// modelSelector rows (provider, model): searchable model picker with
-				// explicit inherit/default handling. Auditor rows apply provider+model
-				// at the flat paths; the Oracle row writes oracle.provider/oracle.model.
-				const oraclePair = row.path?.[0] === "oracle";
-				const pairPrefix = oraclePair ? ["oracle"] : [];
-				const configuredBase = oraclePair
-					? [snapshot.value.oracle?.provider, snapshot.value.oracle?.model].filter(Boolean).join("/")
-					: configuredAuditorModelKey(snapshot.value as GoalSettings);
-				const configured = configuredBase || undefined;
-				const session = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-				const choices = buildAuditorModelChoices(ctx.modelRegistry.getAvailable(), configured, session);
-				const filter = await ctx.ui.input("Filter auditor models (provider/id/name; blank = all)", "");
-				if (filter === undefined) continue;
-				const filtered = filterAuditorModelChoices(choices, filter);
-				const picked = await ctx.ui.select("Select auditor model", filtered.map((choice: AuditorChoice) => choice.label));
-				if (!picked) continue;
-				const choice = filtered.find((candidate: AuditorChoice) => candidate.label === picked);
-				if (!choice) continue;
-				if (choice.kind === "default") {
-					for (const key of ["provider", "model"] as const) {
-						if (localLayer[key] !== undefined) applyMutation(scope, { op: "unset", path: [...pairPrefix, key] });
-					}
-					continue;
-				}
-				let providerValue: string;
-				let modelValue: string;
-				if (choice.kind === "manual") {
-					const input = await ctx.ui.input("Set auditor provider/model", configured ?? "provider/model");
-					if (input === undefined) continue;
-					const parsed = parseManualAuditorModel(input);
-					if ("error" in parsed) {
-						ctx.ui.notify(parsed.error, "warning");
-						continue;
-					}
-					providerValue = parsed.provider;
-					modelValue = parsed.model;
-				} else {
-					providerValue = choice.provider;
-					modelValue = choice.model;
-				}
-				if (applyMutation(scope, { op: "set", path: [...pairPrefix, "provider"], value: providerValue })) {
-					applyMutation(scope, { op: "set", path: [...pairPrefix, "model"], value: modelValue });
-				}
-			}
-		} finally {
-			core.exitGoalModal();
-		}
-	}
 	async function handleGoalClear(ctx: ExtensionContext): Promise<void> {
 		core.reconcileFocusedGoalFromDisk(ctx);
-		if (!core.state.goal && otherOpenGoalCount(core.goalsById, null) > 0) {
-			const selected = await chooseOpenGoal(ctx, "Clear which open goal?");
-			if (!selected) return;
-		}
+		if (await pickWhenUnfocused(ctx, "Clear which open goal?") === "cancelled") return;
 		if (!core.state.goal) {
 			ctx.ui.notify(clearGoalCommandMessage({ archived: false }), "warning");
 			return;
@@ -696,14 +386,11 @@ export function registerGoalCommands(core: GoalCore): void {
 
 	async function runGoalTweak(replacement: string, ctx: ExtensionContext): Promise<void> {
 		core.reconcileFocusedGoalFromDisk(ctx);
-		if (!core.state.goal) {
-			if (otherOpenGoalCount(core.goalsById, null) > 0) {
-				const selected = await chooseOpenGoal(ctx, "Tweak which open goal?");
-				if (!selected) return;
-			} else {
-				ctx.ui.notify(`No goal is set. Use ${commandHint("goal", core.loadedCommands)} to draft one, or ${commandHint("goal-direct", core.loadedCommands)} <objective> to create one immediately.`, "warning");
-				return;
-			}
+		const pick = await pickWhenUnfocused(ctx, "Tweak which open goal?");
+		if (pick === "cancelled") return;
+		if (pick === "none") {
+			ctx.ui.notify(`No goal is set. Use ${commandHint("goal", core.loadedCommands)} to draft one, or ${commandHint("goal-direct", core.loadedCommands)} <objective> to create one immediately.`, "warning");
+			return;
 		}
 		const currentGoal = core.state.goal;
 		if (!currentGoal) return;
@@ -717,11 +404,9 @@ export function registerGoalCommands(core: GoalCore): void {
 			return;
 		}
 		const max = loadGoalSettings(ctx.cwd).objectiveMaxChars;
-		if (trimmed.length > (max ?? 0)) {
-			if (max !== undefined && max > 0) {
-				ctx.ui.notify(`Requested change exceeds ${max} characters (${trimmed.length}).`, "warning");
-				return;
-			}
+		if (max !== undefined && max > 0 && trimmed.length > max) {
+			ctx.ui.notify(`Requested change exceeds ${max} characters (${trimmed.length}).`, "warning");
+			return;
 		}
 		await startGoalDrafting(core, ctx, "tweak", trimmed, currentGoal);
 	}
@@ -801,7 +486,7 @@ export function registerGoalCommands(core: GoalCore): void {
 		description: "Goal settings and controls; accepts controls for commands, keys and pause order.",
 		handler: async (rawArgs, ctx) => {
 			if (rawArgs.trim() === "controls") await showGoalControls(core, ctx);
-			else await handleSettingsMenu(ctx);
+			else await handleSettingsMenu(core, ctx);
 		},
 	});
 	define("goal-tweak", {
