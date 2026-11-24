@@ -77,8 +77,14 @@ test("unfocused prompt keeps multi-goal focus human-owned", () => {
 	const prompt = unfocusedOpenGoalsPrompt(3);
 	assert.match(prompt, /^\[PI GOAL UNFOCUSED\]/);
 	assert.match(prompt, /3 open pi goals exist,/);
-	assert.match(prompt, /Do not choose or switch focus autonomously/);
+	assert.match(prompt, /Do not choose or switch focus yourself/);
 	assert.match(prompt, /\/goal-focus/);
+});
+
+test("unfocused prompt does not stop unrelated work (#135)", () => {
+	const prompt = unfocusedOpenGoalsPrompt(1);
+	assert.match(prompt, /Do what the user asks as ordinary work/);
+	assert.doesNotMatch(prompt, /before doing goal work/);
 });
 
 test("unfocused prompt uses singular grammar for exactly one open goal", () => {
