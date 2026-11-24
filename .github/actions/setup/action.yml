@@ -16,7 +16,17 @@ runs:
     - id: scope
       run: node scripts/ci-scope.mjs
       shell: bash
-    - if: steps.scope.outputs[inputs.need] == 'true'
+    # The runner image already has a recent Node. Downloading another one costs
+    # about five seconds, so only do it when the image is older than we need.
+    - id: node
+      if: steps.scope.outputs[inputs.need] == 'true'
+      run: |
+        node -v
+        if node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=19)?0:1)'; then
+          echo "installed=true" >> "$GITHUB_OUTPUT"
+        fi
+      shell: bash
+    - if: steps.scope.outputs[inputs.need] == 'true' && steps.node.outputs.installed != 'true'
       uses: actions/setup-node@v5
       with:
         node-version: 22.19.0
@@ -28,7 +38,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: node_modules
-        key: node-modules-${{ runner.os }}-22.19.0-${{ hashFiles('package-lock.json') }}
+        key: node-modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
     - if: steps.scope.outputs[inputs.need] == 'true' && steps.modules.outputs.cache-hit != 'true'
       run: npm ci --no-audit --no-fund
       shell: bash
