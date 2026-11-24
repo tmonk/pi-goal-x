@@ -2,6 +2,7 @@
   "version": 1,
   "note": "Expected test-entry manifest for the runner self-check (npm run test:selfcheck). Regenerate with: node scripts/run-unit-tests.mjs --write-manifest",
   "unitFiles": [
+    "./tests/dashboard-box.test.ts",
     "./tests/fault-injection.test.ts",
     "./tests/goal-accounting-runtime.test.ts",
     "./tests/goal-activity.test.ts",
@@ -65,6 +66,7 @@
     "./tests/goal-settings.test.ts",
     "./tests/goal-stale-continuation-golden.test.ts",
     "./tests/goal-status.test.ts",
+    "./tests/goal-storage-modules.test.ts",
     "./tests/goal-storage-root.test.ts",
     "./tests/goal-surface-baseline.test.ts",
     "./tests/goal-task-count.test.ts",

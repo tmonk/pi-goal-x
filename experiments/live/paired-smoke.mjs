@@ -51,7 +51,7 @@ async function run(caseId,phase) {
    if(!rejectionVerified)errors.push('Independent auditor did not reject the missing artifact');
    // User resumes after rejection; retain audit history, disable only auto-driving for the bounded harness.
    const current=capturedCore.state.goal;
-   if(current){capturedCore.setGoal({...current,status:'active',autoContinue:false},context);}
+   if(current){capturedCore.focus.setGoal({...current,status:'active',autoContinue:false},context);}
   }
   if(caseId==='sisyphus-compaction'){
    const id=manager.appendMessage({role:'user',content:'Earlier work completed step 1; sequence.txt contains first newline.',timestamp:0});

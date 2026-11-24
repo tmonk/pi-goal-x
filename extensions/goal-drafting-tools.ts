@@ -14,15 +14,48 @@ import { loadGoalSettings } from "./settings/resolve.ts";
 import { DIALOG_UNAVAILABLE_HINT, proposalDialogFailureMessage, formatQuestionnaireAnswers, runGoalQuestionnaire, shouldAutoConfirmProposal, showProposalDialog, type GoalQuestionnaireQuestion, type ProposalDecision } from "./goal-questionnaire.ts";
 import { currentTaskIdIsPending, nowIso, validateTokenBudgetInput, type GoalRecord, type GoalTaskList } from "./goal-record.ts";
 import type { GoalLedgerEvent } from "./goal-ledger.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type {
+	GoalClockReset,
+	GoalDiskSync,
+	GoalFocusedGoalAccess,
+	GoalLoadedCommands,
+	GoalModalAccess,
+	GoalOperationGuard,
+	GoalRecordWriter,
+	GoalUiRefresh,
+	HostSlice,
+	LifecycleSlice,
+	ProgressSlice,
+	RuntimeSlice,
+	SchedulerSlice,
+	ServiceSlice,
+	StateSlice,
+} from "./goal-core-types.ts";
+
+/** What the questionnaire and propose tools read and change. */
+export type DraftingToolsCore = HostSlice<"registerTool" | "appendEntry"> &
+	GoalFocusedGoalAccess &
+	GoalOperationGuard &
+	GoalModalAccess &
+	GoalUiRefresh &
+	GoalDiskSync &
+	GoalLoadedCommands &
+	GoalClockReset &
+	GoalRecordWriter &
+	StateSlice<"tasksEnabled"> &
+	ServiceSlice<"isTurnBuffered" | "flushForAudit"> &
+	LifecycleSlice<"create"> &
+	ProgressSlice<"begin"> &
+	RuntimeSlice<"armPostBudgetReminder" | "consumePostBudgetReminder"> &
+	SchedulerSlice<"declare" | "cancelTimer" | "schedule">;
 import { activeDraft, clearGoalDrafting, setActiveDraft, type ActiveGoalDraft } from "./goal-drafting.ts";
 import { convertFlatTasks, countTasks, mergeTasksWithExisting, taskTreeSchema, type FlatTaskInput } from "./goal-task-tree.ts";
 import { dropKey } from "./goal-tool-inputs.ts";
 import { PROPOSE_DRAFT_TOOL_NAME, QUESTIONNAIRE_TOOL_NAME } from "./goal-tool-names.ts";
 
-function proposedTaskList(core: GoalCore, ctx: ExtensionContext, tasks: FlatTaskInput[] | undefined, blockCompletion: boolean | undefined): { ok: true; value?: GoalTaskList } | { ok: false; message: string } {
+function proposedTaskList(core: DraftingToolsCore, ctx: ExtensionContext, tasks: FlatTaskInput[] | undefined, blockCompletion: boolean | undefined): { ok: true; value?: GoalTaskList } | { ok: false; message: string } {
 	if (tasks === undefined) return { ok: true };
-	if (!core.tasksEnabled) return { ok: false, message: "Task lists are disabled by settings; omit tasks from this proposal." };
+	if (!core.state.tasksEnabled) return { ok: false, message: "Task lists are disabled by settings; omit tasks from this proposal." };
 	const converted = convertFlatTasks(tasks, { maxSubtaskDepth: loadGoalSettings(ctx.cwd).subtaskDepth ?? 1 });
 	if (!converted.ok) return converted;
 	return { ok: true, value: { tasks: converted.tasks, blockCompletion: blockCompletion === true, proposedAt: nowIso() } };
@@ -79,7 +112,7 @@ interface ConfirmedProposal {
 	summary: string;
 }
 
-function createGoalFromDraft(core: GoalCore, ctx: ExtensionContext, proposal: ConfirmedProposal) {
+function createGoalFromDraft(core: DraftingToolsCore, ctx: ExtensionContext, proposal: ConfirmedProposal) {
 	const { draft, objective, taskList, summary } = proposal;
 	// F2: if the confirmation carried no task plan but the objective has
 	// structure, bootstrap the derived tree so the goal starts trackable.
@@ -90,7 +123,7 @@ function createGoalFromDraft(core: GoalCore, ctx: ExtensionContext, proposal: Co
 	// Capture the questionnaire answers BEFORE clearing draft state so the
 	// confirmed-goal report can include them reliably (E5).
 	const qaEcho = draft.questionnaireEcho;
-	core.replaceGoal({ objective, autoContinue: proposal.autoContinue, sisyphus: draft.mode === "sisyphus", taskList: effectiveTaskList, skipAuditor: proposal.skipAuditor }, ctx, true, proposal.verificationContract, proposal.proposedBudget);
+	core.lifecycle.create({ objective, autoContinue: proposal.autoContinue, sisyphus: draft.mode === "sisyphus", taskList: effectiveTaskList, skipAuditor: proposal.skipAuditor }, ctx, true, proposal.verificationContract, proposal.proposedBudget);
 	clearGoalDrafting(core, ctx);
 	const created = core.state.goal;
 	return { ...goalTextResult(`${summary}\n\n${buildGoalCreatedReport({
@@ -122,12 +155,12 @@ function tweakLedgerEvents(target: GoalRecord, written: GoalRecord, taskList: Go
 	return events;
 }
 
-async function applyGoalTweak(core: GoalCore, ctx: ExtensionContext, proposal: ConfirmedProposal, target: GoalRecord, token: { goalId: string; revision: number }, proposalRevision: number) {
+async function applyGoalTweak(core: DraftingToolsCore, ctx: ExtensionContext, proposal: ConfirmedProposal, target: GoalRecord, token: { goalId: string; revision: number }, proposalRevision: number) {
 	const { objective, summary, proposedBudget } = proposal;
 	const reply = (text: string) => goalTextResult(text, core.state.goal);
 	const finalFlushError = core.goalService.flushForAudit(ctx);
 	core.reconcileFocusedGoalFromDisk(ctx);
-	if (finalFlushError || core.goalService.isTurnBuffered() || !core.isFocusedOperationCurrent(token) || core.state.goal?.revision !== proposalRevision || core.state.goal?.status === "complete") {
+	if (finalFlushError || core.goalService.isTurnBuffered() || !core.state.isTokenCurrent(token) || core.state.goal?.revision !== proposalRevision || core.state.goal?.status === "complete") {
 		return reply("Goal tweak was not applied: the goal changed during confirmation. Review and propose again.");
 	}
 	const now = nowIso();
@@ -197,10 +230,10 @@ async function applyGoalTweak(core: GoalCore, ctx: ExtensionContext, proposal: C
 	if (resumed) {
 		// Resume glue mirrors replaceGoal: restart accounting and queue the
 		// auto-continuation so the revived goal keeps going.
-		core.beginAccounting();
+		core.progress.begin();
 		const scheduling = core.scheduler.declare(ctx, {kind: "ready"});
 		if (!scheduling.terminate) schedulingNote = "\n" + scheduling.content.filter(item => item.type === "text").map(item => item.text).join("\n");
-		core.queueContinuation(ctx, true);
+		core.scheduler.schedule(ctx);
 	}
 	clearGoalDrafting(core, ctx);
 	const statusNote = result.goal.status === "budget_limited"
@@ -209,7 +242,7 @@ async function applyGoalTweak(core: GoalCore, ctx: ExtensionContext, proposal: C
 	return { ...goalTextResult(`${summary}\n\nGoal tweak confirmed and applied.\n${formatGoalBudget(result.goal.tokenBudget)}${schedulingNote}${statusNote}`, result.goal), terminate: true };
 }
 
-function registerQuestionnaireTool(core: GoalCore): void {
+function registerQuestionnaireTool(core: DraftingToolsCore): void {
 	core.pi.registerTool(defineTool({
 		name: QUESTIONNAIRE_TOOL_NAME,
 		label: "Ask Drafting Questions",
@@ -234,7 +267,7 @@ function registerQuestionnaireTool(core: GoalCore): void {
 				recommended: q.recommended,
 				allowCustom: q.allow_custom,
 			}));
-			core.enterGoalModal();
+			core.state.enterModal();
 			try {
 				const result = await runGoalQuestionnaire(ctx, questions);
 				if (!result.cancelled) {
@@ -246,7 +279,7 @@ function registerQuestionnaireTool(core: GoalCore): void {
 			} catch (error) {
 				return reply(`Goal drafting dialog failed: ${error instanceof Error ? error.message : String(error)}. Drafting remains active; ask in chat instead of retrying the dialog.`);
 			} finally {
-				core.exitGoalModal();
+				core.state.exitModal();
 			}
 		},
 		renderCall() { return new Text(QUESTIONNAIRE_TOOL_NAME, 0, 0); },
@@ -261,7 +294,7 @@ function registerQuestionnaireTool(core: GoalCore): void {
  * contract AND every task line; the dialog frame alone cannot (its
  * churn-guard bound keeps it within the terminal height).
  */
-function renderProposalCall(core: GoalCore, args: { objective?: unknown; tasks?: unknown; auto_continue?: boolean; block_completion?: boolean } | undefined, theme: { fg(color: string, text: string): string; bold(text: string): string }): Text {
+function renderProposalCall(core: DraftingToolsCore, args: { objective?: unknown; tasks?: unknown; auto_continue?: boolean; block_completion?: boolean } | undefined, theme: { fg(color: string, text: string): string; bold(text: string): string }): Text {
 	const objective = String(args?.objective ?? "");
 	let text = theme.fg("toolTitle", "propose_goal_draft ") + theme.fg("muted", objective);
 	const flatTasks = Array.isArray(args?.tasks) ? (args.tasks as FlatTaskInput[]) : [];
@@ -293,7 +326,7 @@ function renderProposalCall(core: GoalCore, args: { objective?: unknown; tasks?:
 	return new Text(text, 0, 0);
 }
 
-function registerProposeTool(core: GoalCore): void {
+function registerProposeTool(core: DraftingToolsCore): void {
 	core.pi.registerTool(defineTool({
 		name: PROPOSE_DRAFT_TOOL_NAME,
 		label: "Propose Goal Draft",
@@ -328,7 +361,7 @@ function registerProposeTool(core: GoalCore): void {
 			const target = draft.mode === "tweak" ? core.state.goal : undefined;
 			if (draft.mode === "tweak" && (!target || target.id !== draft.targetGoalId)) return reply(commandInstructions("The goal changed while drafting; review it and start /goal-tweak again.", core.loadedCommands));
 			if (target?.status === "complete") return goalTextResult("Completed goals cannot be tweaked.", target);
-			const proposalToken = target ? core.focusedOperationToken(target.id) : undefined;
+			const proposalToken = target ? core.state.focusToken(target.id) : undefined;
 			const proposalRevision = target?.revision ?? 0;
 			const proposedBudget = params.token_budget === undefined ? target?.tokenBudget : params.token_budget ?? undefined;
 			const budgetSummary = target ? `Current ${formatGoalBudget(target.tokenBudget)}\nProposed ${formatGoalBudget(proposedBudget)}` : formatGoalBudget(proposedBudget);
@@ -337,13 +370,13 @@ function registerProposeTool(core: GoalCore): void {
 			if (shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM })) {
 				confirmation = { decision: "confirm" as const, auditorEnabled: draft.auditorEnabled, unavailable: false };
 			} else {
-				core.enterGoalModal();
+				core.state.enterModal();
 				try {
 					confirmation = await showProposalDialog(ctx, proposalText(draft, objective, params.auto_continue !== false, taskResult.value, target ?? undefined, params.token_budget), draft.mode === "sisyphus" ? "sisyphus" : "goal", draft.auditorEnabled);
 				} catch (error) {
 					return reply(`${proposalDialogFailureMessage(error)} Do not retry the dialog until the host issue is resolved.`);
 				} finally {
-					core.exitGoalModal();
+					core.state.exitModal();
 				}
 			}
 			const settings = loadGoalSettings(ctx.cwd);
@@ -391,7 +424,7 @@ function registerProposeTool(core: GoalCore): void {
 	}));
 }
 
-export function registerDraftingTools(core: GoalCore): void {
+export function registerDraftingTools(core: DraftingToolsCore): void {
 	registerQuestionnaireTool(core);
 	registerProposeTool(core);
 }

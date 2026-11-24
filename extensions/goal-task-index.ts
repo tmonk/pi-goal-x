@@ -17,7 +17,12 @@ function sameTasks(left: readonly GoalTask[], right: readonly GoalTask[]): boole
 	if (left.length !== right.length) return false;
 	for (let i = 0; i < left.length; i++) {
 		const a = left[i]!; const b = right[i]!;
-		for (const field of taskFields) if (a[field] !== b[field]) return false;
+		// Spelled out rather than looped over taskFields: this runs on every
+		// dashboard render, and fixed property reads are several times faster
+		// than keyed reads. Keep it in step with taskFields.
+		if (a.id !== b.id || a.title !== b.title || a.status !== b.status || a.completedAt !== b.completedAt
+			|| a.skippedAt !== b.skippedAt || a.evidence !== b.evidence || a.skipReason !== b.skipReason
+			|| a.verificationContract !== b.verificationContract || a.lightweightSubtasks !== b.lightweightSubtasks) return false;
 		if (a.subtasks || b.subtasks) {
 			if (!a.subtasks || !b.subtasks || !sameTasks(a.subtasks, b.subtasks)) return false;
 		}

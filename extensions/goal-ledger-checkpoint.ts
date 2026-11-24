@@ -1,4 +1,4 @@
-import type { GoalLedgerEvent } from "./goal-ledger.ts";
+import type { GoalLedgerEvent } from "./goal-ledger-events.ts";
 import type { GoalLedgerIndex } from "./goal-ledger-index.ts";
 import { isValidLedgerEvent, sanitizeEvent } from "./goal-ledger-validate.ts";
 

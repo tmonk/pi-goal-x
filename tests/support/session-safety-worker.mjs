@@ -184,8 +184,8 @@ try {
 	console.log(JSON.stringify({ mode, passed: true, requests: calls.length, auditMessages: transcript.length }));
 } finally {
 	if (session) { await session.abort(); session.dispose(); }
-	core?.stopAuditAnimation();
-	core?.clearAuditResult();
+	core?.view.stopAuditAnimation();
+	core?.view.clearAuditResult();
 	core?.clearContinuationState();
 	server.closeAllConnections();
 	await new Promise(resolve => server.close(resolve));

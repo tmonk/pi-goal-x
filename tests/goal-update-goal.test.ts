@@ -71,7 +71,7 @@ for (const strict of [false, true]) test(`filled wait preserves the actual sched
 	const h = stabilizationHarness();
 	try {
 		await h.start();
-		h.core.updateFocusedGoal({...h.core.state.goal!, autoContinue: true}, h.ctx);
+		h.core.focus.updateFocused({...h.core.state.goal!, autoContinue: true}, h.ctx);
 		mutateSettingsLayer({scope: "project", cwd: h.cwd, mutation: {op: "set", path: ["strictExecutionContract"], value: strict}});
 		const result = await h.call("update_goal", {continuation: {kind: "wait", reason: "producer", deadline: "2099-01-01T00:00:00Z"}, reason: " ", attempted_actions: [], suggested_action: "", completion_summary: ""});
 		if (strict) {

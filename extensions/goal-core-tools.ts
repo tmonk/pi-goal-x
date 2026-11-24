@@ -16,7 +16,33 @@ import { readGoalLedger } from "./goal-ledger.ts";
 import { loadGoalSettings } from "./settings/resolve.ts";
 import { deriveTasksFromObjective } from "./goal-task-derive.ts";
 import { type GoalRecord, type GoalTask, validateTokenBudgetInput } from "./goal-record.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type { GoalCompletionCore } from "./goal-completion.ts";
+import type {
+	GoalDiskSync,
+	GoalLoadedCommands,
+	GoalPoolAccess,
+	HostSlice,
+	LifecycleSlice,
+	SchedulerSlice,
+	ServiceSlice,
+	ViewSlice,
+} from "./goal-core-types.ts";
+import type { GoalUpdateFlowsCore } from "./goal-update-flows.ts";
+
+/**
+ * What the goal tools read and change. The completion and update flows run
+ * from `update_goal`, so their needs are part of it.
+ */
+export type CoreToolsCore = GoalCompletionCore &
+	GoalUpdateFlowsCore &
+	GoalPoolAccess &
+	GoalDiskSync &
+	GoalLoadedCommands &
+	HostSlice<"registerTool"> &
+	ServiceSlice<"flushTurn"> &
+	LifecycleSlice<"create" | "syncPromptFromDisk"> &
+	SchedulerSlice<"declare"> &
+	ViewSlice<"goalForDisplay">;
 import { promptProfile } from "./prompts/goal-prompts.ts";
 import { runGoalAgentPauseFlow, runGoalBlockedFlow } from "./goal-update-flows.ts";
 
@@ -30,7 +56,7 @@ function conciseTaskPointers(goal: GoalRecord): { findCurrentTask?: GoalTask; fi
 }
 
 /** The first two lines of every get_goal state read: identity and scheduler. */
-function goalHeaderLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecord): string[] {
+function goalHeaderLines(core: CoreToolsCore, ctx: ExtensionContext, view: GoalRecord): string[] {
 	const settings = loadGoalSettings(ctx.cwd);
 	return [
 		`Goal ${view.id}: ${statusLabel(view)}, ${view.sisyphus ? "sisyphus" : "regular"}`,
@@ -39,7 +65,7 @@ function goalHeaderLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecord
 }
 
 /** Full legacy get_goal output. */
-function verboseGoalLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecord, includeHistory: boolean): string[] {
+function verboseGoalLines(core: CoreToolsCore, ctx: ExtensionContext, view: GoalRecord, includeHistory: boolean): string[] {
 	const lines = goalHeaderLines(core, ctx, view);
 	lines.push(`Objective: ${view.objective}`, "");
 	lines.push(`Status: ${statusLabel(view)}`);
@@ -68,7 +94,7 @@ function verboseGoalLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecor
 	}
 	if (view.activePath) lines.push(`Path: ${view.activePath}`);
 	if (view.archivedPath) lines.push(`Archive: ${view.archivedPath}`);
-	const otherCount = otherOpenGoalCount(core.goalsById, core.focusedGoalId);
+	const otherCount = otherOpenGoalCount(core.state.goalsById, core.state.focusedGoalId);
 	if (otherCount > 0) lines.push(`Other open goals: ${otherCount} (user can run ${commandHint("goal-list", core.loadedCommands)} or ${commandHint("goal-focus", core.loadedCommands)})`);
 	lines.push("");
 	lines.push("Lifecycle: call update_goal({status: \"complete\"}) only when every requirement is satisfied — the independent auditor verifies from actual evidence. Call update_goal({status: \"blocked\"}) only after the same blocker recurs on three consecutive goal turns. User commands handle pause/resume/clear/focus.");
@@ -81,7 +107,7 @@ function verboseGoalLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecor
 }
 
 /** Compact state read; full requirements remain available through detail pages. */
-function compactGoalLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecord, includeHistory: boolean): string[] {
+function compactGoalLines(core: CoreToolsCore, ctx: ExtensionContext, view: GoalRecord, includeHistory: boolean): string[] {
 	const lines = goalHeaderLines(core, ctx, view);
 	lines.push(`Objective: ${truncateText(view.objective, 180)}${view.objective.length > 180 ? " (full: get_goal section=objective)" : ""}`);
 	if (view.taskList) {
@@ -110,9 +136,9 @@ function compactGoalLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecor
 }
 
 export function registerCoreTools(
-	core: GoalCore,
+	core: CoreToolsCore,
 	deps: {
-		runGoalCompletionFlow: (core: GoalCore, ctx: ExtensionContext, completionSummary?: string) => Promise<AgentToolResult<unknown>>;
+		runGoalCompletionFlow: (core: GoalCompletionCore, ctx: ExtensionContext, completionSummary?: string) => Promise<AgentToolResult<unknown>>;
 	},
 ): void {
 	const { pi } = core;
@@ -132,8 +158,8 @@ export function registerCoreTools(
 		}, { additionalProperties: false }),
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			core.reconcileFocusedGoalFromDisk(ctx);
-			if (core.state.goal) core.syncGoalPromptFromDisk(ctx);
-			const view = core.goalForDisplay() ?? core.state.goal;
+			if (core.state.goal) core.lifecycle.syncPromptFromDisk(ctx);
+			const view = core.view.goalForDisplay() ?? core.state.goal;
 			const params = (_params ?? {}) as { verbose?: boolean; include_history?: boolean; section?: "summary" | GoalDetailSection; task_id?: string; cursor?: string };
 			const taskId = params.task_id?.trim() || undefined;
 			// PR E profile: legacy-v1 keeps pre-optimization verbose-by-default output;
@@ -141,7 +167,7 @@ export function registerCoreTools(
 			// policy already lives in the injected active-goal system block.
 			const verbose = promptProfile() === "legacy-v1" || params.verbose === true;
 			if (!view) {
-				const unfocusedCount = otherOpenGoalCount(core.goalsById, null);
+				const unfocusedCount = otherOpenGoalCount(core.state.goalsById, null);
 				const text = unfocusedCount > 0
 					? `${buildUnfocusedOpenGoalsSummary(unfocusedCount)}\n\nCall create_goal with the objective to create and focus a new goal, or ask the user to run ${commandHint("goal-focus", core.loadedCommands)} to choose an open goal.`
 					: "No goal is set in this session. Call create_goal with the objective when the user explicitly asks to start a persistent goal.";
@@ -195,7 +221,7 @@ export function registerCoreTools(
 				tokenBudget = budgetGate.value;
 			}
 			const { objective: cleanedObjective, verificationContract } = extractVerificationContract(objective);
-			core.replaceGoal(
+			core.lifecycle.create(
 				{ objective: cleanedObjective, autoContinue: true, sisyphus: params.mode === "sisyphus" },
 				ctx,
 				true,
@@ -203,7 +229,7 @@ export function registerCoreTools(
 				tokenBudget,
 			);
 			const created = core.state.goal;
-			const otherCount = otherOpenGoalCount(core.goalsById, core.focusedGoalId);
+			const otherCount = otherOpenGoalCount(core.state.goalsById, core.state.focusedGoalId);
 			const otherLine = otherCount > 0
 				? `\n${otherCount} other open goal${otherCount === 1 ? "" : "s"} remain in .pi/goals — this goal is now the session focus.`
 				: "";
@@ -249,7 +275,7 @@ export function registerCoreTools(
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const planned = planUpdateGoal(params);
 			if (!planned.ok) return {isError: true, content: [{type: "text", text: planned.message}], details: {}, terminate: false};
-			core.flushGoalTransaction(ctx);
+			core.goalService.flushTurn(ctx);
 			const plan = planned.plan;
 			switch (plan.action) {
 				case "continuation": return core.scheduler.declare(ctx, plan.continuation);

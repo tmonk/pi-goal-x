@@ -518,7 +518,7 @@ test("GoalWidgetComponent unfocused with 38 open goals at width 109", () => {
 
 // ── §19.5 dashboard interaction tests ────────────────────────────────────────
 
-import { syncTerminalInputPause } from "../extensions/goal-terminal-input.ts";
+import { syncTerminalInputPause, type TerminalInputCore } from "../extensions/goal-terminal-input.ts";
 
 const CTRL_SHIFT_T = "\u001b[27;6;84~";
 const CTRL_SHIFT_A = "\u001b[27;6;65~";
@@ -540,23 +540,23 @@ function keybindingHarness(initialExpanded = false) {
 		},
 	} as never;
 	const core = {
-		goalModalDepth: 0,
-		auditProgress: null,
-		state: { goal: null },
-		pauseActiveGoal: () => { consumed.push("pause"); },
+		state: { goal: null, goalModalDepth: 0, focusRevision: 0 },
 		interruption: { pause: () => { consumed.push("pause"); } },
-		abortAudit: () => { consumed.push("abort-audit"); },
-		isDashboardExpanded: () => expanded,
-		toggleDashboardExpanded: () => { expanded = !expanded; consumed.push("toggle"); },
-		toggleGoalAuditor: () => { consumed.push("toggle-auditor"); },
-		goalWidgetComponentRef: { current: { invalidate: () => { consumed.push("invalidate"); } } },
+		view: {
+			auditProgress: null,
+			abortAudit: () => { consumed.push("abort-audit"); },
+			isDashboardExpanded: () => expanded,
+			toggleDashboardExpanded: () => { expanded = !expanded; consumed.push("toggle"); },
+			widgetRef: { current: { invalidate: () => { consumed.push("invalidate"); } } },
+		},
+		lifecycle: { toggleAuditor: () => { consumed.push("toggle-auditor"); } },
 		terminalInputUnsubscribe: null,
-	} as never;
-	syncTerminalInputPause(core as never, ctx as never);
+	} as unknown as TerminalInputCore;
+	syncTerminalInputPause(core, ctx as never);
 	return {
 		core,
 		fire: (data: string) => inputCb?.(data),
-		resync: () => syncTerminalInputPause(core as never, ctx as never),
+		resync: () => syncTerminalInputPause(core, ctx as never),
 		listenerCount: () => subscriptions.size,
 		expanded: () => expanded,
 		consumed,
@@ -637,7 +637,7 @@ test("ctrl+shift+a toggles the focused goal's auditor and refreshes the widget",
 
 test("ctrl+shift+a is inert while a goal modal is open", () => {
 	const h = keybindingHarness();
-	(h.core as unknown as { goalModalDepth: number }).goalModalDepth = 1;
+	h.core.state.goalModalDepth = 1;
 	(h.core as unknown as { state: { goal: unknown } }).state.goal = { status: "active", autoContinue: true };
 	h.fire(CTRL_SHIFT_A);
 	assert.deepEqual(h.consumed, [], "modal depth guard swallows the chord");
@@ -777,18 +777,18 @@ function scrollHarness(initialExpanded = false, g: GoalWidgetRecord = manyTasksG
 		},
 	} as never;
 	const core = {
-		goalModalDepth: 0,
-		auditProgress: null,
-		state: { goal: null },
-		pauseActiveGoal: () => { consumed.push("pause"); },
+		state: { goal: null, goalModalDepth: 0, focusRevision: 0 },
 		interruption: { pause: () => { consumed.push("pause"); } },
-		abortAudit: () => { consumed.push("abort-audit"); },
-		isDashboardExpanded: () => expanded,
-		toggleDashboardExpanded: () => { expanded = !expanded; consumed.push("toggle"); },
-		goalWidgetComponentRef: { current: component },
+		view: {
+			auditProgress: null,
+			abortAudit: () => { consumed.push("abort-audit"); },
+			isDashboardExpanded: () => expanded,
+			toggleDashboardExpanded: () => { expanded = !expanded; consumed.push("toggle"); },
+			widgetRef: { current: component },
+		},
 		terminalInputUnsubscribe: null,
-	} as never;
-	syncTerminalInputPause(core as never, ctx as never);
+	} as unknown as TerminalInputCore;
+	syncTerminalInputPause(core, ctx as never);
 	return {
 		fire: (data: string) => {
 			const result = inputCb?.(data);

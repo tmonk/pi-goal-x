@@ -4,7 +4,14 @@ import { goalDraftingPrompt, type GoalDraftingFocus } from "./prompts/goal-draft
 import { formatGoalBudget } from "./goal-policy.ts";
 import { loadGoalSettings } from "./settings/resolve.ts";
 import { nowIso, type GoalRecord } from "./goal-record.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type {
+	GoalClockReset,
+	GoalDiskSync,
+	GoalFocusedGoalAccess,
+	GoalLoadedCommands,
+	GoalModalAccess,
+	HostSlice,
+} from "./goal-core-types.ts";
 
 type GoalDraftMode = GoalDraftingFocus | "tweak";
 
@@ -37,14 +44,26 @@ export interface ActiveGoalDraft {
 	questionnaireEcho?: string;
 }
 
-/** Keyed by the session core object; any object works as the key. */
+/** What a draft needs to record itself in the session. */
+type DraftRecorder = HostSlice<"appendEntry">;
+
+/** What starting a draft needs: the recorder plus asking the user, and stopping the goal clocks. */
+export type GoalDraftingCore = DraftRecorder &
+	HostSlice<"sendUserMessage"> &
+	GoalFocusedGoalAccess &
+	GoalModalAccess &
+	GoalLoadedCommands &
+	GoalDiskSync &
+	GoalClockReset;
+
+// One draft per core; the core is only the key here.
 const activeDrafts = new WeakMap<object, ActiveGoalDraft>();
 
 export function activeDraft(core: object): ActiveGoalDraft | undefined { return activeDrafts.get(core); }
 
 export function hasActiveDraft(core: object): boolean { return activeDraft(core) !== undefined; }
 
-function draftSessionEntry(core: GoalCore, session: GoalDraftSession): void {
+function draftSessionEntry(core: DraftRecorder, session: GoalDraftSession): void {
 	try {
 		core.pi.appendEntry(DRAFT_ENTRY, session);
 	} catch {}
@@ -63,12 +82,12 @@ function sessionOf(draft: ActiveGoalDraft, clearedAt?: string): GoalDraftSession
 }
 
 /** Make `draft` the active draft in memory and in the durable session entry. */
-export function setActiveDraft(core: GoalCore, draft: ActiveGoalDraft): void {
+export function setActiveDraft(core: DraftRecorder & object, draft: ActiveGoalDraft): void {
 	activeDrafts.set(core, draft);
 	draftSessionEntry(core, sessionOf(draft));
 }
 
-export function clearGoalDrafting(core: GoalCore, ctx: ExtensionContext): void {
+export function clearGoalDrafting(core: DraftRecorder & object, ctx: ExtensionContext): void {
 	const existing = activeDrafts.get(core);
 	if (!existing) return;
 	activeDrafts.delete(core);
@@ -82,7 +101,7 @@ export function clearGoalDrafting(core: GoalCore, ctx: ExtensionContext): void {
  * valid, un-cleared draft whose tweak target still matches the focused goal;
  * stale tweak drafts are tombstoned.
  */
-export function rehydrateDraft(core: GoalCore, ctx: ExtensionContext): void {
+export function rehydrateDraft(core: DraftRecorder & GoalDiskSync & GoalFocusedGoalAccess, ctx: ExtensionContext): void {
 	const live = activeDraft(core);
 	activeDrafts.delete(core);
 	let session: GoalDraftSession | null = null;
@@ -119,16 +138,16 @@ export function rehydrateDraft(core: GoalCore, ctx: ExtensionContext): void {
 	});
 }
 
-async function awaitDraftChoice(core: GoalCore, ctx: ExtensionContext, label: string): Promise<"resume" | "replace" | "cancel"> {
+async function awaitDraftChoice(core: GoalModalAccess, ctx: ExtensionContext, label: string): Promise<"resume" | "replace" | "cancel"> {
 	const choices = ["Resume the existing draft", "Replace it with a new draft", "Cancel"];
-	core.enterGoalModal();
+	core.state.enterModal();
 	try {
 		const selected = await ctx.ui.select(`A ${label.toLowerCase()} is already active`, choices);
 		if (!selected || selected === choices[0]!) return "resume";
 		if (selected === choices[2]) return "cancel";
 		return "replace";
 	} finally {
-		core.exitGoalModal();
+		core.state.exitModal();
 	}
 }
 
@@ -144,7 +163,7 @@ function tweakDraftPrompt(topic: string, targetGoal: GoalRecord | undefined): st
 	].join("\n");
 }
 
-export async function startGoalDrafting(core: GoalCore, ctx: ExtensionContext, mode: GoalDraftMode, topic: string, targetGoal?: GoalRecord): Promise<void> {
+export async function startGoalDrafting(core: GoalDraftingCore, ctx: ExtensionContext, mode: GoalDraftMode, topic: string, targetGoal?: GoalRecord): Promise<void> {
 	const trimmed = topic.trim();
 	const label = mode === "sisyphus" ? "Sisyphus draft" : mode === "tweak" ? "Goal tweak draft" : "Goal draft";
 	// A second draft must never silently discard the first.
