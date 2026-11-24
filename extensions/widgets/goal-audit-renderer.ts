@@ -6,6 +6,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { bindingKeys, type GoalKeybinding } from "../goal-controls.ts";
 import { truncateText } from "../goal-display.ts";
+import { t } from "../i18n/index.ts";
 import { formatGoalKeybinding } from "../settings/schema.ts";
 import type { AuditorDashboardModel, AuditResultCard } from "./auditor-dashboard-model.ts";
 import { accent, Box, dim, fit, frame, progressBar, type RenderColor } from "./dashboard-box.ts";
@@ -29,7 +30,7 @@ export function renderAuditorDashboard(
 	const box = new Box(theme, width);
 	const inner = box.inner;
 	const lines: string[] = [];
-	lines.push(box.header(frame(theme, `Independent completion audit ─ ${model.auditorLabel}`), frame(theme, formatAuditElapsed(model.elapsedMs))));
+	lines.push(box.header(frame(theme, `${t("Independent completion audit")} ─ ${model.auditorLabel}`), frame(theme, formatAuditElapsed(model.elapsedMs))));
 
 	for (const check of model.checks) {
 		lines.push(box.line(`${theme.fg(CHECK_COLOR[check.state] as RenderColor, CHECK_SYMBOL[check.state])} ${check.label}`));
@@ -44,7 +45,7 @@ export function renderAuditorDashboard(
 	if (showDiagnostics) {
 		if (model.currentTool) {
 			const args = model.currentToolArgs ? ` ${dim(theme, truncateText(model.currentToolArgs, Math.max(10, inner - 20)))}` : "";
-			lines.push(box.line(`${accent(theme, "tool")} ${model.currentTool}${args}`));
+			lines.push(box.line(`${accent(theme, t("tool"))} ${model.currentTool}${args}`));
 		}
 		if (model.recentOutput.length > 0) {
 			lines.push(box.line(dim(theme, "─".repeat(Math.max(4, inner - 8)))));
@@ -55,7 +56,7 @@ export function renderAuditorDashboard(
 	}
 
 	const interruptKey = opts.interruptKey ?? "escape";
-	lines.push(box.footer(model.active && bindingKeys(interruptKey).length ? `${formatGoalKeybinding(interruptKey)}: stop audit` : ""));
+	lines.push(box.footer(model.active && bindingKeys(interruptKey).length ? t("{key}: stop audit", { key: formatGoalKeybinding(interruptKey) }) : ""));
 	return lines;
 }
 
@@ -66,7 +67,7 @@ export function renderAuditResultCard(card: AuditResultCard, theme: Theme, width
 	const color: RenderColor = approved ? "success" : "error";
 	const symbol = approved ? "✓" : "✗";
 	return [
-		box.header(frame(theme, `Audit result ─ ${card.label}`)),
+		box.header(frame(theme, `${t("Audit result")} ─ ${card.label}`)),
 		...card.lines.map((line) => box.line(`${theme.fg(color, symbol)} ${fit(line, box.inner - 4)}`)),
 		box.footer(""),
 	];

@@ -85,6 +85,7 @@
     "./tests/goal-widget-lifetime.test.ts",
     "./tests/goal-widget.test.ts",
     "./tests/i18n-usage.test.ts",
+    "./tests/i18n-widgets.test.ts",
     "./tests/i18n.test.ts",
     "./tests/network-error-backoff.test.ts",
     "./tests/no-status-refresh-timer.test.ts",

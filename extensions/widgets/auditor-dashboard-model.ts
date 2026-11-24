@@ -8,6 +8,7 @@
  */
 
 import type { AuditorProgress } from "../goal-auditor.ts";
+import { t } from "../i18n/index.ts";
 
 type AuditCheckState = "pending" | "running" | "passed" | "failed";
 
@@ -42,13 +43,15 @@ export interface AuditResultCard {
 	lines: string[];
 }
 
-const CHECK_LABELS: Array<{ id: AuditCheckId; label: string }> = [
-	{ id: "objective", label: "Objective and success criteria" },
-	{ id: "verification", label: "Verification contracts" },
-	{ id: "tasks", label: "Tasks and recorded evidence" },
-	{ id: "workspace", label: "Workspace inspection" },
-	{ id: "decision", label: "Final decision" },
-];
+function checkLabels(): Array<{ id: AuditCheckId; label: string }> {
+	return [
+		{ id: "objective", label: t("Objective and success criteria") },
+		{ id: "verification", label: t("Verification contracts") },
+		{ id: "tasks", label: t("Tasks and recorded evidence") },
+		{ id: "workspace", label: t("Workspace inspection") },
+		{ id: "decision", label: t("Final decision") },
+	];
+}
 
 interface DeriveAuditorDashboardOptions {
 	auditorLabel?: string;
@@ -72,7 +75,7 @@ export function deriveAuditorDashboardModel(
 	const done = progress.phase === "done";
 	const verdict = options.verdict !== undefined ? options.verdict : null;
 
-	const checks: AuditCheck[] = CHECK_LABELS.map(({ id, label }) => {
+	const checks: AuditCheck[] = checkLabels().map(({ id, label }) => {
 		if (!done) {
 			const state = checkStateActive(id, pct);
 			return { id, label, state };
@@ -85,7 +88,7 @@ export function deriveAuditorDashboardModel(
 	});
 
 	return {
-		auditorLabel: options.auditorLabel ?? progress.label ?? "Independent completion audit",
+		auditorLabel: options.auditorLabel ?? progress.label ?? t("Independent completion audit"),
 		elapsedMs: progress.elapsedMs,
 		...(progress.percentage !== undefined ? { percentage: pct } : {}),
 		checks,
@@ -126,22 +129,22 @@ export function deriveAuditResultCard(verdict: AuditVerdict, report: string): Au
 	if (verdict === "approved") {
 		return {
 			verdict,
-			label: "APPROVED",
-			lines: ["Objective satisfied.", "Verification requirements satisfied.", "Required tasks and evidence accepted."],
+			label: t("APPROVED"),
+			lines: [t("Objective satisfied."), t("Verification requirements satisfied."), t("Required tasks and evidence accepted.")],
 		};
 	}
 	if (verdict === "error") {
 		return {
 			verdict,
-			label: "ERROR",
-			lines: [report.trim() ? oneLine(report) : "The auditor could not finish the review."],
+			label: t("ERROR"),
+			lines: [report.trim() ? oneLine(report) : t("The auditor could not finish the review.")],
 		};
 	}
 	const findings = extractFindings(report);
 	return {
 		verdict,
-		label: "CHANGES REQUIRED",
-		lines: findings.length > 0 ? findings : [oneLine(report) || "The auditor requested changes — review the report."],
+		label: t("CHANGES REQUIRED"),
+		lines: findings.length > 0 ? findings : [oneLine(report) || t("The auditor requested changes — review the report.")],
 	};
 }
 

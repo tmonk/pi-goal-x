@@ -1,3 +1,5 @@
+import { t } from "./i18n/index.ts";
+
 interface GoalUsageLike {
 	tokensUsed: number;
 	activeSeconds: number;
@@ -68,11 +70,22 @@ export function statusLabel(goal: Pick<GoalDisplayRecordLike, "sisyphus" | "stat
 	return `${prefix}${goal.status}`;
 }
 
+/** Like statusLabel, for the host UI only. statusLabel stays English because the model and goal files read it. */
+export function displayStatusLabel(goal: Pick<GoalDisplayRecordLike, "sisyphus" | "status" | "autoContinue" | "stopReason">): string {
+	const sisyphus = goal.sisyphus;
+	if (goal.status === "active" && goal.autoContinue) return sisyphus ? t("sisyphus running") : t("running");
+	if (goal.status === "paused" && goal.stopReason === "agent") return sisyphus ? t("sisyphus paused (agent)") : t("paused (agent)");
+	if (goal.status === "blocked") return sisyphus ? t("sisyphus blocked") : t("blocked");
+	if (goal.status === "budget_limited") return sisyphus ? t("sisyphus budget limited") : t("budget limited");
+	const plain = goal.status === "active" ? t("active") : goal.status === "paused" ? t("paused") : t("complete");
+	return sisyphus ? t("sisyphus {status}", { status: plain }) : plain;
+}
+
 export function footerStatus(goal: GoalDisplayRecordLike): string {
 	const usageBits: string[] = [];
 	if (goal.usage.activeSeconds > 0) usageBits.push(formatDuration(goal.usage.activeSeconds));
 	if (goal.usage.tokensUsed > 0) usageBits.push(formatTokenValue(goal.usage.tokensUsed).split(" ")[0]!);
 	const usage = usageBits.length > 0 ? ` [${usageBits.join(" ")}]` : "";
 	const prefix = goal.sisyphus ? "goal✊" : "goal";
-	return `${prefix}: ${statusLabel(goal)}${usage} - ${truncateText(goal.objective, 60)}`;
+	return `${prefix}: ${displayStatusLabel(goal)}${usage} - ${truncateText(goal.objective, 60)}`;
 }

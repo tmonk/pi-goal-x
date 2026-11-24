@@ -15,6 +15,7 @@
  */
 
 import { truncateText } from "./goal-display.ts";
+import { t } from "./i18n/index.ts";
 import type { GoalLedgerEvent } from "./goal-ledger.ts";
 
 export type GoalActivityKind = "goal" | "task" | "verification" | "audit" | "archive";
@@ -58,72 +59,76 @@ function oneLine(value: string): string {
 function mapEvent(event: GoalLedgerEvent, taskTitles: ReadonlyMap<string, string> | undefined): GoalActivityItem | undefined {
 	switch (event.type) {
 		case "goal_created":
-			return { at: event.at, kind: "goal", text: "Created and focused the goal." };
+			return { at: event.at, kind: "goal", text: t("Created and focused the goal.") };
 		case "goal_tweaked":
-			return { at: event.at, kind: "goal", text: "Updated the goal objective and task plan." };
+			return { at: event.at, kind: "goal", text: t("Updated the goal objective and task plan.") };
 		case "auditor_toggled":
-			return { at: event.at, kind: "goal", text: event.enabled ? "Turned the independent auditor on." : "Turned the independent auditor off." };
+			return { at: event.at, kind: "goal", text: event.enabled ? t("Turned the independent auditor on.") : t("Turned the independent auditor off.") };
 		case "goal_paused":
 			return {
 				at: event.at,
 				kind: "goal",
-				text: event.reason ? `Paused the goal — ${truncateText(oneLine(event.reason), ACTIVITY_REASON_MAX)}` : "Paused the goal.",
+				text: event.reason ? t("Paused the goal — {reason}", { reason: truncateText(oneLine(event.reason), ACTIVITY_REASON_MAX) }) : t("Paused the goal."),
 			};
 		case "goal_resumed":
-			return { at: event.at, kind: "goal", text: "Resumed the goal." };
+			return { at: event.at, kind: "goal", text: t("Resumed the goal.") };
 		case "goal_blocked":
 			return {
 				at: event.at,
 				kind: "goal",
-				text: event.reason ? `Blocked — ${truncateText(oneLine(event.reason), ACTIVITY_REASON_MAX)}` : "Reported a blocker.",
+				text: event.reason ? t("Blocked — {reason}", { reason: truncateText(oneLine(event.reason), ACTIVITY_REASON_MAX) }) : t("Reported a blocker."),
 			};
 		case "goal_budget_limited":
-			return { at: event.at, kind: "goal", text: "Reached the configured token budget." };
+			return { at: event.at, kind: "goal", text: t("Reached the configured token budget.") };
 		case "goal_completed":
-			return { at: event.at, kind: "goal", text: "Completed the goal." };
+			return { at: event.at, kind: "goal", text: t("Completed the goal.") };
 		case "goal_aborted":
 			return {
 				at: event.at,
 				kind: "goal",
-				text: event.reason ? `Aborted the goal — ${truncateText(oneLine(event.reason), ACTIVITY_REASON_MAX)}` : "Aborted the goal.",
+				text: event.reason ? t("Aborted the goal — {reason}", { reason: truncateText(oneLine(event.reason), ACTIVITY_REASON_MAX) }) : t("Aborted the goal."),
 			};
 		case "task_started":
-			return { at: event.at, kind: "task", marker: "current", text: `Started ${quote(titleFor(taskTitles, event.taskId))}.` };
+			return { at: event.at, kind: "task", marker: "current", text: t("Started {title}.", { title: quote(titleFor(taskTitles, event.taskId)) }) };
 		case "task_complete": {
 			const title = titleFor(taskTitles, event.taskId);
 			const evidence = event.evidence ? oneLine(event.evidence) : undefined;
 			// Include evidence only when concise; never bloat the feed.
-			const suffix = evidence && evidence.length <= CONCISE_EVIDENCE_MAX ? ` — ${evidence}` : "";
-			return { at: event.at, kind: "task", marker: "done", text: `Completed ${quote(title)}.${suffix}` };
+			const text = evidence && evidence.length <= CONCISE_EVIDENCE_MAX
+				? t("Completed {title}. — {evidence}", { title: quote(title), evidence })
+				: t("Completed {title}.", { title: quote(title) });
+			return { at: event.at, kind: "task", marker: "done", text };
 		}
 		case "task_skipped": {
 			const title = titleFor(taskTitles, event.taskId);
-			const reason = event.reason ? ` — ${truncateText(oneLine(event.reason), ACTIVITY_REASON_MAX)}` : "";
-			return { at: event.at, kind: "task", marker: "skipped", text: `Skipped ${quote(title)}${reason}.` };
+			const text = event.reason
+				? t("Skipped {title} — {reason}.", { title: quote(title), reason: truncateText(oneLine(event.reason), ACTIVITY_REASON_MAX) })
+				: t("Skipped {title}.", { title: quote(title) });
+			return { at: event.at, kind: "task", marker: "skipped", text };
 		}
 		case "task_reopened":
-			return { at: event.at, kind: "task", text: `Reopened ${quote(titleFor(taskTitles, event.taskId))}.` };
+			return { at: event.at, kind: "task", text: t("Reopened {title}.", { title: quote(titleFor(taskTitles, event.taskId)) }) };
 		case "completion_requested":
-			return { at: event.at, kind: "verification", text: "Requested completion review." };
+			return { at: event.at, kind: "verification", text: t("Requested completion review.") };
 		case "audit_started":
-			return { at: event.at, kind: "audit", text: "Started independent completion review." };
+			return { at: event.at, kind: "audit", text: t("Started independent completion review.") };
 		case "audit_result":
 			return event.verdict === "approved"
-				? { at: event.at, kind: "audit", text: "Independent auditor approved completion." }
+				? { at: event.at, kind: "audit", text: t("Independent auditor approved completion.") }
 				: event.verdict === "disapproved"
-					? { at: event.at, kind: "audit", text: "Completion review requested additional work." }
-					: { at: event.at, kind: "audit", text: "Completion review could not finish." };
+					? { at: event.at, kind: "audit", text: t("Completion review requested additional work.") }
+					: { at: event.at, kind: "audit", text: t("Completion review could not finish.") };
 		case "audit_skipped":
 			return {
 				at: event.at,
 				kind: "audit",
 				text:
 					event.reason === "user_aborted"
-						? "Completion review was aborted by the user."
-						: "Skipped independent completion review (auditor disabled).",
+						? t("Completion review was aborted by the user.")
+						: t("Skipped independent completion review (auditor disabled)."),
 			};
 		case "goal_archived":
-			return { at: event.at, kind: "archive", marker: "done", text: "Archived the completed goal." };
+			return { at: event.at, kind: "archive", marker: "done", text: t("Archived the completed goal.") };
 		// Low-value checkpoint noise / focus churn: excluded from the default feed.
 		case "goal_focused":
 		case "goal_unfocused":
