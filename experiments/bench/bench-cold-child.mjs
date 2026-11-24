@@ -71,7 +71,7 @@ async function runFlow() {
 			break;
 		case "startup": {
 			const core = createGoalCore(makePi(), {});
-			await core.loadState(makeCtx(cwd));
+			await core.focus.load(makeCtx(cwd));
 			break;
 		}
 		default:

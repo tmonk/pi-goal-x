@@ -49,7 +49,7 @@ export function stabilizationHarness(auditor?: (...args: any[]) => Promise<any>)
 		disk: () => readFileSync(path.join(cwd, written.activePath!), "utf8"),
 		ledger: () => readGoalLedger({cwd}).events,
 		async cleanup() {
-			try {await event("session_shutdown");} finally {core.stopAuditAnimation(); core.scheduler.shutdown(); core.clearContinuationState(); core.clearAuditResult(); rmSync(cwd, {recursive: true, force: true});}
+			try {await event("session_shutdown");} finally {core.view.stopAuditAnimation(); core.scheduler.shutdown(); core.clearContinuationState(); core.view.clearAuditResult(); rmSync(cwd, {recursive: true, force: true});}
 		},
 		};
 }

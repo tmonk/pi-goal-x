@@ -25,8 +25,8 @@ for (const event of ["session_start", "session_tree", "session_shutdown"]) test(
 		await h.event(event, {reason: "start"}, ctx);
 		assert.equal(unsubscribed, 1);
 		assert.equal(h.core.terminalInputUnsubscribe, null);
-		assert.equal(h.core.auditAnimationTimer, null);
-		assert.equal(h.core.goalWidgetComponentRef.current, null);
+		assert.equal(h.core.view.auditAnimationTimer, null);
+		assert.equal(h.core.view.widgetRef.current, null);
 	} finally {await h.cleanup();}
 });
 
@@ -35,11 +35,11 @@ test("unexpected teardown errors stay observable after every local cleanup step"
 	try {
 		await h.start();
 		h.core.terminalInputUnsubscribe = () => {throw new Error("unsubscribe failed");};
-		h.core.auditAnimationTimer = setInterval(() => {}, 1000);
+		h.core.view.auditAnimationTimer = setInterval(() => {}, 1000);
 		await assert.rejects(h.event("session_shutdown"), /unsubscribe failed/);
 		assert.equal(h.core.terminalInputUnsubscribe, null);
-		assert.equal(h.core.auditAnimationTimer, null);
-		assert.equal(h.core.goalWidgetComponentRef.current, null);
+		assert.equal(h.core.view.auditAnimationTimer, null);
+		assert.equal(h.core.view.widgetRef.current, null);
 	} finally {await h.cleanup();}
 });
 
@@ -58,8 +58,8 @@ test("shutdown aborts a real pending audit, records one outcome and ignores late
 		pending.resolve(approved);
 		await result;
 		assert.equal(h.ledger().filter(e => e.type === "audit_result" || e.type === "audit_skipped").length, 1);
-		assert.equal(h.core.auditProgress, null);
-		assert.equal(h.core.auditAnimationTimer, null);
+		assert.equal(h.core.view.auditProgress, null);
+		assert.equal(h.core.view.auditAnimationTimer, null);
 		assert.equal(h.core.state.goal?.status, "active");
 	} finally {pending.resolve(approved); await h.cleanup();}
 });
@@ -70,8 +70,8 @@ test("a throwing auditor is settled and releases all audit resources", async () 
 		await h.start();
 		const result = await h.call("update_goal", {status: "complete"});
 		assert.match(result.content[0].text, /auditor crashed/);
-		assert.equal(h.core.auditAnimationTimer, null);
-		assert.equal(h.core.auditProgress, null);
+		assert.equal(h.core.view.auditAnimationTimer, null);
+		assert.equal(h.core.view.auditProgress, null);
 		assert.equal(h.ledger().filter(e => e.type === "audit_result").length, 1);
 	} finally {await h.cleanup();}
 });
@@ -83,11 +83,11 @@ test("a replacement completion with the auditor disabled retires the running att
 	let first: Promise<any> | undefined;
 	try {
 		await h.start(); first = h.call("update_goal", {status: "complete"}); await started.promise;
-		h.core.updateFocusedGoal({...h.core.state.goal!, skipAuditor: true}, h.ctx);
+		h.core.focus.updateFocused({...h.core.state.goal!, skipAuditor: true}, h.ctx);
 		await h.call("update_goal", {status: "complete"});
 		assert.equal(signal.aborted, true, "the replaced independent auditor must actually stop");
-		assert.equal(h.core.activeAudit, null);
-		assert.equal(h.core.auditAnimationTimer, null);
+		assert.equal(h.core.state.activeAudit, null);
+		assert.equal(h.core.view.auditAnimationTimer, null);
 		assert.equal(h.core.state.goal?.status, "complete");
 		const settled = h.ledger().filter(e => e.type === "audit_result" || e.type === "audit_skipped");
 		assert.equal(settled.length, 2, "each accepted attempt has exactly one outcome");
@@ -171,11 +171,11 @@ test("late audit progress and finally cannot touch the replacement audit with eq
 		await h.start(); first = h.call("update_goal", {status: "complete"}); await firstStarted.promise;
 		await h.event("session_start", {reason: "start"}, incoming.ctx);
 		second = h.call("update_goal", {status: "complete"}, incoming.ctx); await nextStarted.promise;
-		const progress = h.core.auditProgress, timer = h.core.auditAnimationTimer;
+		const progress = h.core.view.auditProgress, timer = h.core.view.auditAnimationTimer;
 		callbacks[0].onProgress({phase: "running", recentOutput: ["obsolete"]});
 		old.resolve(approved); await first;
-		assert.equal(h.core.auditProgress, progress);
-		assert.equal(h.core.auditAnimationTimer, timer);
+		assert.equal(h.core.view.auditProgress, progress);
+		assert.equal(h.core.view.auditAnimationTimer, timer);
 		assert.equal(callbacks[0].signal.aborted, true);
 		assert.equal(h.core.state.goal?.status, "active");
 		assert.equal(h.ledger().filter(e => e.type === "audit_result").length, 1);
@@ -196,11 +196,11 @@ test("session replacement while the Escape choice is pending retires exactly one
 		h.ctx.mode = "tui";
 		h.ctx.ui.custom = async () => {shown.resolve(null); return choice.promise;};
 		await h.start(); result = h.call("update_goal", {status: "complete"}); await started.promise;
-		h.core.abortAudit(h.ctx); pending.resolve({...approved, approved: false, error: "Auditor aborted."}); await shown.promise;
+		h.core.view.abortAudit(); pending.resolve({...approved, approved: false, error: "Auditor aborted."}); await shown.promise;
 		await h.event("session_start", {reason: "start"}, incoming.ctx);
-		h.core.goalModalDepth = 1;
+		h.core.state.goalModalDepth = 1;
 		choice.resolve("complete_without_audit"); await result;
-		assert.equal(h.core.goalModalDepth, 1, "old dialog cannot consume the new modal lease");
+		assert.equal(h.core.state.goalModalDepth, 1, "old dialog cannot consume the new modal lease");
 		assert.equal(h.core.state.goal?.status, "active");
 		assert.equal(h.ledger().filter(e => e.type === "audit_result" || e.type === "audit_skipped").length, 1);
 	} finally {choice.resolve("continue_working"); pending.resolve(approved); await result; await h.event("session_shutdown", {}, incoming.ctx); await h.cleanup(); await incoming.cleanup();}
@@ -224,7 +224,7 @@ test("a retired resume selector cannot open a dialog for the replacement's pause
 		selected.resolve(undefined); await resuming;
 		assert.equal(confirms, 0, "an old startup flow must stop before the next UI step");
 		assert.equal(h.core.state.goal?.status, "paused");
-		assert.equal(h.core.goalModalDepth, 0);
+		assert.equal(h.core.state.goalModalDepth, 0);
 	} finally {selected.resolve(undefined); await resuming; await h.event("session_shutdown", {}, incoming.ctx); await h.cleanup(); await incoming.cleanup();}
 });
 
@@ -240,15 +240,15 @@ for (const response of ["answer", "cancel", "error"]) test(`a retired command sh
 		h.core.invokeGoalCommand = async () => {calls++;};
 		await h.start();
 		h.input("\x1b[19~"); await shown.promise;
-		assert.equal(h.core.goalModalDepth, 1);
+		assert.equal(h.core.state.goalModalDepth, 1);
 		await h.event("session_start", {}, incoming.ctx);
-		h.core.goalModalDepth = 1;
+		h.core.state.goalModalDepth = 1;
 		const notices = h.notices.length;
 		if (response === "error") answer.reject(new Error("old dialog failed"));
 			else answer.resolve(response === "cancel" ? undefined : "Old topic");
 		await new Promise<void>(resolve => setImmediate(resolve));
 		assert.equal(calls, 0, "an old answer cannot invoke a command against replacement state");
-		assert.equal(h.core.goalModalDepth, 1, "an old finally cannot release replacement ownership");
+		assert.equal(h.core.state.goalModalDepth, 1, "an old finally cannot release replacement ownership");
 		assert.equal(h.notices.length, notices, "an old rejection cannot notify through the invalidated host");
 	} finally {answer.resolve(undefined); await new Promise<void>(resolve => setImmediate(resolve)); await h.event("session_shutdown", {}, incoming.ctx); await h.cleanup(); await incoming.cleanup();}
 });
@@ -261,10 +261,10 @@ test("a command shortcut releases its own modal when the command changes focus",
 		h.ctx.mode = "tui";
 		mutateSettingsLayer({scope: "project", cwd: h.cwd, mutation: {op: "set", path: ["keybindings", "commands", "goal-direct"], value: "f8"}});
 		h.ctx.ui.input = async () => "New topic";
-		h.core.invokeGoalCommand = async () => {h.core.setFocusedGoalId(null, h.ctx, "selected"); dispatched.resolve(null);};
+		h.core.invokeGoalCommand = async () => {h.core.focus.setFocus(null, h.ctx, "selected"); dispatched.resolve(null);};
 		await h.start(); h.input("\x1b[19~"); await dispatched.promise;
 		await new Promise<void>(resolve => setImmediate(resolve));
-		assert.equal(h.core.goalModalDepth, 0, "legitimate command focus changes still release their modal");
+		assert.equal(h.core.state.goalModalDepth, 0, "legitimate command focus changes still release their modal");
 	} finally {await h.cleanup();}
 });
 
@@ -293,7 +293,7 @@ test("failed audit ledger persistence is visible and cannot complete the goal", 
 		assert.equal(response.isError, true);
 		assert.match(response.content[0].text, /could not be persisted/);
 		assert.equal(h.core.state.goal?.status, "active");
-		assert.equal(h.core.activeAudit, null);
+		assert.equal(h.core.state.activeAudit, null);
 	} finally {pending.resolve(approved); await h.cleanup();}
 });
 
@@ -315,9 +315,9 @@ test("late shutdown cannot evict a replacement prefix with the same cache identi
 		const payload = {messages: [{role: "user", content: "old request"}]};
 		assert.equal(await h.event("before_provider_request", {payload}, unseenOldContext), undefined);
 		const invalidatedOldContext = new Proxy(unseenOldContext, {get(target, key) {return key === "sessionManager" ? stale() : Reflect.get(target, key);}});
-		const replacementWidget = h.core.goalWidgetComponentRef.current;
+		const replacementWidget = h.core.view.widgetRef.current;
 		await h.event("session_shutdown", {}, invalidatedOldContext);
-		assert.equal(h.core.goalWidgetComponentRef.current, replacementWidget);
+		assert.equal(h.core.view.widgetRef.current, replacementWidget);
 		const stillLive = await h.event("context_with_system", {messages: base}, incoming.ctx);
 		assert.ok(stillLive, "an unseen stale shutdown must leave replacement context live");
 		assert.deepEqual(stillLive.messages, advanced);
@@ -369,15 +369,15 @@ test("fixed-seed lifecycle traces preserve project ownership, settlement and ret
 			for (const start of project.ledger().filter(e => e.type === "audit_started")) {
 				const outcomes = project.ledger().filter(e => (e.type === "audit_result" || e.type === "audit_skipped") && e.auditId === start.auditId);
 				assert.ok(outcomes.length <= 1, `duplicate outcome ${start.auditId}`);
-				const running = attempts.find(a => !a.done && a.auditId === start.auditId && a.args.signal === h.core.activeAudit?.controller.signal && a.args.ctx === project.ctx);
+				const running = attempts.find(a => !a.done && a.auditId === start.auditId && a.args.signal === h.core.state.activeAudit?.controller.signal && a.args.ctx === project.ctx);
 				if (!running) assert.equal(outcomes.length, 1, "retired attempts settle before the next transition");
 			}
 		}
-		if (!h.core.activeAudit) {
-			assert.equal(h.core.auditAnimationTimer, null);
-			assert.equal(h.core.auditProgress, null);
+		if (!h.core.state.activeAudit) {
+			assert.equal(h.core.view.auditAnimationTimer, null);
+			assert.equal(h.core.view.auditProgress, null);
 		}
-		assert.equal(h.core.goalModalDepth, 0);
+		assert.equal(h.core.state.goalModalDepth, 0);
 	};
 	try {
 		for (const [i, project] of projects.entries()) writeActiveGoalFile(project.ctx, {...project.goal, objective: `Independent project ${i}`});
@@ -388,7 +388,7 @@ test("fixed-seed lifecycle traces preserve project ownership, settlement and ret
 			if (action === 0 || action === 1) {
 				if (action === 0) owner = 1 - owner;
 				await h.event(action === 0 ? "session_start" : "session_tree", {}, projects[owner]!.ctx);
-			} else if (action === 2 && !h.core.activeAudit && h.core.state.goal?.status === "active") {
+			} else if (action === 2 && !h.core.state.activeAudit && h.core.state.goal?.status === "active") {
 				const before = attempts.length;
 				const promise = h.call("update_goal", {status: "complete"}, ctx);
 				assert.equal(attempts.length, before + 1);
@@ -399,15 +399,15 @@ test("fixed-seed lifecycle traces preserve project ownership, settlement and ret
 				if (attempt) {
 					if (action === 4) attempt.pending.reject(new Error("trace auditor failure"));
 						else {
-						if (action === 5 && attempt.args.signal === h.core.activeAudit?.controller.signal) h.core.abortAudit(ctx);
+						if (action === 5 && attempt.args.signal === h.core.state.activeAudit?.controller.signal) h.core.view.abortAudit();
 						attempt.pending.resolve(attempt.args.signal.aborted ? {...approved, error: "Auditor aborted."} : {approved: false, output: "More verification needed."});
 					}
 					await attempt.promise; attempt.done = true;
 				}
 			} else if (action === 6) {
-				h.core.setFocusedGoalId(null, ctx, "selected");
-				h.core.setFocusedGoalId(projects[owner]!.goal.id, ctx, "selected");
-			} else if (action === 7 && !h.core.activeAudit) {
+				h.core.focus.setFocus(null, ctx, "selected");
+				h.core.focus.setFocus(projects[owner]!.goal.id, ctx, "selected");
+			} else if (action === 7 && !h.core.state.activeAudit) {
 				if (h.core.state.goal?.status === "active") h.core.pauseActiveGoal(ctx);
 					else h.core.scheduler.resume(ctx);
 			} else if (action === 8) {
@@ -420,7 +420,7 @@ test("fixed-seed lifecycle traces preserve project ownership, settlement and ret
 				assert.equal(rejected.isError, true);
 				assert.equal(projects[owner]!.disk(), disk);
 				assert.deepEqual(h.core.state.goal, state);
-			} else if (action === 10 && !h.core.activeAudit && h.core.state.goal?.status === "active") {
+			} else if (action === 10 && !h.core.state.activeAudit && h.core.state.goal?.status === "active") {
 				await h.event("turn_start", {}, ctx);
 				await h.call("set_goal_tasks", {tasks: [{id: "trace-task", title: "Verify trace work"}], block_completion: false}, ctx);
 				await h.call("update_goal_task", {task_id: "trace-task", status: "complete", evidence: "trace verification"}, ctx);

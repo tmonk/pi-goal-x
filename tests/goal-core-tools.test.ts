@@ -313,7 +313,7 @@ test("update_goal(complete) runs the auditor without a verification-summary para
 		assert.ok(events.some((e) => e.type === "audit_result" && (e as any).verdict === "approved"), "audit_result ledger event");
 		assert.ok(events.some((e) => e.type === "goal_completed"), "goal_completed ledger event");
 		// §15.4: approval shows the result card during deferred completion.
-		assert.equal(h.core.auditResult?.verdict, "approved", "approval sets the result card verdict");
+		assert.equal(h.core.view.auditResult?.verdict, "approved", "approval sets the result card verdict");
 	} finally {
 		f.cleanup();
 	}
@@ -337,9 +337,9 @@ test("update_goal(complete) with a rejection keeps the goal open with feedback",
 		const events = ledgerEvents(f.cwd);
 		assert.ok(events.some((e) => e.type === "audit_result" && (e as any).verdict === "disapproved"), "disapproved audit recorded");
 		// §15.4: the result card state is set for the widget, then clears.
-		assert.deepEqual(h.core.auditResult?.verdict, "disapproved", "rejection sets the result card verdict");
-		h.core.clearAuditResult();
-		assert.equal(h.core.auditResult, null, "clearAuditResult restores the normal dashboard state");
+		assert.deepEqual(h.core.view.auditResult?.verdict, "disapproved", "rejection sets the result card verdict");
+		h.core.view.clearAuditResult();
+		assert.equal(h.core.view.auditResult, null, "clearAuditResult restores the normal dashboard state");
 	} finally {
 		f.cleanup();
 	}

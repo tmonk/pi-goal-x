@@ -76,6 +76,16 @@ Rendered output is unchanged. Before and after, a scratch script rendered 2,808 
 - Known quirk kept as is: at widths below about 20, a header with right-side meta and a wrapped block can be wider than the box; the component's clamp cuts them. `tests/dashboard-box.test.ts` (9 tests) pins the box row widths at 24 and 60 and the scroll rules.
 - Validation: check, lint and all unit tests pass (1,274 tests, 5 skipped). The `real SDK: system deltas` e2e test timed out twice when the suite ran while another heavy command did; it passes alone and on a quiet run.
 
+## Round three: narrow core
+
+Behavior is unchanged: tool schemas, prompts, messages and file formats are the same. 1,270 tests, 0 failures, 5 skipped (as root).
+
+- `GoalCore` went from 75 members to 28. The pass-through shortcuts are gone; callers reach the service that owns the behavior: `core.state` (the session state itself, so `core.state.goalsById`, `core.state.enterModal()`, `core.state.focusToken()`), `core.view` (audit widget state, dashboard toggles, `goalForDisplay`, `clear`), `core.focus`, `core.lifecycle`, `core.progress` and `core.watch`. `queueContinuation` is `core.scheduler.schedule`, `flushGoalTransaction` is `core.goalService.flushTurn`, and the turn helpers are `core.runtime.*`. Four members nobody used (`clearContinuationTimer`, `clearStoppedRuntimeState`, `removeFocusedGoal`, `stopActiveGoal`) were dropped. Tests and experiments that used the old names were updated.
+- New `extensions/goal-core-types.ts` holds named capability interfaces (`GoalDiskSync`, `GoalUiRefresh`, `GoalRunControl`, `GoalContinuationControl`, `GoalModalAccess`, `GoalOperationGuard`, `GoalRecordWriter`, ...) and slice helpers (`StateSlice<K>`, `ViewSlice<K>`, `ServiceSlice<K>`, ...) that pick members of one service. `GoalCore` extends the flat ones; the nested ones are satisfied structurally.
+- Each consumer exports the type of its `core` parameter, built from those pieces: `GoalCommandsCore`, `GoalEventsCore`, `CoreToolsCore`, `TaskToolsCore`, `DraftingToolsCore`, `GoalDraftingCore`, `GoalCompletionCore`, `GoalUpdateFlowsCore`, `GoalContextCore`, `TerminalInputCore`, `SettingsMenuCore`, `GoalControlsCore`. A test can now fake only those members; the terminal-input fakes in `goal-widget.test.ts` and the events fake in `goal-session-safety.test.ts` use them.
+- `registerGoalContext` and `GoalAuditMessages.flush` take `Pick<ExtensionAPI, ...>` instead of the whole host API, so the events core can ask for just `on` and `sendMessage`.
+- Left alone: `runningGoalId`, `clearContinuationState`, `clearActiveAccounting`, `reconcileFocusedGoalFromDisk`, `pauseActiveGoal`, `updateUI`, `loadedCommands`, `runtime`, `interruption`, `goalService` and `pi` stay on the core because `goal-scheduler.ts` and `goal-interruption.ts` (narrowed separately) still read them. `armFocusedContinuation` stays because it joins progress and the scheduler. `isActionableContinuationGoal` and `installGoalToolProfile` stay because they close over several services.
+
 ## Round three: storage and performance
 
 Behavior is unchanged: goal file, snapshot, ledger and checkpoint formats, prompt text and cache keys are the same. Every export used by `experiments/` or tests is still exported from its old module.

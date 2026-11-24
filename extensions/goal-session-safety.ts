@@ -45,7 +45,7 @@ export class GoalAuditMessages {
 	}
 
 	/** False means the entire settlement callback belongs to an invalidated host. */
-	flush(ctx: ExtensionContext, pi: ExtensionAPI): boolean {
+	flush(ctx: ExtensionContext, pi: Pick<ExtensionAPI, "sendMessage">): boolean {
 		try {
 			// Check both getters before changing the queue: a late callback from
 			// an old runner must not discard the replacement session's messages.
