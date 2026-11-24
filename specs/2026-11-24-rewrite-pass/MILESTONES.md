@@ -6,7 +6,9 @@
 
 - Moved the hand-rolled fake hosts in `goal-network-recovery`, `goal-stale-continuation-golden`, `goal-modal-escape`, `integration/extension` and `e2e/goal-lifecycle-dashboard` onto `tests/support/extension-harness.ts`. Assertions and test counts are unchanged (1258 before and after).
 - The harness gained `terminalInput()` (the recorded `onTerminalInput` handler) and a `setWorkingVisible` stub. Callers that add helpers use `Object.assign(h, ...)`, not a spread, which would freeze the harness getters.
-- Left as they were: `e2e/network-recovery-rpc.test.ts` and `e2e/run.ts` spawn the real `pi` process and build no host. Other suites with their own hosts (`goal-controls`, `goal-progress-features`, `goal-scheduler`, `goal-session-safety`, `goal-surface-baseline`, `goal-tool-visibility`) were outside this pass.
+- Left as they were: `e2e/network-recovery-rpc.test.ts` and `e2e/run.ts` spawn the real `pi` process and build no host.
+- Second pass: `goal-controls`, `goal-scheduler`, `goal-surface-baseline` and `goal-tool-visibility` now run on `createExtensionHarness`. The harness is split into `createFakeHost` (fake pi and ctx plus recorders) and the extension on top. `goal-progress-features` builds only a `GoalCore`, so it uses `createFakeHost` directly with `createGoalCore`. The host gained `createContext(overrides)` for tests that switch session or cwd, and `toolNames`/`commandNames`, which keep duplicate registrations that the `tools`/`commands` maps hide. All 1258 tests are kept.
+- `goal-session-safety` keeps its own objects on purpose: it hands the code under test throwing getters, a Proxy pi and a partial core, which a full fake host would hide.
 
 ## Settings split
 
