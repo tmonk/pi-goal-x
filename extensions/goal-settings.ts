@@ -52,7 +52,6 @@ export interface GoalDashboardKeybindings {
 	first?: GoalKeybinding;
 	last?: GoalKeybinding;
 }
-export type GoalDashboardKeybindingsLayer = Partial<GoalDashboardKeybindings>;
 export interface GoalKeybindings {
 	dashboard: GoalDashboardKeybindings;
 	pause?: GoalKeybinding;
@@ -73,7 +72,7 @@ export const DEFAULT_GOAL_KEYBINDINGS: GoalKeybindings = {
  * Default ceiling for a single recovery delay; the escalation ladder
  * plateaus here. Configurable via networkRecovery.maxDelayMs.
  */
-export const DEFAULT_NETWORK_RECOVERY_MAX_DELAY_MS = 80_000;
+const DEFAULT_NETWORK_RECOVERY_MAX_DELAY_MS = 80_000;
 
 export function formatGoalKeybinding(key: GoalKeybinding | undefined): string {
 	if (Array.isArray(key)) return key.length ? key.map(k => formatGoalKeybinding(k)).join(" / ") : "Unbound";
@@ -96,9 +95,14 @@ export function formatGoalKeybinding(key: GoalKeybinding | undefined): string {
 	}[part.toLowerCase()] ?? part.toUpperCase())).join("+");
 }
 
-// ── resolved settings (runtime shape) ───────────────────────────────────────
+// ── settings shapes ─────────────────────────────────────────────────────────
 
-export interface GoalSettingsResolvedShape {
+/**
+ * Sparse settings layer: exactly what a settings file may contain. Every field
+ * is optional, and explicit false/0 is kept so a lower layer can override a
+ * higher one.
+ */
+export interface GoalSettingsLayer {
 	disableTasks?: boolean;
 	disableContracts?: boolean;
 	subtaskDepth?: number;
@@ -148,14 +152,11 @@ export interface GoalSettingsResolvedShape {
 	networkRecovery?: GoalNetworkRecoverySettingsLayer;
 }
 
-// Resolved Oracle settings are attached to the resolved runtime shape below
-// (see ResolvedGoalOracleSettings).
-
 /**
  * Issue #26: sparse per-leaf Oracle settings. Every leaf inherits
  * independently (project > global > default); enabled defaults false.
  */
-export interface GoalOracleSettingsLayer {
+interface GoalOracleSettingsLayer {
 	enabled?: boolean;
 	provider?: string;
 	model?: string;
@@ -174,43 +175,25 @@ export interface ResolvedGoalOracleSettings {
 }
 
 /** Sparse per-leaf network-recovery settings (maxAttempts 0 = unbounded). */
-export interface GoalNetworkRecoverySettingsLayer {
+interface GoalNetworkRecoverySettingsLayer {
 	maxAttempts?: number;
 	maxDelayMs?: number;
 }
 
 /** Resolved network-recovery settings (concrete defaults). */
-export interface ResolvedGoalNetworkRecoverySettings {
+interface ResolvedGoalNetworkRecoverySettings {
 	maxAttempts: number;
 	maxDelayMs: number;
 }
 
-/**
- * Sparse settings layer: exactly what a settings FILE may contain. Every
- * field optional; explicit false/0 preserved so lower layers can override
- * higher ones. Never passed to prompt/runtime code — that consumes the
- * resolved GoalSettings below.
- */
-export interface GoalSettingsLayer extends GoalSettingsResolvedShape {}
-
-/**
- * Fully resolved runtime settings (defaults filled). Exported as an alias for
- * compatibility: all existing consumers keep importing GoalSettings.
- */
-export interface ResolvedGoalSettingsShape extends GoalSettingsResolvedShape {
-	/** Issue #26: resolved opt-in blocker Oracle configuration. */
+/** Resolved runtime settings, with defaults filled in. */
+export interface GoalSettings extends GoalSettingsLayer {
 	oracle?: ResolvedGoalOracleSettings;
-	/** Resolved goal-level provider-error recovery configuration. */
 	networkRecovery?: ResolvedGoalNetworkRecoverySettings;
 }
 
-export type ResolvedGoalSettings = ResolvedGoalSettingsShape;
-
-/** Compatibility alias: runtime code keeps importing GoalSettings. */
-export type GoalSettings = ResolvedGoalSettings;
-
-export const PI_GOAL_SETTINGS_FILE_ENV = "PI_GOAL_SETTINGS_FILE";
-export const PI_GOAL_GLOBAL_SETTINGS_FILE_ENV = "PI_GOAL_GLOBAL_SETTINGS_FILE";
+const PI_GOAL_SETTINGS_FILE_ENV = "PI_GOAL_SETTINGS_FILE";
+const PI_GOAL_GLOBAL_SETTINGS_FILE_ENV = "PI_GOAL_GLOBAL_SETTINGS_FILE";
 
 const THINKING_LEVELS = new Set<string>(GOAL_THINKING_LEVELS);
 
@@ -257,14 +240,14 @@ export function goalSettingsPath(cwd: string, env: NodeJS.ProcessEnv = process.e
 
 export type SettingsScope = "global" | "project";
 
-export type SettingsDiagnosticCode =
+type SettingsDiagnosticCode =
 	| "invalid_json"
 	| "not_object"
 	| "unknown_key"
 	| "invalid_value"
 	| "invalid_nested_key";
 
-export interface SettingsDiagnostic {
+interface SettingsDiagnostic {
 	scope: SettingsScope;
 	path: string;
 	settingPath?: string;
@@ -272,7 +255,7 @@ export interface SettingsDiagnostic {
 	message: string;
 }
 
-export interface SettingsLayerRead {
+interface SettingsLayerRead {
 	scope: SettingsScope;
 	path: string;
 	status: "ok" | "missing" | "invalid";
@@ -283,13 +266,8 @@ export interface SettingsLayerRead {
 
 // ── zero-op cache ───────────────────────────────────────────────────────────
 
-interface SettingsFileCacheEntry {
-	/** Missing/malformed file: cached so repeated loads are zero-op too. */
-	missing?: boolean;
-	read?: SettingsLayerRead;
-}
-
-const settingsFileCache = new Map<string, SettingsFileCacheEntry>();
+// Missing and malformed files are cached too, so repeated loads do no I/O.
+const settingsFileCache = new Map<string, SettingsLayerRead>();
 
 /**
  * Session boundary (session_start / resume): drop the zero-op settings cache
@@ -552,20 +530,6 @@ export function parseSettingsLayer(
 	return { layer, diagnostics };
 }
 
-/**
- * Legacy strict parse: throws on unknown keys. Kept for callers that want
- * fail-closed parsing of a whole known-shape object (e.g. tests); layered
- * loading uses parseSettingsLayer instead.
- */
-export function parseGoalSettings(raw: unknown): GoalSettings {
-	const { layer, diagnostics } = parseSettingsLayer(raw, "project", "(inline)");
-	const unknown = diagnostics
-		.filter((d) => d.code === "unknown_key" && d.settingPath && !d.settingPath.includes("."))
-		.map((d) => d.settingPath!);
-	if (unknown.length > 0) throw new Error(`Unknown pi-goal-x-settings.json key(s): ${unknown.join(", ")}`);
-	return layer as GoalSettings;
-}
-
 // ── layer reads (cache-served, zero-op steady state) ───────────────────────
 
 function fingerprintOf(text: string): string {
@@ -585,61 +549,33 @@ function statusFor(diagnostics: SettingsDiagnostic[], hadContent: boolean): "ok"
 }
 
 function readSettingsLayerFresh(target: string, scope: SettingsScope): SettingsLayerRead {
-	let rawText: string | undefined;
+	const read = parseSettingsFile(target, scope);
+	settingsFileCache.set(target, read);
+	return read;
+}
+
+function parseSettingsFile(target: string, scope: SettingsScope): SettingsLayerRead {
+	let rawText: string;
 	try {
 		rawText = fs.readFileSync(target, "utf8");
 	} catch {
-		const read: SettingsLayerRead = {
-			scope,
-			path: target,
-			status: "missing",
-			layer: {},
-			diagnostics: [],
-			fingerprint: "missing",
-		};
-		settingsFileCache.set(target, { read });
-		return read;
+		return { scope, path: target, status: "missing", layer: {}, diagnostics: [], fingerprint: "missing" };
 	}
+	const fingerprint = fingerprintOf(rawText);
 	let parsed: unknown;
-	let diagnostics: SettingsDiagnostic[] = [];
-	let layer: GoalSettingsLayer = {};
 	try {
 		parsed = JSON.parse(rawText);
 	} catch {
-		const read: SettingsLayerRead = {
-			scope,
-			path: target,
-			status: "invalid",
-			layer: {},
-			diagnostics: [{ scope, path: target, code: "invalid_json", message: "settings file is not valid JSON" }],
-			fingerprint: fingerprintOf(rawText),
-		};
-		settingsFileCache.set(target, { read });
-		return read;
+		const diagnostics: SettingsDiagnostic[] = [{ scope, path: target, code: "invalid_json", message: "settings file is not valid JSON" }];
+		return { scope, path: target, status: "invalid", layer: {}, diagnostics, fingerprint };
 	}
-	const result = parseSettingsLayer(parsed, scope, target);
-	layer = result.layer;
-	diagnostics = result.diagnostics;
-	const read: SettingsLayerRead = {
-		scope,
-		path: target,
-		status: statusFor(diagnostics, rawText.trim().length > 0),
-		layer,
-		diagnostics,
-		fingerprint: fingerprintOf(rawText),
-	};
-	settingsFileCache.set(target, { read });
-	return read;
+	const { layer, diagnostics } = parseSettingsLayer(parsed, scope, target);
+	return { scope, path: target, status: statusFor(diagnostics, rawText.trim().length > 0), layer, diagnostics, fingerprint };
 }
 
 /** Cache-served layer read (zero-op in steady state). */
 export function readSettingsLayer(target: string, scope: SettingsScope): SettingsLayerRead {
-	const cached = settingsFileCache.get(target);
-	if (cached?.read) return cached.read;
-	if (cached?.missing) {
-		return { scope, path: target, status: "missing", layer: {}, diagnostics: [], fingerprint: "missing" };
-	}
-	return readSettingsLayerFresh(target, scope);
+	return settingsFileCache.get(target) ?? readSettingsLayerFresh(target, scope);
 }
 
 /** Load just one layer's sparse config (compat helper over readSettingsLayer). */
@@ -649,9 +585,9 @@ export function loadGoalSettingsFileConfig(cwd: string, env: NodeJS.ProcessEnv =
 
 // ── resolution with provenance ──────────────────────────────────────────────
 
-export type SettingsSource = "environment" | "project" | "global" | "default";
+type SettingsSource = "environment" | "project" | "global" | "default";
 
-export interface ResolvedSetting<T> {
+interface ResolvedSetting<T> {
 	value: T;
 	source: SettingsSource;
 	envVar?: string;
@@ -660,7 +596,7 @@ export interface ResolvedSetting<T> {
 export interface SettingsSnapshot {
 	global: SettingsLayerRead;
 	project: SettingsLayerRead;
-	value: ResolvedGoalSettings;
+	value: GoalSettings;
 	provenance: Map<string, ResolvedSetting<unknown>>;
 	diagnostics: SettingsDiagnostic[];
 }
@@ -697,157 +633,24 @@ function resolvedSettingsSnapshot(cwd: string, env: NodeJS.ProcessEnv): Settings
 	}
 
 	const provenance = new Map<string, ResolvedSetting<unknown>>();
-	const track = <T>(key: string, resolved: ResolvedSetting<T>): T => {
+	const resolve = <T>(key: string, get: (layer: GoalSettingsLayer) => T | undefined, defaultValue: T, envVar?: string, envValue?: T): T => {
+		const resolved = resolveLeaf<T>({ envValue, envVar, projectValue: get(project.layer), globalValue: get(global.layer), defaultValue });
 		provenance.set(key, resolved as ResolvedSetting<unknown>);
 		return resolved.value;
 	};
+	const top = <K extends keyof GoalSettingsLayer>(key: K, defaultValue: GoalSettingsLayer[K], envVar?: string, envValue?: GoalSettingsLayer[K]) =>
+		resolve(key, layer => layer[key], defaultValue, envVar, envValue);
+	const oracle = <K extends keyof GoalOracleSettingsLayer>(key: K, defaultValue: GoalOracleSettingsLayer[K]) =>
+		resolve(`oracle.${key}`, layer => layer.oracle?.[key], defaultValue);
+	const networkRecovery = <K extends keyof GoalNetworkRecoverySettingsLayer>(key: K, envVar: string) =>
+		resolve(`networkRecovery.${key}`, layer => layer.networkRecovery?.[key], key === "maxAttempts" ? 0 : DEFAULT_NETWORK_RECOVERY_MAX_DELAY_MS, envVar, asNonNegativeInt(env[envVar]));
 
-	const envBool = (name: string): boolean | undefined =>
-		asBool(env[name]);
-	const envInt = (name: string): number | undefined =>
-		asNonNegativeInt(env[name]);
-
-	const disableTasks = track("disableTasks", resolveLeaf<boolean>({
-		envValue: envBool("PI_GOAL_DISABLE_TASKS"),
-		projectValue: project.layer.disableTasks,
-		globalValue: global.layer.disableTasks,
-		defaultValue: false,
-		envVar: "PI_GOAL_DISABLE_TASKS",
-	}));
-	const disableContracts = track("disableContracts", resolveLeaf<boolean>({
-		envValue: envBool("PI_GOAL_DISABLE_CONTRACTS"),
-		projectValue: project.layer.disableContracts,
-		globalValue: global.layer.disableContracts,
-		defaultValue: false,
-		envVar: "PI_GOAL_DISABLE_CONTRACTS",
-	}));
-	const subtaskDepth = track("subtaskDepth", resolveLeaf<number>({
-		projectValue: project.layer.subtaskDepth,
-		globalValue: global.layer.subtaskDepth,
-		defaultValue: 1,
-	}));
-	const provider = track("provider", resolveLeaf<string>({
-		projectValue: project.layer.provider,
-		globalValue: global.layer.provider,
-		defaultValue: undefined as unknown as string,
-	}));
-	const model = track("model", resolveLeaf<string>({
-		projectValue: project.layer.model,
-		globalValue: global.layer.model,
-		defaultValue: undefined as unknown as string,
-	}));
-	const thinkingLevel = track("thinkingLevel", resolveLeaf<ThinkingLevel>({
-		projectValue: project.layer.thinkingLevel,
-		globalValue: global.layer.thinkingLevel,
-		defaultValue: undefined as unknown as ThinkingLevel,
-	}));
-	const disabled = track("disabled", resolveLeaf<boolean>({
-		projectValue: project.layer.disabled,
-		globalValue: global.layer.disabled,
-		defaultValue: false,
-	}));
-	const autoSelectSingleGoal = track("autoSelectSingleGoal", resolveLeaf<boolean>({
-		projectValue: project.layer.autoSelectSingleGoal,
-		globalValue: global.layer.autoSelectSingleGoal,
-		defaultValue: false,
-	}));
-	const auditorProjectResources = track("auditorProjectResources", resolveLeaf<boolean>({
-		projectValue: project.layer.auditorProjectResources,
-		globalValue: global.layer.auditorProjectResources,
-		defaultValue: false,
-	}));
-	const hideUnfocusedBanner = track("hideUnfocusedBanner", resolveLeaf<boolean>({
-		projectValue: project.layer.hideUnfocusedBanner,
-		globalValue: global.layer.hideUnfocusedBanner,
-		defaultValue: false,
-	}));
-	const showAutonomousRuns = track("showAutonomousRuns", resolveLeaf<boolean>({
-		projectValue: project.layer.showAutonomousRuns,
-		globalValue: global.layer.showAutonomousRuns,
-		defaultValue: true,
-	}));
-	const showContextUsage = track("showContextUsage", resolveLeaf<boolean>({
-		projectValue: project.layer.showContextUsage,
-		globalValue: global.layer.showContextUsage,
-		defaultValue: false,
-	}));
-	const hideUnfocusedPrompt = track("hideUnfocusedPrompt", resolveLeaf<boolean>({
-		projectValue: project.layer.hideUnfocusedPrompt,
-		globalValue: global.layer.hideUnfocusedPrompt,
-		defaultValue: false,
-	}));
-	const goalsRoot = track("goalsRoot", resolveLeaf<string | undefined>({
-		envValue: env.PI_GOAL_ROOT, envVar: "PI_GOAL_ROOT",
-		projectValue: project.layer.goalsRoot, globalValue: global.layer.goalsRoot, defaultValue: undefined,
-	}));
-	// Issue #26: Oracle leaves resolve per leaf like every other setting.
-	const oracleEnabled = track("oracle.enabled", resolveLeaf<boolean>({
-		projectValue: project.layer.oracle?.enabled,
-		globalValue: global.layer.oracle?.enabled,
-		defaultValue: false,
-	}));
-	const oracleProvider = track("oracle.provider", resolveLeaf<string>({
-		projectValue: project.layer.oracle?.provider,
-		globalValue: global.layer.oracle?.provider,
-		defaultValue: undefined as unknown as string,
-	}));
-	const oracleModel = track("oracle.model", resolveLeaf<string>({
-		projectValue: project.layer.oracle?.model,
-		globalValue: global.layer.oracle?.model,
-		defaultValue: undefined as unknown as string,
-	}));
-	const oracleThinkingLevel = track("oracle.thinkingLevel", resolveLeaf<ThinkingLevel>({
-		projectValue: project.layer.oracle?.thinkingLevel,
-		globalValue: global.layer.oracle?.thinkingLevel,
-		defaultValue: undefined as unknown as ThinkingLevel,
-	}));
-	const oracleProjectResources = track("oracle.projectResources", resolveLeaf<boolean>({
-		projectValue: project.layer.oracle?.projectResources,
-		globalValue: global.layer.oracle?.projectResources,
-		defaultValue: false,
-	}));
-	const oracleMaxFailedAttemptsPerBlocker = track("oracle.maxFailedAttemptsPerBlocker", resolveLeaf<number>({
-		projectValue: project.layer.oracle?.maxFailedAttemptsPerBlocker,
-		globalValue: global.layer.oracle?.maxFailedAttemptsPerBlocker,
-		defaultValue: 2,
-	}));
-	const idleContinuationBackoff = track("idleContinuationBackoff", resolveLeaf<boolean>({projectValue: project.layer.idleContinuationBackoff, globalValue: global.layer.idleContinuationBackoff, defaultValue: false}));
-	const strictExecutionContract = track("strictExecutionContract", resolveLeaf<boolean>({
-		projectValue: project.layer.strictExecutionContract,
-		globalValue: global.layer.strictExecutionContract,
-		defaultValue: false,
-	}));
-	const maxAutonomousRuns = track("maxAutonomousRuns", resolveLeaf<number | undefined>({
-		projectValue: project.layer.maxAutonomousRuns,
-		globalValue: global.layer.maxAutonomousRuns,
-		defaultValue: undefined,
-	}));
-	const stallTimeoutMinutes = track("stallTimeoutMinutes", resolveLeaf<number>({
-		projectValue: project.layer.stallTimeoutMinutes,
-		globalValue: global.layer.stallTimeoutMinutes,
-		defaultValue: 0,
-	}));
-	const objectiveMaxChars = track("objectiveMaxChars", resolveLeaf<number>({
-		envValue: envInt("PI_GOAL_OBJECTIVE_MAX_CHARS"),
-		projectValue: project.layer.objectiveMaxChars,
-		globalValue: global.layer.objectiveMaxChars,
-		defaultValue: 0,
-		envVar: "PI_GOAL_OBJECTIVE_MAX_CHARS",
-	}));
-	const networkRecoveryMaxAttempts = track("networkRecovery.maxAttempts", resolveLeaf<number>({
-		envValue: envInt("PI_GOAL_NETWORK_RECOVERY_MAX_ATTEMPTS"),
-		projectValue: project.layer.networkRecovery?.maxAttempts,
-		globalValue: global.layer.networkRecovery?.maxAttempts,
-		defaultValue: 0,
-		envVar: "PI_GOAL_NETWORK_RECOVERY_MAX_ATTEMPTS",
-	}));
-	const networkRecoveryMaxDelayMs = track("networkRecovery.maxDelayMs", resolveLeaf<number>({
-		envValue: envInt("PI_GOAL_NETWORK_RECOVERY_MAX_DELAY_MS"),
-		projectValue: project.layer.networkRecovery?.maxDelayMs,
-		globalValue: global.layer.networkRecovery?.maxDelayMs,
-		defaultValue: DEFAULT_NETWORK_RECOVERY_MAX_DELAY_MS,
-		envVar: "PI_GOAL_NETWORK_RECOVERY_MAX_DELAY_MS",
-	}));
+	const provider = top("provider", undefined);
+	const model = top("model", undefined);
+	const thinkingLevel = top("thinkingLevel", undefined);
+	const oracleProvider = oracle("provider", undefined);
+	const oracleModel = oracle("model", undefined);
+	const oracleThinkingLevel = oracle("thinkingLevel", undefined);
 
 	const keybindings = { dashboard: {} } as unknown as GoalKeybindings;
 	for (const action of GOAL_KEY_ACTIONS) {
@@ -856,7 +659,7 @@ function resolvedSettingsSnapshot(cwd: string, env: NodeJS.ProcessEnv): Settings
 			for (const key of action.path) cursor = (cursor as Record<string, unknown> | undefined)?.[key];
 			return cursor as GoalKeybinding | undefined;
 		};
-		const resolved = track(action.path.join("."), resolveLeaf<GoalKeybinding>({ projectValue: get(project.layer), globalValue: get(global.layer), defaultValue: action.defaults }));
+		const resolved = resolve(action.path.join("."), get, action.defaults);
 		let target = keybindings as unknown as Record<string, unknown>;
 		const configured = get(project.layer) !== undefined || get(global.layer) !== undefined;
 		// Keep the ordinary, uncustomized settings fast path as small as before.
@@ -865,43 +668,42 @@ function resolvedSettingsSnapshot(cwd: string, env: NodeJS.ProcessEnv): Settings
 		target[action.path.at(-1)!] = resolved;
 	}
 	const commands: GoalCommands = {};
-	for (const [id] of GOAL_COMMANDS) commands[id] = track(`commands.${id}`, resolveLeaf<string[]>({ projectValue: project.layer.commands?.[id], globalValue: global.layer.commands?.[id], defaultValue: [id] }));
-	const pauseOrder = track("pauseOrder", resolveLeaf<PauseOrder>({ projectValue: project.layer.pauseOrder, globalValue: global.layer.pauseOrder, defaultValue: "together" }));
+	for (const [id] of GOAL_COMMANDS) commands[id] = resolve(`commands.${id}`, layer => layer.commands?.[id], [id]);
 
-	const value: ResolvedGoalSettings = {
-		disableTasks,
-		disableContracts,
-		subtaskDepth,
+	const value: GoalSettings = {
+		disableTasks: top("disableTasks", false, "PI_GOAL_DISABLE_TASKS", asBool(env.PI_GOAL_DISABLE_TASKS)),
+		disableContracts: top("disableContracts", false, "PI_GOAL_DISABLE_CONTRACTS", asBool(env.PI_GOAL_DISABLE_CONTRACTS)),
+		subtaskDepth: top("subtaskDepth", 1),
 		...(provider ? { provider } : {}),
 		...(model ? { model } : {}),
 		...(thinkingLevel ? { thinkingLevel } : {}),
-		disabled,
-		autoSelectSingleGoal,
-		auditorProjectResources,
-		hideUnfocusedBanner,
-		showAutonomousRuns,
-		showContextUsage,
-		hideUnfocusedPrompt,
-		goalsRoot,
-		stallTimeoutMinutes,
-		maxAutonomousRuns,
-		idleContinuationBackoff,
-		strictExecutionContract,
-		objectiveMaxChars,
+		disabled: top("disabled", false),
+		autoSelectSingleGoal: top("autoSelectSingleGoal", false),
+		auditorProjectResources: top("auditorProjectResources", false),
+		hideUnfocusedBanner: top("hideUnfocusedBanner", false),
+		showAutonomousRuns: top("showAutonomousRuns", true),
+		showContextUsage: top("showContextUsage", false),
+		hideUnfocusedPrompt: top("hideUnfocusedPrompt", false),
+		goalsRoot: top("goalsRoot", undefined, "PI_GOAL_ROOT", env.PI_GOAL_ROOT),
+		stallTimeoutMinutes: top("stallTimeoutMinutes", 0),
+		maxAutonomousRuns: top("maxAutonomousRuns", undefined),
+		idleContinuationBackoff: top("idleContinuationBackoff", false),
+		strictExecutionContract: top("strictExecutionContract", false),
+		objectiveMaxChars: top("objectiveMaxChars", 0, "PI_GOAL_OBJECTIVE_MAX_CHARS", asNonNegativeInt(env.PI_GOAL_OBJECTIVE_MAX_CHARS)),
 		keybindings,
 		...((Object.keys(global.layer.commands ?? {}).length || Object.keys(project.layer.commands ?? {}).length) ? { commands } : {}),
-		pauseOrder,
+		pauseOrder: top("pauseOrder", "together"),
 		networkRecovery: {
-			maxAttempts: networkRecoveryMaxAttempts,
-			maxDelayMs: networkRecoveryMaxDelayMs,
+			maxAttempts: networkRecovery("maxAttempts", "PI_GOAL_NETWORK_RECOVERY_MAX_ATTEMPTS"),
+			maxDelayMs: networkRecovery("maxDelayMs", "PI_GOAL_NETWORK_RECOVERY_MAX_DELAY_MS"),
 		},
 		oracle: {
-			enabled: oracleEnabled,
+			enabled: oracle("enabled", false)!,
 			...(oracleProvider ? { provider: oracleProvider } : {}),
 			...(oracleModel ? { model: oracleModel } : {}),
 			...(oracleThinkingLevel ? { thinkingLevel: oracleThinkingLevel } : {}),
-			projectResources: oracleProjectResources,
-			maxFailedAttemptsPerBlocker: oracleMaxFailedAttemptsPerBlocker,
+			projectResources: oracle("projectResources", false)!,
+			maxFailedAttemptsPerBlocker: oracle("maxFailedAttemptsPerBlocker", 2)!,
 		},
 	};
 
@@ -917,7 +719,7 @@ function resolvedSettingsSnapshot(cwd: string, env: NodeJS.ProcessEnv): Settings
 	return snapshot;
 }
 
-function copyResolvedSettings(value: ResolvedGoalSettings): ResolvedGoalSettings {
+function copyResolvedSettings(value: GoalSettings): GoalSettings {
 	return {...value,
 		...(value.keybindings ? {keybindings: Object.keys(value.keybindings).length === 1 && Object.values(value.keybindings.dashboard).every(binding => typeof binding === "string")
 			? { dashboard: { ...value.keybindings.dashboard } } : structuredClone(value.keybindings)} : {}),
@@ -947,7 +749,7 @@ export type SettingsMutation =
 	| { op: "set"; path: readonly string[]; value: unknown }
 	| { op: "unset"; path: readonly string[] };
 
-export interface MutateSettingsInput {
+interface MutateSettingsInput {
 	scope: SettingsScope;
 	cwd: string;
 	env?: NodeJS.ProcessEnv;
@@ -1076,85 +878,6 @@ export function mutateSettingsLayer(input: MutateSettingsInput): SettingsSnapsho
 	} finally {
 		lock.release();
 	}
-}
-
-// ── legacy whole-file save (routed through the locked mutation path) ────────
-
-/**
- * Save settings to the PROJECT file. Kept for compatibility; internally uses
- * the conflict-safe locked mutation path (replace semantics via unset+set is
- * not needed here: the whole-object replace happens under the same lock with
- * a fresh re-read, so no cached stale object is ever written).
- */
-export function saveGoalSettingsFileConfig(cwd: string, settings: GoalSettings): GoalSettings {
-	const target = goalSettingsPath(cwd);
-	const lock = acquireSettingsLock(target);
-	try {
-		// Fresh re-read under the lock: never persist a cached whole object.
-		const current = readSettingsLayerFresh(target, "project");
-		if (current.status === "invalid") {
-			throw new SettingsMutationError(`Refusing to overwrite invalid project settings at ${target}`, current.diagnostics);
-		}
-		const clean = buildPersistedLayer(settings);
-		writeSettingsJson(target, clean);
-		invalidateSettingsCachePath(target);
-		// Return the normalized runtime shape (thinkingLevel), not the
-		// canonical persisted key (thinking_level).
-		const returned = { ...clean };
-		if (typeof returned.thinking_level === "string") {
-			returned.thinkingLevel = returned.thinking_level as ThinkingLevel;
-			delete returned.thinking_level;
-		}
-		return returned as unknown as GoalSettings;
-	} finally {
-		lock.release();
-	}
-}
-
-/** Canonical persisted form of a resolved/sparse settings object. */
-function buildPersistedLayer(settings: GoalSettings): Record<string, unknown> {
-	const persisted: Record<string, unknown> = {};
-	if (settings.provider) persisted.provider = settings.provider;
-	if (settings.model) persisted.model = settings.model;
-	if (settings.thinkingLevel) persisted.thinking_level = settings.thinkingLevel;
-	if (settings.disabled !== undefined) persisted.disabled = settings.disabled;
-	if (settings.disableTasks !== undefined) persisted.disableTasks = settings.disableTasks;
-	if (settings.disableContracts !== undefined) persisted.disableContracts = settings.disableContracts;
-	if (settings.subtaskDepth !== undefined) persisted.subtaskDepth = settings.subtaskDepth;
-	if (settings.autoSelectSingleGoal !== undefined) persisted.autoSelectSingleGoal = settings.autoSelectSingleGoal;
-	if (settings.auditorProjectResources !== undefined) persisted.auditorProjectResources = settings.auditorProjectResources;
-	if (settings.hideUnfocusedBanner !== undefined) persisted.hideUnfocusedBanner = settings.hideUnfocusedBanner;
-	if (settings.showAutonomousRuns !== undefined) persisted.showAutonomousRuns = settings.showAutonomousRuns;
-	if (settings.showContextUsage !== undefined) persisted.showContextUsage = settings.showContextUsage;
-	if (settings.goalsRoot !== undefined) persisted.goalsRoot = settings.goalsRoot;
-	if (settings.hideUnfocusedPrompt !== undefined) persisted.hideUnfocusedPrompt = settings.hideUnfocusedPrompt;
-	if ((settings as { networkRecovery?: ResolvedGoalNetworkRecoverySettings }).networkRecovery) {
-		const nr = (settings as { networkRecovery?: ResolvedGoalNetworkRecoverySettings }).networkRecovery!;
-		const o: Record<string, unknown> = {};
-		if (nr.maxAttempts !== undefined) o.maxAttempts = nr.maxAttempts;
-		if (nr.maxDelayMs !== undefined) o.maxDelayMs = nr.maxDelayMs;
-		if (Object.keys(o).length > 0) persisted.networkRecovery = o;
-	}
-	if ((settings as { oracle?: ResolvedGoalOracleSettings }).oracle) {
-		const o: Record<string, unknown> = {};
-		const so = (settings as { oracle?: ResolvedGoalOracleSettings }).oracle!;
-		if (so.enabled !== undefined) o.enabled = so.enabled;
-		if (so.provider !== undefined) o.provider = so.provider;
-		if (so.model !== undefined) o.model = so.model;
-		if (so.thinkingLevel !== undefined) o.thinking_level = so.thinkingLevel;
-		if (so.projectResources !== undefined) o.projectResources = so.projectResources;
-		if (so.maxFailedAttemptsPerBlocker !== undefined) o.maxFailedAttemptsPerBlocker = so.maxFailedAttemptsPerBlocker;
-		if (Object.keys(o).length > 0) persisted.oracle = o;
-	}
-	if (settings.idleContinuationBackoff !== undefined) persisted.idleContinuationBackoff = settings.idleContinuationBackoff;
-	if (settings.strictExecutionContract !== undefined) persisted.strictExecutionContract = settings.strictExecutionContract;
-	if (settings.maxAutonomousRuns !== undefined) persisted.maxAutonomousRuns = settings.maxAutonomousRuns;
-	if (settings.stallTimeoutMinutes !== undefined) persisted.stallTimeoutMinutes = settings.stallTimeoutMinutes;
-	if (settings.objectiveMaxChars !== undefined) persisted.objectiveMaxChars = settings.objectiveMaxChars;
-	if (settings.keybindings) persisted.keybindings = structuredClone(settings.keybindings);
-	if (settings.commands) persisted.commands = structuredClone(settings.commands);
-	if (settings.pauseOrder) persisted.pauseOrder = settings.pauseOrder;
-	return persisted;
 }
 
 // ── reporting ───────────────────────────────────────────────────────────────

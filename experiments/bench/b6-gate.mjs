@@ -49,6 +49,9 @@ const byId = (rows) => new Map(rows.map((r) => [r.id, r]));
 const RETIRED_ROWS = new Set([
 	"B7.render.taskOverlay", // widgets/task-list-overlay.ts removed in the 2026-11-24 cleanup
 	"B7.policy.validateTasks", // validateTaskListProposal had no production caller; removed in the same cleanup
+	"B7.compaction.summary", // buildCompactionSummary had no production caller; removed in the second cleanup
+	"B7.compaction.goalSummary", // buildGoalCompactSummary, same
+	"B7.dashboard.taskCount", // countAllTasks had no production caller; removed in the second cleanup
 ]);
 const beforeMap = byId(before.rows.filter((r) => !RETIRED_ROWS.has(r.id)));
 const afterMap = byId(after.rows);

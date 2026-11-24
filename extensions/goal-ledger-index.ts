@@ -3,7 +3,7 @@ import type { OracleConsultState } from "./goal-oracle.ts";
 import { isActivityEvent, sameActivityEvent } from "./goal-activity.ts";
 
 /** Bounded working set per goal; complete history remains in the JSONL ledger. */
-export type GoalAuditEvent = Extract<GoalLedgerEvent, {type: "audit_started" | "audit_result" | "audit_skipped"}>;
+type GoalAuditEvent = Extract<GoalLedgerEvent, {type: "audit_started" | "audit_result" | "audit_skipped"}>;
 export function auditApplies(latestId: string | undefined, event: GoalAuditEvent): boolean {
 	return event.type === "audit_started" || (event.type === "audit_skipped" && event.reason === "disabled") || latestId === undefined || event.auditId === latestId;
 }
@@ -19,7 +19,7 @@ export interface GoalLedgerIndex {
 	lifecycle?: GoalLedgerEvent;
 	oracle: Map<string, OracleConsultState>;
 }
-export function newGoalLedgerIndex(): GoalLedgerIndex {
+function newGoalLedgerIndex(): GoalLedgerIndex {
 	return { recent: [], activity: [], oracle: new Map() };
 }
 const lifecycleEvents = new Set(["goal_created", "goal_paused", "goal_resumed", "goal_blocked", "goal_budget_limited", "goal_completed", "goal_aborted", "goal_archived"]);

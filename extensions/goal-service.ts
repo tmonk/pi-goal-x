@@ -23,7 +23,7 @@ import { mergeFocusedGoalWithDisk } from "./goal-pool.ts";
  * (continuation queue, accounting, nudge state, tools, UI) remain in the
  * extension's event handlers.
  */
-export interface GoalDiagnostic {
+interface GoalDiagnostic {
 	severity: "warning";
 	source: "ledger" | "storage";
 	goalId?: string;
@@ -53,9 +53,9 @@ export interface GoalServiceRef {
 	onDiagnostic(diagnostic: GoalDiagnostic): void;
 }
 
-export type GoalServiceContext = GoalFileContext;
+type GoalServiceContext = GoalFileContext;
 
-export interface GoalMutationSpec {
+interface GoalMutationSpec {
 	/** If provided, the focused goal id must equal this or the mutation is rejected. */
 	expectedGoalId?: string | null;
 	/** If provided, the token must still be current (same goal id + focus revision). */
@@ -74,7 +74,7 @@ export interface GoalMutationSpec {
 	commitFocused?: boolean;
 }
 
-export interface GoalMutationResult {
+interface GoalMutationResult {
 	ok: true;
 	goal: GoalRecord;
 	previousGoalId: string | null;
@@ -82,7 +82,7 @@ export interface GoalMutationResult {
 	focusChanged: boolean;
 }
 
-export interface GoalMutationFailure {
+interface GoalMutationFailure {
 	ok: false;
 	message: string;
 }
@@ -128,13 +128,27 @@ export interface GoalTaskUpdateSpec {
 	ledger?(written: GoalRecord, updatedTask: GoalTask): GoalLedgerEvent[];
 }
 
-export type GoalTaskUpdateOutcome = { ok: true; goal: GoalRecord; task: GoalTask } | { ok: false; message: string };
+type GoalTaskUpdateOutcome = { ok: true; goal: GoalRecord; task: GoalTask } | { ok: false; message: string };
 
 /**
  * §8 execution-focus resolution for a task update: an explicit start sets the
  * currentTaskId (replacing any previous); otherwise completing or skipping the
  * current task clears it; otherwise focus is untouched.
  */
+/** Find the spec's task, validate it and apply its update, without touching the goal. */
+function applyTaskUpdate(tasks: GoalTask[], spec: GoalTaskUpdateSpec): { ok: false; message: string } | { ok: true; updatedTask: GoalTask; updatedTasks: GoalTask[] } {
+	const task = findTaskInTree(tasks, spec.taskId);
+	if (!task) return { ok: false, message: `Task "${spec.taskId}" not found.` };
+	if (spec.validate) {
+		const gate = spec.validate(task);
+		if (!gate.ok) return gate;
+	}
+	const updated = spec.update(task);
+	if (typeof updated === "object" && "ok" in updated && !updated.ok) return updated;
+	const updatedTask = updated as GoalTask;
+	return { ok: true, updatedTask, updatedTasks: updateTaskInTree(tasks, spec.taskId, () => updatedTask) };
+}
+
 function resolveUpdatedCurrentTaskId(spec: GoalTaskUpdateSpec, current: string | undefined, updatedTask: GoalTask): string | undefined {
 	if (spec.setCurrentTaskId !== undefined) return spec.setCurrentTaskId;
 	const terminal = updatedTask.status === "complete" || updatedTask.status === "skipped";
@@ -545,18 +559,9 @@ export class GoalService {
 			if (!current.taskList) {
 				return { ok: false, message: "The goal has no task list." };
 			}
-			const task = findTaskInTree(current.taskList.tasks, spec.taskId);
-			if (!task) {
-				return { ok: false, message: `Task "${spec.taskId}" not found.` };
-			}
-			if (spec.validate) {
-				const gate = spec.validate(task);
-				if (!gate.ok) return gate;
-			}
-			const updated = spec.update(task);
-			if (typeof updated === "object" && "ok" in updated && !updated.ok) return updated;
-			const updatedTask = updated as GoalTask;
-			const updatedTasks = updateTaskInTree(current.taskList.tasks, spec.taskId, () => updatedTask);
+			const applied = applyTaskUpdate(current.taskList.tasks, spec);
+			if (!applied.ok) return applied;
+			const { updatedTask, updatedTasks } = applied;
 			const mutated = sanitizeGoalPaths(ctx, {
 				...current,
 				taskList: { ...current.taskList, tasks: updatedTasks },
@@ -683,18 +688,9 @@ export class GoalService {
 			if (!base.taskList) {
 				return { ok: false, message: "The goal has no task list." };
 			}
-			const task = findTaskInTree(base.taskList.tasks, spec.taskId);
-			if (!task) {
-				return { ok: false, message: `Task "${spec.taskId}" not found.` };
-			}
-			if (spec.validate) {
-				const gate = spec.validate(task);
-				if (!gate.ok) return gate;
-			}
-			const updated = spec.update(task);
-			if (typeof updated === "object" && "ok" in updated && !updated.ok) return updated;
-			const updatedTask = updated as GoalTask;
-			const updatedTasks = updateTaskInTree(base.taskList.tasks, spec.taskId, () => updatedTask);
+			const applied = applyTaskUpdate(base.taskList.tasks, spec);
+			if (!applied.ok) return applied;
+			const { updatedTask, updatedTasks } = applied;
 			const mutated = {
 				...base,
 				taskList: { ...base.taskList, tasks: updatedTasks },

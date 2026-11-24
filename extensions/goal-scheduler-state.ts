@@ -1,8 +1,8 @@
 import { commandHint, commandInstructions, type GoalCommands } from "./goal-controls.ts";
 import { randomUUID } from "node:crypto";
 
-export type GoalDispatchKind = "ready" | "check" | "wake" | "repair" | "kickoff" | "recovery";
-export interface GoalWait {
+type GoalDispatchKind = "ready" | "check" | "wake" | "repair" | "kickoff" | "recovery";
+interface GoalWait {
 	id: string;
 	token: string;
 	reason: string;

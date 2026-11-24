@@ -6,9 +6,9 @@ import path from 'node:path';
 import http from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
-import goalExtension from '../extensions/goal.ts';
-import { createGoal, goalFocusDetails } from '../extensions/goal-record.ts';
-import { writeActiveGoalFile } from '../extensions/storage/goal-files.ts';
+import goalExtension from '../../extensions/goal.ts';
+import { createGoal, goalFocusDetails } from '../../extensions/goal-record.ts';
+import { writeActiveGoalFile } from '../../extensions/storage/goal-files.ts';
 
 const mode = process.argv[2];
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'goal-session-sdk-'));

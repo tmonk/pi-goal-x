@@ -19,6 +19,7 @@ import { newGoalScheduler } from "../extensions/goal-scheduler-state.ts";
 import { writeActiveGoalFile, parseGoalFile } from "../extensions/storage/goal-files.ts";
 import { readGoalLedger } from "../extensions/goal-ledger.ts";
 import { countTasks } from "../extensions/goal-task-tools.ts";
+import { writeProjectSettings } from "./support/settings.ts";
 
 type Harness = ReturnType<typeof createHarness>;
 
@@ -294,7 +295,7 @@ for (const barrier of ["foreign", "interrupted", "claimed", "allowance"]) {
 		goal.scheduler={...newGoalScheduler(barrier === "foreign" ? "other" : "tweak-status-session"),used:3};
 		if(barrier === "interrupted")goal.scheduler.phase="interrupted";
 		if(barrier === "claimed"){goal.scheduler.phase="claimed";goal.scheduler.dispatch={id:"old",kind:"ready",claimedAt:Date.now()};}
-		if(barrier === "allowance") { const {saveGoalSettingsFileConfig}=await import("../extensions/goal-settings.ts");saveGoalSettingsFileConfig(cwd,{maxAutonomousRuns:3}); }
+		if(barrier === "allowance") writeProjectSettings(cwd,{maxAutonomousRuns:3});
 		writeActiveGoalFile(h.ctx,goal);h.core.reconcileFocusedGoalFromDisk(h.ctx);
 		await h.commands.get("goal-tweak")!.handler("Remove budget",h.ctx);
 		await confirmDialog(h,runProposal(h,proposalParams(goal.objective,{token_budget:null})));

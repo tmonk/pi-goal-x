@@ -30,7 +30,7 @@ import {
 	type GoalRecord,
 	type GoalStateEntry,
 } from "../extensions/goal-record.ts";
-import { createMockTheme, createMockTUI } from "./tui-test-utils.ts";
+import { createMockTheme, createMockTUI } from "./support/tui-test-utils.ts";
 
 const FIXTURE_GOAL = readFileSync(new URL("./fixtures/goals/active_goal_fixture.md", import.meta.url), "utf8");
 const ESCAPE = "\x1b";

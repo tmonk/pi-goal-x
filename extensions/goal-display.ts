@@ -1,4 +1,4 @@
-export interface GoalUsageLike {
+interface GoalUsageLike {
 	tokensUsed: number;
 	activeSeconds: number;
 }

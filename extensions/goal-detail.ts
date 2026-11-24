@@ -3,10 +3,10 @@ import { taskIndex } from "./goal-task-index.ts";
 import type { GoalRecord } from "./goal-record.ts";
 import type { GoalLedgerEvent } from "./goal-ledger.ts";
 
-export const GOAL_DETAIL_PAGE_CHARS = 4000;
+const GOAL_DETAIL_PAGE_CHARS = 4000;
 export type GoalDetailSection = "objective" | "tasks" | "history";
-export interface GoalDetailQuery { section: GoalDetailSection; task_id?: string; cursor?: string }
-export type GoalDetailPage = {ok: true; text: string; content: string; nextCursor?: string; totalChars: number} | {ok: false; text: string};
+interface GoalDetailQuery { section: GoalDetailSection; task_id?: string; cursor?: string }
+type GoalDetailPage = {ok: true; text: string; content: string; nextCursor?: string; totalChars: number} | {ok: false; text: string};
 
 interface DetailSource { source: string; key: string }
 const detailCache: Array<{inputs: readonly unknown[]; result: DetailSource}> = [];

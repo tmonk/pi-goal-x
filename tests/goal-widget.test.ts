@@ -5,7 +5,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { renderGoalWidgetLines, renderAuditorWidgetLines, renderAuditResultCardView, GoalWidgetComponent, applyStableHeightBound, type GoalWidgetRecord, type AuditorWidgetProgress } from "../extensions/widgets/goal-widget.ts";
 import type { GoalTask } from "../extensions/goal-record.ts";
-import { createMockTUI, createMockTheme } from "./tui-test-utils.ts";
+import { createMockTUI, createMockTheme } from "./support/tui-test-utils.ts";
 import { createGoal } from "../extensions/goal-record.ts";
 import { newGoalScheduler } from "../extensions/goal-scheduler-state.ts";
 import { deriveGoalDashboardModel } from "../extensions/widgets/goal-dashboard-model.ts";

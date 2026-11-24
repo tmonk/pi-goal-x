@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createGoal, type GoalTask } from "../extensions/goal-record.ts";
 import { goalDetailPage } from "../extensions/goal-detail.ts";
-import { goalPrompt, taskListBlock, MAX_PROMPT_FRAGMENT_CHARS } from "../extensions/prompts/goal-prompts.ts";
+import { goalPrompt, taskListBlock } from "../extensions/prompts/goal-prompts.ts";
 import { taskIndex } from "../extensions/goal-task-index.ts";
 import { deriveGoalDashboardModel } from "../extensions/widgets/goal-dashboard-model.ts";
 import { deriveGoalActivity } from "../extensions/goal-activity.ts";
@@ -147,7 +147,7 @@ test("compact context preserves critical rules and exposes omitted task descenda
 	goal.taskList={tasks:structuredClone(tasks),blockCompletion:true,proposedAt:"2026-09-01"};
 	goal.currentTaskId="parent"; goal.verificationContract="contract "+"y".repeat(20000);
 	const prompt=goalPrompt(goal);
-	assert.ok(prompt.length<MAX_PROMPT_FRAGMENT_CHARS);
+	assert.ok(prompt.length<10_000, "the injected goal prompt stays under 10,000 characters");
 	for(const rule of [/three consecutive goal turns/,/status: "paused"/,/independent completion auditor/,/TASK GATE/,/get_goal\(section="objective"\)/,/Follow the user's ordered plan faithfully/])assert.match(prompt,rule);
 	assert.match(taskListBlock(goal),/child/); assert.equal((taskListBlock(goal).match(/Current: parent/g)??[]).length,1);
 	goal.objective="Updated objective with same id/revision/time";

@@ -12,7 +12,7 @@
 
 import type { GoalTask } from "./goal-record.ts";
 
-export interface TaskSubtreeCounts {
+interface TaskSubtreeCounts {
 	total: number;
 	/** Done count: complete, or complete+skipped when doneIncludesSkipped. */
 	complete: number;
@@ -50,10 +50,4 @@ export function countTaskSubtree(
 		pending: total - rawComplete - rawSkipped,
 		...(opts.collectPending ? { pendingTasks } : {}),
 	};
-}
-
-/** Total node count only (task-list tools / overlay header counts). */
-export function countAllTasks(tasks: readonly GoalTask[] | undefined): number {
-	if (!tasks) return 0;
-	return countTaskSubtree(tasks).total;
 }

@@ -19,7 +19,7 @@ import {
 } from "../goal-record.ts";
 
 export const GOALS_DIR = ".pi/goals";
-export const ARCHIVED_GOALS_DIR = ".pi/goals/archived";
+const ARCHIVED_GOALS_DIR = ".pi/goals/archived";
 
 /**
  * Per-file parse cache (P1-1): keyed by (absolute path, mtime, size), so
@@ -203,7 +203,7 @@ function removeLegacyPoolSnapshot(root: string): void {
 
 export type GoalFileContext = GoalStorageContext;
 
-export function timestampForFile(iso = nowIso()): string {
+function timestampForFile(iso = nowIso()): string {
 	const date = new Date(iso);
 	const safe = Number.isFinite(date.getTime()) ? date : new Date();
 	const pad = (value: number, width = 2) => String(value).padStart(width, "0");
@@ -218,7 +218,7 @@ export function timestampForFile(iso = nowIso()): string {
 	].join("");
 }
 
-export function isSafeRelativeUnder(ctx: GoalFileContext, rootRel: string, relPath: string | undefined): relPath is string {
+function isSafeRelativeUnder(ctx: GoalFileContext, rootRel: string, relPath: string | undefined): relPath is string {
 	if (!relPath || path.isAbsolute(relPath) || relPath.includes("\0")) return false;
 	const normalized = normalizeRelPath(relPath);
 	const parent = normalizeRelPath(path.posix.dirname(normalized));
@@ -229,14 +229,14 @@ export function isSafeRelativeUnder(ctx: GoalFileContext, rootRel: string, relPa
 	return !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
-export function isSafeActivePath(ctx: GoalFileContext, relPath: string | undefined): relPath is string {
+function isSafeActivePath(ctx: GoalFileContext, relPath: string | undefined): relPath is string {
 	return Boolean(
 		isSafeRelativeUnder(ctx, GOALS_DIR, relPath)
 			&& /^active_goal_.*\.md$/.test(path.posix.basename(normalizeRelPath(relPath))),
 	);
 }
 
-export function isSafeArchivedPath(ctx: GoalFileContext, relPath: string | undefined): relPath is string {
+function isSafeArchivedPath(ctx: GoalFileContext, relPath: string | undefined): relPath is string {
 	return Boolean(
 		isSafeRelativeUnder(ctx, ARCHIVED_GOALS_DIR, relPath)
 			&& /^goal_.*\.md$/.test(path.posix.basename(normalizeRelPath(relPath))),
@@ -292,11 +292,11 @@ export function safeUnlinkGoalFile(ctx: GoalFileContext, rootRel: string, relPat
 	}
 }
 
-export function makeActiveGoalPath(goal: GoalRecord): string {
+function makeActiveGoalPath(goal: GoalRecord): string {
 	return `${GOALS_DIR}/active_goal_${timestampForFile(goal.createdAt)}_${safeIdPart(goal.id)}.md`;
 }
 
-export function makeArchivedGoalPath(goal: GoalRecord): string {
+function makeArchivedGoalPath(goal: GoalRecord): string {
 	return `${ARCHIVED_GOALS_DIR}/goal_${timestampForFile(goal.updatedAt)}_${safeIdPart(goal.id)}.md`;
 }
 
@@ -355,7 +355,7 @@ ${goal.objective.trim()}
 `;
 }
 
-export function findJsonObjectEnd(content: string): number {
+function findJsonObjectEnd(content: string): number {
 	let depth = 0;
 	let inString = false;
 	let escaped = false;
@@ -388,7 +388,7 @@ export function findJsonObjectEnd(content: string): number {
 	return -1;
 }
 
-export function extractObjectiveFromBody(body: string): string | undefined {
+function extractObjectiveFromBody(body: string): string | undefined {
 	const lines = body.replace(/^\s+/, "").split(/\r?\n/);
 	const start = lines.findIndex((line) => line.trim() === "# Goal Prompt");
 	if (start < 0) return body.trim() || undefined;
@@ -428,7 +428,7 @@ export function parseGoalFile(filePath: string): GoalRecord | null {
  * Parse goal-file content and seed the P1-1 parse cache (shared by the sync
  * and the parallel async readers). Returns null for malformed content.
  */
-export function parseGoalContentCached(filePath: string, mtimeMs: number, size: number, content: string): GoalRecord | null {
+function parseGoalContentCached(filePath: string, mtimeMs: number, size: number, content: string): GoalRecord | null {
 	const end = findJsonObjectEnd(content);
 	if (end < 0) return null;
 	let raw: Record<string, unknown>;

@@ -8,8 +8,8 @@ import {createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {createAgentSession,DefaultResourceLoader,ModelRuntime,SessionManager,SettingsManager,defineTool} from '@earendil-works/pi-coding-agent';
 import {Type} from '@earendil-works/pi-ai';
-import goalExtension from '../extensions/goal.ts';
-import {hasActiveDraft} from '../extensions/goal-drafting.ts';
+import goalExtension from '../../extensions/goal.ts';
+import {hasActiveDraft} from '../../extensions/goal-drafting.ts';
 
 const mode=process.argv[2]??'draft';
 const startupAbort=mode==='abort';

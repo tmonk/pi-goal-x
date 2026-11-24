@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { captureOne } from "../experiments/context/capture-context.mjs";
+import { captureOne } from "../../experiments/context/capture-context.mjs";
 
 {
  const [disabled, active] = await Promise.all([captureOne("tasks-disabled"), captureOne("current-contracted-task")]);

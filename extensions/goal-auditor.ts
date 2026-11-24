@@ -32,7 +32,7 @@ export interface AuditorProgress {
 	percentage?: number;
 }
 
-export type AuditorProgressCallback = (progress: AuditorProgress) => void;
+type AuditorProgressCallback = (progress: AuditorProgress) => void;
 
 export interface GoalAuditorResult {
 	approved: boolean;
@@ -100,7 +100,7 @@ export function recentNonEmptyLines(text: string, limit: number): string[] {
 }
 
 /** §60: human-readable labels for the auditor's read-only tool set. */
-export function labelForReadOnlyTool(toolName: string): string {
+function labelForReadOnlyTool(toolName: string): string {
 	switch (toolName) {
 		case "read": return "Inspecting files...";
 		case "grep": return "Searching content...";
@@ -112,7 +112,7 @@ export function labelForReadOnlyTool(toolName: string): string {
 }
 
 /** §60: rough phase estimate by tool kind (display only). */
-export function estimateAuditProgress(toolName: string): number {
+function estimateAuditProgress(toolName: string): number {
 	switch (toolName) {
 		case "read":
 		case "ls":

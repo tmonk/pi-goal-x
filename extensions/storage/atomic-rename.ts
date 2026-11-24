@@ -52,7 +52,7 @@ export function atomicRenamer(platform = process.platform, io: RenameIO = native
 
 export const {renameSync: renameAtomicSync, rename: renameAtomic} = atomicRenamer();
 
-export interface AtomicWriteOptions {
+interface AtomicWriteOptions {
 	/** Mode for a new file. An existing file keeps its own permissions. */
 	mode?: number;
 	/** fsync the file and its directory before returning. */

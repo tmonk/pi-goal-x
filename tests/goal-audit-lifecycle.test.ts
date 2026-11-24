@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {stabilizationHarness, deferred} from "./stabilization-utils.ts";
+import {stabilizationHarness, deferred} from "./support/stabilization-utils.ts";
 import {latestAuditorResultForGoal} from "../extensions/goal-ledger.ts";
 import {buildGoalHistoryBlock} from "../extensions/goal-format.ts";
 import {readGoalLedger} from "../extensions/goal-ledger.ts";

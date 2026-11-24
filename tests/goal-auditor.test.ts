@@ -12,13 +12,10 @@ import {
 	runGoalCompletionAuditor,
 } from "../extensions/goal-auditor.ts";
 import {
-	goalSettingsPath,
 	loadGoalSettings,
-	loadGoalSettingsFileConfig,
-	parseGoalSettings,
-	saveGoalSettingsFileConfig,
 } from "../extensions/goal-settings.ts";
 import type { GoalRecord } from "../extensions/goal-record.ts";
+import { parseSettings } from "./support/settings.ts";
 
 function goal(overrides: Partial<GoalRecord> = {}): GoalRecord {
 	return {
@@ -97,63 +94,21 @@ test("runGoalCompletionAuditor passes parent modelRuntime into createSession", a
 	}
 });
 
-test("parseGoalSettings supports provider/model and thinking_level aliases", () => {
-	assert.deepEqual(parseGoalSettings({ thinking_level: "max", oracle: { thinking_level: "max" } }), { thinkingLevel: "max", oracle: { thinkingLevel: "max" } });
-	assert.deepEqual(parseGoalSettings({ provider: "fireworks", model: "accounts/fireworks/routers/kimi", thinking_level: "high" }), {
+test("parseSettings supports provider/model and thinking_level aliases", () => {
+	assert.deepEqual(parseSettings({ thinking_level: "max", oracle: { thinking_level: "max" } }), { thinkingLevel: "max", oracle: { thinkingLevel: "max" } });
+	assert.deepEqual(parseSettings({ provider: "fireworks", model: "accounts/fireworks/routers/kimi", thinking_level: "high" }), {
 		provider: "fireworks",
 		model: "accounts/fireworks/routers/kimi",
 		thinkingLevel: "high",
 	});
-	assert.deepEqual(parseGoalSettings({ provider: " ", model: 123, thinkingLevel: "ludicrous" }), {});
+	assert.deepEqual(parseSettings({ provider: " ", model: 123, thinkingLevel: "ludicrous" }), {});
 });
 
-test("parseGoalSettings reads disabled flag (explicit false preserved for layering)", () => {
-	assert.deepEqual(parseGoalSettings({ disabled: true }), { disabled: true });
-	assert.deepEqual(parseGoalSettings({ disabled: "true" }), { disabled: true });
-	assert.deepEqual(parseGoalSettings({ disabled: false }), { disabled: false }, "explicit false survives so project can override global true");
-	assert.deepEqual(parseGoalSettings({}), {});
-});
-
-test("saveGoalSettingsFileConfig persists UI-editable settings (auditor + task fields)", () => {
-	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-goal-settings-test-"));
-	try {
-		const saved = saveGoalSettingsFileConfig(cwd, {
-			provider: "fireworks",
-			model: "accounts/fireworks/routers/kimi",
-			thinkingLevel: "high",
-		});
-		assert.deepEqual(saved, {
-			provider: "fireworks",
-			model: "accounts/fireworks/routers/kimi",
-			thinkingLevel: "high",
-		});
-		assert.equal(goalSettingsPath(cwd), path.join(cwd, ".pi", "pi-goal-x-settings.json"));
-		assert.deepEqual(loadGoalSettingsFileConfig(cwd), saved);
-		assert.match(fs.readFileSync(goalSettingsPath(cwd), "utf8"), /"thinking_level": "high"/);
-
-		// Save with disabled flag
-		const saved2 = saveGoalSettingsFileConfig(cwd, {
-			provider: "fireworks",
-			model: "accounts/fireworks/routers/kimi",
-			thinkingLevel: "high",
-			disabled: true,
-		});
-		assert.equal(saved2.disabled, true);
-		assert.match(fs.readFileSync(goalSettingsPath(cwd), "utf8"), /"disabled": true/);
-		assert.deepEqual(loadGoalSettingsFileConfig(cwd), saved2);
-
-		// autoSelectSingleGoal: persisted only when true (default is false)
-		const saved3 = saveGoalSettingsFileConfig(cwd, { autoSelectSingleGoal: true });
-		assert.deepEqual(saved3, { autoSelectSingleGoal: true });
-		assert.match(fs.readFileSync(goalSettingsPath(cwd), "utf8"), /"autoSelectSingleGoal": true/);
-		assert.deepEqual(loadGoalSettingsFileConfig(cwd), saved3);
-		const saved4 = saveGoalSettingsFileConfig(cwd, { autoSelectSingleGoal: false });
-		// Layered rewrite: explicit false is persisted so it can override a global true.
-		assert.equal(saved4.autoSelectSingleGoal, false);
-		assert.match(fs.readFileSync(goalSettingsPath(cwd), "utf8"), /"autoSelectSingleGoal": false/);
-	} finally {
-		fs.rmSync(cwd, { recursive: true, force: true });
-	}
+test("parseSettings reads disabled flag (explicit false preserved for layering)", () => {
+	assert.deepEqual(parseSettings({ disabled: true }), { disabled: true });
+	assert.deepEqual(parseSettings({ disabled: "true" }), { disabled: true });
+	assert.deepEqual(parseSettings({ disabled: false }), { disabled: false }, "explicit false survives so project can override global true");
+	assert.deepEqual(parseSettings({}), {});
 });
 
 test("loadGoalSettings does not read old env vars", () => {

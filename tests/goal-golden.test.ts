@@ -24,7 +24,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseAuditorDecision } from "../extensions/goal-auditor.ts";
-import { buildCompactionSummary } from "../extensions/goal-compaction.ts";
 import { readGoalLedger, reconstructGoalLedger } from "../extensions/goal-ledger.ts";
 import { resolveSessionFocus } from "../extensions/goal-pool.ts";
 import {
@@ -345,77 +344,6 @@ test("golden: focus restores from a focus entry against the on-disk pool", () =>
 	} finally {
 		// temp dir cleanup is best-effort.
 	}
-});
-
-// ── Compaction summary golden ────────────────────────────────────────────────
-
-test("golden: compaction summary text for a focused active goal", () => {
-	const cwd = tempCwd();
-	try {
-		writeFixtureGoal(cwd);
-		const pool = readActiveGoalPool({ cwd });
-		const goal = pool.get("golden_fixture_goal");
-		assert.ok(goal);
-		const summary = buildCompactionSummary({
-			goalsById: pool,
-			focusedGoalId: goal.id,
-			ledgerEvents: [],
-		});
-		assert.equal(summary, [
-			"[FOCUSED GOAL]",
-			"Goal golden_fixture_goal — running",
-			"  Objective: Golden fixture goal objective",
-			"  Cumulative goal usage (not context occupancy): 123K (123,456) tokens",
-			"  Time: 1h00m00s",
-			"",
-			"[INSTRUCTION]",
-			"Continue from the focused goal above, or ask the user to run /goal-focus.",
-			"Do not rely on chat memory for goal state; use the facts above.",
-		].join("\n"));
-	} finally {
-		// temp dir cleanup is best-effort.
-	}
-});
-
-test("golden: compaction summary with ledger terminal goals", () => {
-	const cwd = tempCwd();
-	try {
-		writeFixtureGoal(cwd);
-		mkdirSync(path.join(cwd, GOALS_DIR), { recursive: true });
-		writeFileSync(
-			path.join(cwd, ".pi/goals/goal_events.jsonl"),
-			readFileSync(fixturePath("ledger/goal_events_fixture.jsonl"), "utf8"),
-		);
-		const { events } = readGoalLedger({ cwd });
-		const pool = readActiveGoalPool({ cwd });
-		const goal = pool.get("golden_fixture_goal");
-		assert.ok(goal);
-
-		const summary = buildCompactionSummary({
-			goalsById: pool,
-			focusedGoalId: goal.id,
-			ledgerEvents: events,
-		});
-		assert.match(summary, /^\[FOCUSED GOAL\]\nGoal golden_fixture_goal — running\n/);
-		assert.match(summary, /\[TERMINAL GOALS — 2 completed or aborted\]\n- goal-a — completed at 2026-08-03T09:06:00\.000Z\n- goal-b — aborted at 2026-08-03T09:07:00\.000Z/);
-	} finally {
-		// temp dir cleanup is best-effort.
-	}
-});
-
-test("golden: compaction summary for an empty session", () => {
-	const summary = buildCompactionSummary({
-		goalsById: new Map(),
-		focusedGoalId: null,
-		ledgerEvents: [],
-	});
-	assert.equal(summary, [
-		"[NO GOALS]",
-		"No open or terminal goals recorded in this session.",
-		"[INSTRUCTION]",
-		"Continue from the focused goal above, or ask the user to run /goal-focus.",
-		"Do not rely on chat memory for goal state; use the facts above.",
-	].join("\n"));
 });
 
 // ── Auditor verdict marker contract ─────────────────────────────────────────

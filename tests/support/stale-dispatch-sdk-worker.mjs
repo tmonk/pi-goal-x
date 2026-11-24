@@ -5,10 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import {createAgentSession,DefaultResourceLoader,ModelRuntime,SessionManager,SettingsManager} from '@earendil-works/pi-coding-agent';
-import goalExtension from '../extensions/goal.ts';
-import {createGoal,goalFocusDetails} from '../extensions/goal-record.ts';
-import {writeActiveGoalFile,parseGoalFile} from '../extensions/storage/goal-files.ts';
-import {newGoalScheduler} from '../extensions/goal-scheduler-state.ts';
+import goalExtension from '../../extensions/goal.ts';
+import {createGoal,goalFocusDetails} from '../../extensions/goal-record.ts';
+import {writeActiveGoalFile,parseGoalFile} from '../../extensions/storage/goal-files.ts';
+import {newGoalScheduler} from '../../extensions/goal-scheduler-state.ts';
 
 const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'goal-stale-sdk-'));
 const handoff=process.argv.includes('--handoff');

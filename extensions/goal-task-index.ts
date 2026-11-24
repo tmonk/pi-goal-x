@@ -1,6 +1,6 @@
 import type { GoalTask } from "./goal-record.ts";
 
-export interface TaskIndex {
+interface TaskIndex {
 	tasks: GoalTask[];
 	byId: Map<string, GoalTask>;
 	ordered: Array<{task: GoalTask; depth: number; parentId?: string}>;

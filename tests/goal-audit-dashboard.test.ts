@@ -18,7 +18,7 @@ import {
 } from "../extensions/widgets/auditor-dashboard-model.ts";
 import { renderAuditResultCard, renderAuditorDashboard } from "../extensions/widgets/goal-dashboard-renderer.ts";
 import { GoalWidgetComponent, type AuditResultView } from "../extensions/widgets/goal-widget.ts";
-import { createMockTUI, createMockTheme } from "./tui-test-utils.ts";
+import { createMockTUI, createMockTheme } from "./support/tui-test-utils.ts";
 
 const theme = {
 	fg: (_color: string, value: string) => value,

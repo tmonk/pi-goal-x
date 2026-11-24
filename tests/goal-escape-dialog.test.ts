@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { showEscapeDialog } from "../extensions/widgets/goal-escape-dialog.ts";
 import { visibleWidth, type Component } from "@earendil-works/pi-tui";
-import { createMockExtensionContext, createMockTUI, createMockTheme } from "./tui-test-utils.ts";
+import { createMockExtensionContext, createMockTUI, createMockTheme } from "./support/tui-test-utils.ts";
 
 // ── Headless (hasUI = false) path — existing tests preserved ────────────
 

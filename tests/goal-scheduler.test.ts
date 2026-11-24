@@ -8,9 +8,10 @@ import goalExtension from "../extensions/goal.ts";
 import type { GoalCore } from "../extensions/goal-state.ts";
 import { createGoal, goalFocusDetails, cloneGoal, normalizeGoalRecord } from "../extensions/goal-record.ts";
 import { writeActiveGoalFile, parseGoalFile } from "../extensions/storage/goal-files.ts";
-import { invalidateGoalSettingsCache, parseGoalSettings, saveGoalSettingsFileConfig, loadGoalSettings } from "../extensions/goal-settings.ts";
+import { invalidateGoalSettingsCache, loadGoalSettings } from "../extensions/goal-settings.ts";
 import { newGoalScheduler, normalizeGoalScheduler, schedulerSummary } from "../extensions/goal-scheduler-state.ts";
 import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "../extensions/goal-drafting.ts";
+import { writeProjectSettings, parseSettings } from "./support/settings.ts";
 
 async function fixture(t: TestContext, limit?: number, owner = "owner", existing?: string, strict = true, idleBackoff = false) {
 	const cwd = existing ?? mkdtempSync(path.join(tmpdir(), "goal-scheduler-"));
@@ -92,13 +93,13 @@ test("uncapped ready runs keep counting when limits are added and removed", asyn
 	assert.equal(h.core.state.goal?.scheduler?.used, 5);
 	assert.equal(schedulerSummary(h.core.state.goal?.scheduler), "");
 	assert.match(schedulerSummary(h.core.state.goal?.scheduler, 5), /5\/5/);
-	saveGoalSettingsFileConfig(h.cwd, { maxAutonomousRuns: 5 });
+	writeProjectSettings(h.cwd, { maxAutonomousRuns: 5 });
 	assert.equal(h.ready().terminate, false, "adding a cap includes previously uncapped dispatches");
-	saveGoalSettingsFileConfig(h.cwd, {});
+	writeProjectSettings(h.cwd, {});
 	assert.equal(h.ready().terminate, true, "removing the cap re-enables continuation");
 	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); h.admit();
 	assert.equal(h.core.state.goal?.scheduler?.used, 6);
-	saveGoalSettingsFileConfig(h.cwd, { maxAutonomousRuns: 6 });
+	writeProjectSettings(h.cwd, { maxAutonomousRuns: 6 });
 	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
 	assert.equal(h.sent.length, 6);
 	assert.equal(h.core.state.goal?.status, "paused");
@@ -131,7 +132,7 @@ test("declarations persist before termination, claim once, and settings changes 
 	h.admit(); assert.equal(h.ready().terminate, true); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
 	assert.equal(h.core.state.goal?.scheduler?.used, 2);
 	h.admit(); assert.equal(h.ready().terminate, false);
-	saveGoalSettingsFileConfig(h.cwd, { maxAutonomousRuns: 3 });
+	writeProjectSettings(h.cwd, { maxAutonomousRuns: 3 });
 	assert.equal(h.ready().terminate, true);
 	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
 	assert.equal(h.core.state.goal?.scheduler?.used, 3);
@@ -232,10 +233,10 @@ test("update_goal rejects mixed forms and scheduler cloning protects rollback", 
 
 test("maxAutonomousRuns is strictly parsed, layered, and removable", async t => {
 	const h = await fixture(t);
-	for (const n of [-1, 1.1, "1x", Number.MAX_SAFE_INTEGER + 1]) assert.equal(parseGoalSettings({ maxAutonomousRuns: n }).maxAutonomousRuns, undefined);
-	for (const n of [0, "0", 1, "25", Number.MAX_SAFE_INTEGER]) assert.equal(parseGoalSettings({ maxAutonomousRuns: n }).maxAutonomousRuns, Number(n));
-	saveGoalSettingsFileConfig(h.cwd, { maxAutonomousRuns: 4 }); assert.equal(loadGoalSettings(h.cwd).maxAutonomousRuns, 4);
-	saveGoalSettingsFileConfig(h.cwd, {}); assert.equal(loadGoalSettings(h.cwd).maxAutonomousRuns, undefined);
+	for (const n of [-1, 1.1, "1x", Number.MAX_SAFE_INTEGER + 1]) assert.equal(parseSettings({ maxAutonomousRuns: n }).maxAutonomousRuns, undefined);
+	for (const n of [0, "0", 1, "25", Number.MAX_SAFE_INTEGER]) assert.equal(parseSettings({ maxAutonomousRuns: n }).maxAutonomousRuns, Number(n));
+	writeProjectSettings(h.cwd, { maxAutonomousRuns: 4 }); assert.equal(loadGoalSettings(h.cwd).maxAutonomousRuns, 4);
+	writeProjectSettings(h.cwd, {}); assert.equal(loadGoalSettings(h.cwd).maxAutonomousRuns, undefined);
 });
 
 test("project zero disables an inherited allowance without renewing consumption", async t => {
@@ -246,7 +247,7 @@ test("project zero disables an inherited allowance without renewing consumption"
 	h.begin(); h.ready(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); h.admit();
 	assert.equal(h.core.state.goal?.scheduler?.used, 1);
 	h.ready(); h.core.scheduler.settled(h.ctx);
-	saveGoalSettingsFileConfig(h.cwd, { maxAutonomousRuns: 0 });
+	writeProjectSettings(h.cwd, { maxAutonomousRuns: 0 });
 	invalidateGoalSettingsCache();
 	assert.equal(loadGoalSettings(h.cwd).maxAutonomousRuns, 0, "zero survives persistence and overrides global 20");
 	assert.match(schedulerSummary(h.core.state.goal?.scheduler, 0), /1\/0 \(automatic continuation disabled\)/);
@@ -254,7 +255,7 @@ test("project zero disables an inherited allowance without renewing consumption"
 	assert.equal(h.sent.length, 1, "pending delivery is cancelled");
 	assert.equal(h.core.state.goal?.status, "paused");
 	assert.equal(h.core.scheduler.resume(h.ctx), false);
-	saveGoalSettingsFileConfig(h.cwd, {});
+	writeProjectSettings(h.cwd, {});
 	assert.equal(loadGoalSettings(h.cwd).maxAutonomousRuns, 20, "unsetting restores inheritance");
 	assert.equal(h.core.state.goal?.scheduler?.used, 1);
 	assert.equal(h.sent.length, 1);
@@ -307,7 +308,7 @@ test("lowering allowance before delivery stops the wake without resetting usage"
 	const h = await fixture(t, 2);
 	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
 	h.begin(); h.ready(); h.core.scheduler.settled(h.ctx);
-	saveGoalSettingsFileConfig(h.cwd, { maxAutonomousRuns: 0 });
+	writeProjectSettings(h.cwd, { maxAutonomousRuns: 0 });
 	t.mock.timers.tick(1);
 	assert.equal(h.sent.length, 0);
 	assert.equal(h.core.state.goal?.scheduler?.used, 0);
@@ -422,7 +423,7 @@ test("disabling a pending delay dispatches promptly without renewing spent allow
 	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
 	h.begin(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); h.admit(); h.core.scheduler.settled(h.ctx);
 	assert.equal(h.core.scheduler.isWaiting(), true);
-	saveGoalSettingsFileConfig(h.cwd, { idleContinuationBackoff: false, maxAutonomousRuns: 20 });
+	writeProjectSettings(h.cwd, { idleContinuationBackoff: false, maxAutonomousRuns: 20 });
 	h.core.scheduler.refreshSettings(h.ctx); t.mock.timers.tick(1);
 	assert.equal(h.sent.length, 2);
 	assert.equal(h.core.state.goal?.scheduler?.used, 2);
@@ -437,14 +438,14 @@ test("enabling during work and off/on edits do not retroactively classify an exe
 	const idle = () => h.core.state.goal?.scheduler?.idle;
 	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
 	h.begin();
-	saveGoalSettingsFileConfig(h.cwd, { idleContinuationBackoff: true });
+	writeProjectSettings(h.cwd, { idleContinuationBackoff: true });
 	h.core.scheduler.refreshSettings(h.ctx);
 	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); h.admit();
 	assert.equal(idle(), undefined);
 	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); h.admit();
 	assert.equal(idle()?.runs, 1);
-	saveGoalSettingsFileConfig(h.cwd, { idleContinuationBackoff: false }); h.core.scheduler.refreshSettings(h.ctx);
-	saveGoalSettingsFileConfig(h.cwd, { idleContinuationBackoff: true }); h.core.scheduler.refreshSettings(h.ctx);
+	writeProjectSettings(h.cwd, { idleContinuationBackoff: false }); h.core.scheduler.refreshSettings(h.ctx);
+	writeProjectSettings(h.cwd, { idleContinuationBackoff: true }); h.core.scheduler.refreshSettings(h.ctx);
 	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
 	assert.equal(h.sent.length, 3);
 	assert.equal(idle(), undefined);
@@ -455,7 +456,7 @@ test("claim drops a saved delay if the preference was disabled after scheduling"
 	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
 	h.begin(); h.core.scheduler.settled(h.ctx);
 	h.core.goalService.apply(h.ctx, { mutate: g => ({ ...g, scheduler: { ...g.scheduler!, used: 3, idle: { runs: 2, nextAt: Date.now() + 30000 } } }) });
-	saveGoalSettingsFileConfig(h.cwd, { idleContinuationBackoff: false });
+	writeProjectSettings(h.cwd, { idleContinuationBackoff: false });
 	t.mock.timers.tick(1);
 	assert.equal(h.sent.length, 1);
 	assert.equal(h.core.state.goal?.scheduler?.used, 4);
@@ -587,7 +588,7 @@ test("idle pacing excludes waiting time from accounting and respects changed run
 	h.core.beginAccounting();
 	t.mock.timers.tick(20_000);
 	assert.equal(h.core.goalForDisplay()?.usage.activeSeconds, before);
-	saveGoalSettingsFileConfig(h.cwd, { maxAutonomousRuns: 1 });
+	writeProjectSettings(h.cwd, { maxAutonomousRuns: 1 });
 	t.mock.timers.tick(10_000);
 	assert.equal(h.sent.length, 1);
 	assert.equal(h.core.state.goal?.status, "paused");
@@ -648,7 +649,7 @@ for (const stage of ["schedule", "claim"] as const) {
 		t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
 		h.begin(); h.core.scheduler.settled(h.ctx);
 		assert.equal(h.core.state.goal?.scheduler?.decision?.kind, "ready");
-		saveGoalSettingsFileConfig(h.cwd, {maxAutonomousRuns: 5, strictExecutionContract: false});
+		writeProjectSettings(h.cwd, {maxAutonomousRuns: 5, strictExecutionContract: false});
 		if (stage === "schedule") h.core.scheduler.schedule(h.ctx);
 		t.mock.timers.tick(1);
 		assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "ready");
@@ -664,7 +665,7 @@ test("existing waits keep identity, deadline and repair bounds after opt-out", a
 	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
 	h.begin(); h.wait();
 	const wait = structuredClone(h.core.state.goal!.scheduler!.wait!);
-	saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: false, maxAutonomousRuns: 8});
+	writeProjectSettings(h.cwd, {strictExecutionContract: false, maxAutonomousRuns: 8});
 	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1001); h.admit();
 	assert.equal(h.core.scheduler.declare(h.ctx, {kind: "wait", wait_id: wait.id, reason: wait.reason, deadline: new Date(wait.deadline).toISOString()}).terminate, true);
 	assert.equal(h.core.state.goal?.scheduler?.wait?.remainingChecks, 1);
@@ -681,13 +682,13 @@ test("enabling strict mode at settlement requires a disposition without resettin
 	const h = await fixture(t, 5, "owner", undefined, false);
 	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
 	h.begin(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); h.admit();
-	saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: true, maxAutonomousRuns: 5});
+	writeProjectSettings(h.cwd, {strictExecutionContract: true, maxAutonomousRuns: 5});
 	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
 	assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "repair");
 	assert.equal(h.core.state.goal?.scheduler?.used, 2);
 	h.admit(); h.core.scheduler.settled(h.ctx);
 	assert.equal(h.core.state.goal?.status, "paused");
-	saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: false});
+	writeProjectSettings(h.cwd, {strictExecutionContract: false});
 	h.core.scheduler.restore(h.ctx); t.mock.timers.tick(1000);
 	assert.equal(h.core.state.goal?.status, "paused");
 	assert.equal(h.sent.length, 2);
@@ -695,36 +696,36 @@ test("enabling strict mode at settlement requires a disposition without resettin
 
 test("default settings inherit strict mode with explicit false overriding global true", async t => {
 	const h = await fixture(t, undefined, "owner", undefined, false);
-	saveGoalSettingsFileConfig(h.cwd, {});
+	writeProjectSettings(h.cwd, {});
 	assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, false);
 	writeFileSync(process.env.PI_GOAL_GLOBAL_SETTINGS_FILE!, JSON.stringify({strictExecutionContract: true}));
 	invalidateGoalSettingsCache();
 	assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, true);
-	saveGoalSettingsFileConfig(h.cwd, {strictExecutionContract: false});
+	writeProjectSettings(h.cwd, {strictExecutionContract: false});
 	assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, false);
-	saveGoalSettingsFileConfig(h.cwd, {});
+	writeProjectSettings(h.cwd, {});
 	assert.equal(loadGoalSettings(h.cwd).strictExecutionContract, true);
-	assert.deepEqual(parseGoalSettings({strictExecutionContract: false}), {strictExecutionContract: false});
-	assert.equal(parseGoalSettings({strictExecutionContract: "invalid"}).strictExecutionContract, undefined);
+	assert.deepEqual(parseSettings({strictExecutionContract: false}), {strictExecutionContract: false});
+	assert.equal(parseSettings({strictExecutionContract: "invalid"}).strictExecutionContract, undefined);
 });
 
 test("showAutonomousRuns is a layered boolean that defaults to on", async t => {
 	const h = await fixture(t);
 	assert.equal(loadGoalSettings(h.cwd).showAutonomousRuns, true);
-	saveGoalSettingsFileConfig(h.cwd, { showAutonomousRuns: false });
+	writeProjectSettings(h.cwd, { showAutonomousRuns: false });
 	invalidateGoalSettingsCache();
 	assert.equal(loadGoalSettings(h.cwd).showAutonomousRuns, false);
 	writeFileSync(process.env.PI_GOAL_GLOBAL_SETTINGS_FILE!, JSON.stringify({ showAutonomousRuns: true }));
 	invalidateGoalSettingsCache();
 	assert.equal(loadGoalSettings(h.cwd).showAutonomousRuns, false, "project false beats global true");
-	saveGoalSettingsFileConfig(h.cwd, { showAutonomousRuns: true });
+	writeProjectSettings(h.cwd, { showAutonomousRuns: true });
 	invalidateGoalSettingsCache();
 	assert.equal(loadGoalSettings(h.cwd).showAutonomousRuns, true, "project true beats global true");
-	saveGoalSettingsFileConfig(h.cwd, {});
+	writeProjectSettings(h.cwd, {});
 	invalidateGoalSettingsCache();
 	assert.equal(loadGoalSettings(h.cwd).showAutonomousRuns, true, "global value applies when the project is unset");
-	for (const bad of ["yes", 1, null, {}]) assert.equal(parseGoalSettings({ showAutonomousRuns: bad }).showAutonomousRuns, undefined);
-	assert.equal(parseGoalSettings({ showAutonomousRuns: false }).showAutonomousRuns, false);
+	for (const bad of ["yes", 1, null, {}]) assert.equal(parseSettings({ showAutonomousRuns: bad }).showAutonomousRuns, undefined);
+	assert.equal(parseSettings({ showAutonomousRuns: false }).showAutonomousRuns, false);
 });
 
 test("the runs line is omitted when unlimited and controlled by the setting when finite", async t => {
@@ -945,7 +946,7 @@ test('rejection cancels timers without losing the replacement goal\'s saved disp
 
 test('a rejected dispatch cannot release a user turn hold or renew its allowance', async t => {
 	const h=await fixture(t,10);
-	saveGoalSettingsFileConfig(h.cwd,{pauseOrder:'turn-first'});
+	writeProjectSettings(h.cwd,{pauseOrder:'turn-first'});
 	h.core.interruption.pause(h.ctx);
 	const before=JSON.stringify(h.core.state.goal?.scheduler);
 	h.core.scheduler.rejectCheckpoint(h.ctx);

@@ -18,17 +18,17 @@ import { convertFlatTasks, countTasks, mergeTasksWithExisting, taskTreeSchema, t
 import { dropKey } from "./goal-tool-inputs.ts";
 import { PROPOSE_DRAFT_TOOL_NAME, QUESTIONNAIRE_TOOL_NAME } from "./goal-tool-names.ts";
 
-export type GoalDraftMode = GoalDraftingFocus | "tweak";
+type GoalDraftMode = GoalDraftingFocus | "tweak";
 
 export const DRAFT_ENTRY = "pi-goal-draft";
-export const DRAFT_ENTRY_VERSION = 1;
+const DRAFT_ENTRY_VERSION = 1;
 
 /**
  * Branch-local durable draft session, persisted through custom session entries
  * so an unconfirmed draft survives compaction and tree navigation. It is never
  * a project goal file or ledger event.
  */
-export interface GoalDraftSession {
+interface GoalDraftSession {
 	version: 1;
 	mode: GoalDraftMode;
 	seed: string;

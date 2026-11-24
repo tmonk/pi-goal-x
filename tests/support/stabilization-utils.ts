@@ -1,11 +1,11 @@
 import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import path from "node:path";
-import goalExtension from "../extensions/goal.ts";
-import {createGoal, goalFocusDetails} from "../extensions/goal-record.ts";
-import {writeActiveGoalFile} from "../extensions/storage/goal-files.ts";
-import {readGoalLedger} from "../extensions/goal-ledger.ts";
-import type {GoalCore} from "../extensions/goal-state.ts";
+import goalExtension from "../../extensions/goal.ts";
+import {createGoal, goalFocusDetails} from "../../extensions/goal-record.ts";
+import {writeActiveGoalFile} from "../../extensions/storage/goal-files.ts";
+import {readGoalLedger} from "../../extensions/goal-ledger.ts";
+import type {GoalCore} from "../../extensions/goal-state.ts";
 
 export function deferred<T>() {
 	let resolve!: (value: T) => void, reject!: (error: unknown) => void;

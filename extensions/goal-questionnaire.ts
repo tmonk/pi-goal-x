@@ -15,7 +15,7 @@ export interface GoalQuestionnaireQuestion {
 	allowCustom?: boolean;
 }
 
-export interface GoalQuestionnaireAnswer {
+interface GoalQuestionnaireAnswer {
 	id: string;
 	question: string;
 	answer: string;
@@ -57,7 +57,7 @@ export function computeDialogLineLimit(args: { terminalRows?: number; baseFrameL
  * tasks section (header + every task line) and the start of the options tail
  * inside a rendered questionnaire dialog.
  */
-export interface ProposalPresentationSegments {
+interface ProposalPresentationSegments {
 	tasksStart: number;
 	tasksEnd: number;
 	tailStart: number;

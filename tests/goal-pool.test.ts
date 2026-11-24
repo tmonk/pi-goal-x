@@ -6,7 +6,6 @@ import {
 	buildGoalListText,
 	buildUnfocusedOpenGoalsSummary,
 	focusedGoalFromPool,
-	goalPoolFromGoals,
 	goalSelectorLabel,
 	mergeFocusedGoalWithDisk,
 	openGoalsFromPool,
@@ -21,6 +20,10 @@ function goal(id: string, overrides: Partial<GoalRecord> = {}): GoalRecord {
 		activePath: `.pi/goals/active_goal_${id}.md`,
 		...overrides,
 	};
+}
+
+function goalPoolFromGoals(goals: GoalRecord[]): Map<string, GoalRecord> {
+	return new Map(goals.filter(goal => goal.status !== "complete").map(goal => [goal.id, goal]));
 }
 
 test("goal pool helpers sort open goals and resolve focused records", () => {

@@ -109,7 +109,7 @@ export interface AuditorWidgetProgress {
 	auditorLabel?: string;
 }
 
-export interface GoalWidgetOptions {
+interface GoalWidgetOptions {
 	theme: Theme;
 	tui: TUI;
 	getGoal: () => GoalWidgetRecord | null;
@@ -301,6 +301,20 @@ export function renderGoalWidgetLines(goal: GoalWidgetRecord | null, theme: Them
 	return boundWidgetRenderLines(clampLinesToWidth(lines, width), options.terminalRows);
 }
 
+type ScrollKey = "up" | "down" | "pageUp" | "pageDown" | "home" | "end";
+
+/** Move a task-list scroll offset by one key press, clamped to the list. */
+function scrollBy(key: ScrollKey, offset: number, length: number, rows: number): number {
+	let next = clampScrollOffset(offset, length, rows);
+	if (key === "up") next -= 1;
+	else if (key === "down") next += 1;
+	else if (key === "pageUp") next -= taskViewportPageSize(rows);
+	else if (key === "pageDown") next += taskViewportPageSize(rows);
+	else if (key === "home") next = 0;
+	else if (key === "end") next = maxScrollOffset(length, rows);
+	return clampScrollOffset(next, length, rows);
+}
+
 export class GoalWidgetComponent implements Component {
 	private theme: Theme;
 	private tui: TUI;
@@ -464,18 +478,7 @@ export class GoalWidgetComponent implements Component {
 		if (auditResult) {
 			return clampLinesToWidth(renderAuditResultCardView(auditResult, this.theme, width), width);
 		}
-		const goal = this.getGoal();
-		const otherCount = Math.max(0, this.getOpenGoalCount() - 1);
-		const model = goal ? deriveGoalDashboardModel(goal as GoalRecord | null, {
-			focused: true,
-			otherOpenGoals: otherCount,
-			ledgerEvents: this.getLedgerEvents(),
-			tasksDisabled: settings.disableTasks === true,
-			maxAutonomousRuns: settings.maxAutonomousRuns,
-			idleContinuationBackoff: settings.idleContinuationBackoff,
-			commands: settings.commands,
-		}) : null;
-		this.maybeReanchor(model);
+		const model = this.currentModel(settings);
 		const lines = renderGoalWidgetLines(this.getGoal(), this.theme, safeWidth, {
 			openGoalCount: this.getOpenGoalCount(),
 			auditorProgress: this.getAuditorProgress(),
@@ -539,18 +542,9 @@ export class GoalWidgetComponent implements Component {
 		this.expandedScrollOffset = anchoredScrollOffset(model.taskTree, expandedTaskViewportRows(this.lastRenderWidth));
 	}
 
-	/**
-	 * Scroll the compact task list with a Ctrl+Shift chord (§9.6). The chords
-	 * are free in pi (the editor owns the plain arrows), so no focus state is
-	 * needed — but they are consumed only when the compact list actually
-	 * overflows its viewport, so they never swallow keystrokes for a short
-	 * list. Returns true when the key was consumed.
-	 */
-	handleCompactScrollKey(key: "up" | "down" | "pageUp" | "pageDown" | "home" | "end"): boolean {
-		if (this.getExpanded()) return false;
-		const settings = this.getSettings();
+	private currentModel(settings: GoalSettings): GoalDashboardModel | null {
 		const goal = this.getGoal();
-		const model = goal ? deriveGoalDashboardModel(goal as GoalRecord | null, {
+		const model = goal ? deriveGoalDashboardModel(goal as GoalRecord, {
 			focused: true,
 			otherOpenGoals: Math.max(0, this.getOpenGoalCount() - 1),
 			ledgerEvents: this.getLedgerEvents(),
@@ -560,18 +554,23 @@ export class GoalWidgetComponent implements Component {
 			commands: settings.commands,
 		}) : null;
 		this.maybeReanchor(model);
+		return model;
+	}
+
+	/**
+	 * Scroll the compact task list with a Ctrl+Shift chord (§9.6). The chords
+	 * are free in pi (the editor owns the plain arrows), so no focus state is
+	 * needed — but they are consumed only when the compact list actually
+	 * overflows its viewport, so they never swallow keystrokes for a short
+	 * list. Returns true when the key was consumed.
+	 */
+	handleCompactScrollKey(key: ScrollKey): boolean {
+		if (this.getExpanded()) return false;
+		const model = this.currentModel(this.getSettings());
 		const list = model?.taskTree.filter((n) => n.depth === 0) ?? [];
 		const rows = compactTaskViewportRows(this.lastRenderWidth);
 		if (list.length <= rows) return false;
-		let offset = clampScrollOffset(this.compactScrollOffset, list.length, rows);
-		if (key === "up") offset -= 1;
-		else if (key === "down") offset += 1;
-		else if (key === "pageUp") offset -= taskViewportPageSize(rows);
-		else if (key === "pageDown") offset += taskViewportPageSize(rows);
-		else if (key === "home") offset = 0;
-		else if (key === "end") offset = maxScrollOffset(list.length, rows);
-		offset = clampScrollOffset(offset, list.length, rows);
-		this.compactScrollOffset = offset;
+		this.compactScrollOffset = scrollBy(key, this.compactScrollOffset, list.length, rows);
 		this.tui.requestRender();
 		return true;
 	}
@@ -584,34 +583,14 @@ export class GoalWidgetComponent implements Component {
 	 * Clamps at both ends; Home/End jump to the edges; PgUp/PgDn page by one
 	 * viewport.
 	 */
-	handleNavigationKey(key: "up" | "down" | "pageUp" | "pageDown" | "home" | "end"): boolean {
+	handleNavigationKey(key: ScrollKey): boolean {
 		if (!this.getExpanded()) return false;
-		const settings = this.getSettings();
-		const goal = this.getGoal();
-		const model = goal ? deriveGoalDashboardModel(goal as GoalRecord | null, {
-			focused: true,
-			otherOpenGoals: Math.max(0, this.getOpenGoalCount() - 1),
-			ledgerEvents: this.getLedgerEvents(),
-			tasksDisabled: settings.disableTasks === true,
-			maxAutonomousRuns: settings.maxAutonomousRuns,
-			idleContinuationBackoff: settings.idleContinuationBackoff,
-			commands: settings.commands,
-		}) : null;
-		this.maybeReanchor(model);
+		const model = this.currentModel(this.getSettings());
 		const list = model?.taskTree ?? [];
 		if (list.length === 0) return false;
 		const rows = expandedTaskViewportRows(this.lastRenderWidth);
-		const maxO = maxScrollOffset(list.length, rows);
-		if (maxO <= 0) return true;
-		let offset = clampScrollOffset(this.expandedScrollOffset, list.length, rows);
-		if (key === "up") offset -= 1;
-		else if (key === "down") offset += 1;
-		else if (key === "pageUp") offset -= taskViewportPageSize(rows);
-		else if (key === "pageDown") offset += taskViewportPageSize(rows);
-		else if (key === "home") offset = 0;
-		else if (key === "end") offset = maxO;
-		offset = clampScrollOffset(offset, list.length, rows);
-		this.expandedScrollOffset = offset;
+		if (maxScrollOffset(list.length, rows) <= 0) return true;
+		this.expandedScrollOffset = scrollBy(key, this.expandedScrollOffset, list.length, rows);
 		this.tui.requestRender();
 		return true;
 	}

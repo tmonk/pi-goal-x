@@ -20,7 +20,7 @@ import {
 	cleanupFixture,
 	makeGoalRecord,
 } from "./bench-common.mjs";
-import { createMockExtensionContext, createMockTUI, createMockTheme, invokeCustomFactory, renderComponent } from "../../tests/tui-test-utils.ts";
+import { createMockExtensionContext, createMockTUI, createMockTheme, invokeCustomFactory, renderComponent } from "../../tests/support/tui-test-utils.ts";
 import { renderConfirmationTasks } from "../../extensions/goal-task-confirmation.ts";
 import { showEscapeDialog } from "../../extensions/widgets/goal-escape-dialog.ts";
 import { renderGoalWidgetLines, GoalWidgetComponent } from "../../extensions/widgets/goal-widget.ts";
@@ -31,12 +31,10 @@ import { deriveGoalDashboardModel, flattenTaskTree, anchoredScrollOffset, derive
 import { renderCompactDashboard, renderExpandedDashboard, renderCurrentTaskBlock, renderActivityBlock, renderUnfocusedDashboard, renderAuditorDashboard, renderAuditResultCard } from "../../extensions/widgets/goal-dashboard-renderer.ts";
 import { deriveAuditorDashboardModel, deriveAuditResultCard } from "../../extensions/widgets/auditor-dashboard-model.ts";
 import { deriveTasksFromObjective } from "../../extensions/goal-task-derive.ts";
-import { countAllTasks } from "../../extensions/goal-task-count.ts";
 import { buildGoalStatusText } from "../../extensions/goal-status.ts";
 import { buildTaskSummary, buildCompletionReport } from "../../extensions/goal-policy.ts";
 import { buildGoalListText, goalSelectorLabel } from "../../extensions/goal-pool.ts";
 import { GoalAccounting, budgetLine, budgetRemaining } from "../../extensions/goal-accounting.ts";
-import { buildCompactionSummary, buildGoalCompactSummary } from "../../extensions/goal-compaction.ts";
 import { extractVerificationContract, promptSafeObjective } from "../../extensions/goal-contract.ts";
 import { normalizeGoalRecord } from "../../extensions/goal-record.ts";
 import { serializeGoalFile, parseGoalFile } from "../../extensions/storage/goal-files.ts";
@@ -209,13 +207,8 @@ export async function run(baseline) {
 
 	const compactCwd = makeFixtureCwd("b7-compact-");
 	try {
-		const compactGoal = makeGoalFiles(compactCwd, 1)[0];
 		makeLedger(compactCwd, 500);
 		const ledgerEvents = readGoalLedger({ cwd: compactCwd }).events;
-		r = measure(() => buildCompactionSummary({ goalsById: new Map([[compactGoal.id, compactGoal]]), focusedGoalId: compactGoal.id, ledgerEvents }), { n: 50 });
-		baseline.add({ id: "B7.compaction.summary", label: "buildCompactionSummary (500 events)", modules: "goal-compaction + goal-ledger", fixture: "1 goal, 500 events", n: r.n, p50: r.p50, p95: r.p95, max: r.max, notes: `mean ${r.mean}ms` });
-		r = measure(() => buildGoalCompactSummary(compactGoal, ledgerEvents), { n: 50 });
-		baseline.add({ id: "B7.compaction.goalSummary", label: "buildGoalCompactSummary (500 events)", modules: "goal-compaction", fixture: "1 goal, 500 events", n: r.n, p50: r.p50, p95: r.p95, max: r.max, notes: `mean ${r.mean}ms` });
 		r = measure(() => reconstructGoalLedger(ledgerEvents), { n: 50 });
 		baseline.add({ id: "B7.ledger.reconstruct", label: "reconstructGoalLedger (500 events)", modules: "goal-ledger", fixture: "500 events", n: r.n, p50: r.p50, p95: r.p95, max: r.max, notes: `mean ${r.mean}ms` });
 		r = measure(() => latestEventsForGoal(ledgerEvents, "x", 10), { n: 500 });
@@ -335,8 +328,6 @@ export async function run(baseline) {
 			r = measure(() => deriveTasksFromObjective("Checklist:\n- [ ] first step\n- [x] second step\n- [ ] third step with more text to parse\n- [ ] fourth step\n- [ ] fifth step with trailing detail"), { n: 500 });
 			baseline.add({ id: "B7.dashboard.deriveTasks", label: "deriveTasksFromObjective (5 markers)", modules: "goal-task-derive", fixture: "objective with 5 checklist markers", n: r.n, p50: r.p50, p95: r.p95, max: r.max, notes: `mean ${r.mean}ms` });
 
-			r = measure(() => countAllTasks(tasks50), { n: 500 });
-			baseline.add({ id: "B7.dashboard.taskCount", label: "countAllTasks (50 tasks)", modules: "goal-task-count", fixture: "50-task tree", n: r.n, p50: r.p50, p95: r.p95, max: r.max, notes: `mean ${r.mean}ms` });
 		} finally {
 			cleanupFixture(dcwd);
 		}

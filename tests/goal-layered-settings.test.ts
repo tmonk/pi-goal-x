@@ -18,7 +18,6 @@ import {
 	goalGlobalSettingsPath,
 	goalSettingsPath,
 	loadGoalSettings,
-	saveGoalSettingsFileConfig,
 	loadSettingsSnapshot,
 	readSettingsLayer,
 	mutateSettingsLayer,
@@ -84,8 +83,6 @@ describe("layering matrix", () => {
 			}
 			change("global", "unset");
 			assert.equal(loadGoalSettings(dir, env).showContextUsage, false);
-			saveGoalSettingsFileConfig(dir, {showContextUsage: false});
-			assert.equal(JSON.parse(fs.readFileSync(goalSettingsPath(dir, env), "utf8")).showContextUsage, false, "sparse legacy saves retain explicit false too");
 		});
 	});
 	it("idle backoff defaults off and preserves explicit project false, inheritance and reopen", () => {

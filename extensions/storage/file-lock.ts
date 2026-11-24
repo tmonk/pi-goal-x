@@ -13,7 +13,7 @@ export interface FileLock {
 	release(): void;
 }
 
-export interface FileLockOptions {
+interface FileLockOptions {
 	attempts: number;
 	retryMs: number;
 	staleTtlMs: number;
@@ -29,7 +29,8 @@ export function sleepSync(ms: number): void {
 	Atomics.wait(sleeper, 0, 0, ms);
 }
 
-function pidAlive(pid: number): boolean {
+/** True when a process with this pid exists (EPERM means it exists but is not ours). */
+export function pidAlive(pid: number): boolean {
 	if (!Number.isInteger(pid) || pid <= 0) return false;
 	try {
 		process.kill(pid, 0);

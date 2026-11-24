@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildGoalRunningNotification } from "../extensions/widgets/goal-notifications.ts";
-import { createMockExtensionContext } from "./tui-test-utils.ts";
+import { createMockExtensionContext } from "./support/tui-test-utils.ts";
 
 // ── buildGoalRunningNotification unit tests ────────────────────────────
 

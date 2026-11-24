@@ -7,9 +7,6 @@ import type { GoalRecord, GoalTask } from "../goal-record.ts";
 import type { GoalSettings } from "../goal-settings.ts";
 import { contextUsageLine, type GoalContextUsage } from "../goal-accounting.ts";
 
-/** Hard cap for the complete injected prompt fragment (TECH Stage 6). */
-export const MAX_PROMPT_FRAGMENT_CHARS = 10_000;
-
 /**
  * Issue #30: a persisted continuation checkpoint is a tiny trigger record, not
  * a full prompt. The authoritative goal state is injected at the request tail by
@@ -171,7 +168,7 @@ ${capped}
 </untrusted_objective>`;
 }
 
-export function sisyphusDisciplineBlock(goal: GoalRecord): string {
+function sisyphusDisciplineBlock(goal: GoalRecord): string {
 	if (!goal.sisyphus) return "";
 	return [
 		"",

@@ -1,14 +1,10 @@
-/**
- * E1/E4/E6/E7: enhancement behavior tests (task 4).
- */
-
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { buildGoalHistoryBlock, goalDetails, renderGoalResult } from "../extensions/goal-format.ts";
 import { countOrderedSteps, sisyphusStepProgress } from "../extensions/goal-policy.ts";
 import { renderGoalWidgetLines } from "../extensions/widgets/goal-widget.ts";
-import { createMockTheme } from "./tui-test-utils.ts";
+import { createMockTheme } from "./support/tui-test-utils.ts";
 import { createGoal } from "../extensions/goal-record.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
@@ -27,7 +23,7 @@ function ledgerEvents(goalId: string) {
 	] as Array<Record<string, unknown>>;
 }
 
-describe("E1 goal history block", () => {
+describe("goal history block", () => {
 	it("surfaces the last audit verdict and recent lifecycle events", () => {
 		const goal = makeGoalRecord({ objective: "History test" });
 		const block = buildGoalHistoryBlock(goal, ledgerEvents(goal.id) as never);
@@ -38,7 +34,7 @@ describe("E1 goal history block", () => {
 	});
 });
 
-describe("E6 sisyphus step progress", () => {
+describe("sisyphus step progress", () => {
 	it("counts ordered steps from numbered markers", () => {
 		assert.equal(countOrderedSteps("1. do this\n2. do that\n3. done"), 3);
 		assert.equal(countOrderedSteps("Step 1: a\nStep 2: b"), 2);
@@ -66,7 +62,7 @@ describe("E6 sisyphus step progress", () => {
 	});
 });
 
-describe("E7 expandable pause detail", () => {
+describe("expandable pause detail", () => {
 	it("keeps the collapsed heading byte-identical and adds the detail when expanded", () => {
 		const goal = makeGoalRecord({ objective: "Pause test" });
 		const detail = "Pause reason: waiting on the user\nSuggested action: run /goal-tweak";
@@ -84,7 +80,7 @@ describe("E7 expandable pause detail", () => {
 	});
 });
 
-describe("E4 budget line in the widget", () => {
+describe("budget line in the widget", () => {
 	it("renders used/total with remaining when a budget is set", () => {
 		const goal = makeGoalRecord({ objective: "Budget test" });
 		goal.tokenBudget = 100000;

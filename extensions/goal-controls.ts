@@ -33,7 +33,7 @@ export const PAUSE_ORDERS: ReadonlyArray<{ id: PauseOrder; label: string; help: 
 	{ id: "turn-first", label: "Turn first", help: "First: stop the turn and wait. Next: pause the goal. Resume or a message continues." },
 ];
 
-export type GoalKeyContext = "global" | "compact" | "expanded" | "audit" | "dialog";
+type GoalKeyContext = "global" | "compact" | "expanded" | "audit" | "dialog";
 export const GOAL_DIALOG_KEYS = {
 	confirm: "enter", cancel: "escape", up: "up", down: "down", next: ["tab", "right"], previous: ["shift+tab", "left"],
 	pageUp: "pageUp", pageDown: "pageDown", scrollUp: "ctrl+up", scrollDown: "ctrl+down", toggleAuditor: "a",
@@ -132,7 +132,7 @@ export function sameGoalKey(a: string, b: string, kitty = false): boolean {
 }
 
 const PI_COMMAND_ROOTS = new Set("settings model tree thinking scoped-models export import share bug copy name session changelog hotkeys fork clone trust login logout new compact resume reload quit".split(" "));
-export function normalizeCommandPath(value: unknown): string | undefined {
+function normalizeCommandPath(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const route = value.trim().replace(/^\//, "").replace(/\s+/g, " ");
 	return route.length <= 96 && /^[a-z][a-z0-9_-]*(?: [a-z][a-z0-9_-]*)*$/.test(route) ? route : undefined;
@@ -155,7 +155,7 @@ const commandReference = new RegExp(`/(${GOAL_COMMANDS.map(([id]) => id).sort((a
 export function commandInstructions(text: string, commands?: GoalCommands): string {
 	return commands ? text.replace(commandReference, (_match, id: GoalCommandId) => commandHint(id, commands)) : text;
 }
-export interface GoalCommandRoute { path: string; id: GoalCommandId }
+interface GoalCommandRoute { path: string; id: GoalCommandId }
 export function commandRoutes(commands: GoalCommands | undefined): GoalCommandRoute[] {
 	const routes = GOAL_COMMANDS.flatMap(([id]) => commandPaths(commands, id).map(path => ({ path, id })));
 	if (!routes.some(route => route.path === "goal-settings")) routes.push({ path: "goal-settings", id: "goal-settings" });
