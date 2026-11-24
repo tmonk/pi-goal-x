@@ -51,12 +51,19 @@ export interface GoalControlWarnings {
 	controlWarnings?: string[];
 }
 
-/** Which goal is running now, and the two ways to stop the clocks around it. */
-export interface GoalRunControl {
-	runningGoalId: string | null;
+/** Stop the continuation timer and the time accounting, as when a goal stops or changes. */
+export interface GoalClockReset {
 	clearContinuationState(resetNetworkErrorBackoff?: boolean): void;
 	clearActiveAccounting(): void;
 }
+
+/** Which goal's turn is running now. */
+export interface GoalRunningGoal {
+	runningGoalId: string | null;
+}
+
+/** The running goal, and the way to stop the clocks around it. */
+export interface GoalRunControl extends GoalRunningGoal, GoalClockReset {}
 
 /** Start, stop or judge continuation of the focused goal. */
 export interface GoalContinuationControl {

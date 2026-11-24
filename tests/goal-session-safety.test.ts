@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import goalExtension from "../extensions/goal.ts";
 import { GoalAuditMessages, filterGoalSessionContext, isDelegatedGoalSession } from "../extensions/goal-session-safety.ts";
-import { registerGoalEvents } from "../extensions/goal-events.ts";
-import type { GoalCore } from "../extensions/goal-state.ts";
+import { registerGoalEvents, type GoalEventsCore } from "../extensions/goal-events.ts";
 
 const audit = { role: "custom", customType: "pi-goal-audit-event", content: "Audit starting", display: true };
 const checkpoint = { role: "custom", customType: "pi-goal-event", content: '<pi_goal_continuation goal_id="goal" kind="checkpoint" v="2"/>', display: false, details: { kind: "checkpoint", goalId: "goal" } };
@@ -64,7 +63,7 @@ test("stale settlement skips all scheduling work, including when the audit queue
 		auditMessages: new GoalAuditMessages(),
 		scheduler: { settled: () => { settlements++; }, isDenied: () => false },
 		interruption: { settled: () => {}, ignoreAbort: () => false, isHeld: () => false },
-	} as unknown as GoalCore;
+	} as unknown as GoalEventsCore;
 	registerGoalEvents(core);
 	const stale = { get sessionManager() { throw new Error(staleMessage); } } as unknown as ExtensionContext;
 	await assert.doesNotReject(() => handlers.agent_settled!({}, stale));

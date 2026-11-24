@@ -4,7 +4,28 @@ import { goalDetails, goalTextResult } from "./goal-format.ts";
 import { validateGoalAgentPause, validateGoalBlock } from "./goal-policy.ts";
 import { goalOracleState, type GoalLedgerEvent } from "./goal-ledger.ts";
 import { nowIso } from "./goal-record.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type {
+	GoalDiskSync,
+	GoalFocusedGoalAccess,
+	GoalLoadedCommands,
+	GoalOperationGuard,
+	GoalProgressCharge,
+	GoalRecordWriter,
+	GoalRunControl,
+	GoalTurnStopMarker,
+	GoalUiRefresh,
+} from "./goal-core-types.ts";
+
+/** What the blocked and agent-pause flows read and change. */
+export type GoalUpdateFlowsCore = GoalFocusedGoalAccess &
+	GoalOperationGuard &
+	GoalUiRefresh &
+	GoalTurnStopMarker &
+	GoalRunControl &
+	GoalDiskSync &
+	GoalLoadedCommands &
+	GoalRecordWriter &
+	GoalProgressCharge;
 import {
 	armOracleAdvice,
 	buildBlockerFingerprint,
@@ -18,7 +39,7 @@ import { type ResolvedGoalOracleSettings } from "./settings/schema.ts";
 import { loadSettingsSnapshot } from "./settings/resolve.ts";
 
 /** Append ledger events without letting a ledger failure change the tool outcome. */
-function appendBestEffort(core: GoalCore, ctx: ExtensionContext, event: GoalLedgerEvent): void {
+function appendBestEffort(core: GoalUpdateFlowsCore, ctx: ExtensionContext, event: GoalLedgerEvent): void {
 	try {
 		core.goalService.appendEvents(ctx, [event]);
 	} catch { /* ledger annotations are best-effort */ }
@@ -30,7 +51,7 @@ function appendBestEffort(core: GoalCore, ctx: ExtensionContext, event: GoalLedg
  * the opt-in Oracle (issue #26) the blocker is consulted once per fingerprint
  * before the goal is actually blocked.
  */
-export async function runGoalBlockedFlow(core: GoalCore, ctx: ExtensionContext, reasonInput?: string, attemptedActions: string[] = []): Promise<AgentToolResult<unknown>> {
+export async function runGoalBlockedFlow(core: GoalUpdateFlowsCore, ctx: ExtensionContext, reasonInput?: string, attemptedActions: string[] = []): Promise<AgentToolResult<unknown>> {
 	core.reconcileFocusedGoalFromDisk(ctx);
 	const gate = validateGoalBlock({ goal: core.state.goal, runningGoalId: core.runningGoalId });
 	if (!gate.ok) return goalTextResult(gate.message, core.state.goal);
@@ -180,7 +201,7 @@ export async function runGoalBlockedFlow(core: GoalCore, ctx: ExtensionContext, 
  * with source "agent". It is distinct from blocked (three-consecutive-turn
  * gate) and from the user-owned pause/resume commands.
  */
-export async function runGoalAgentPauseFlow(core: GoalCore, ctx: ExtensionContext, reason: string | undefined, suggestedAction: string | undefined): Promise<AgentToolResult<unknown>> {
+export async function runGoalAgentPauseFlow(core: GoalUpdateFlowsCore, ctx: ExtensionContext, reason: string | undefined, suggestedAction: string | undefined): Promise<AgentToolResult<unknown>> {
 	core.reconcileFocusedGoalFromDisk(ctx);
 	const gate = validateGoalAgentPause({ goal: core.state.goal, runningGoalId: core.runningGoalId });
 	if (!gate.ok) return goalTextResult(gate.message, core.state.goal);

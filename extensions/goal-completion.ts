@@ -11,7 +11,37 @@ import {mergeGoalPromptFromDisk} from "./storage/goal-files.ts";
 import {isStaleExtensionContextError} from "./goal-session-safety.ts";
 import {goalStorageContext} from "./storage/goal-root.ts";
 import {showEscapeDialog} from "./widgets/goal-escape-dialog.ts";
-import type {GoalCore, ActiveGoalAudit} from "./goal-state.ts";
+import type { ActiveGoalAudit } from "./goal-session-state.ts";
+import type {
+	GoalAuditQueue,
+	GoalAuditStateAccess,
+	GoalDependencies,
+	GoalDiskSync,
+	GoalFocusedGoalAccess,
+	GoalModalAccess,
+	GoalOperationGuard,
+	GoalProgressCharge,
+	GoalRecordWriter,
+	GoalRunningGoal,
+	GoalTurnStopMarker,
+	GoalUiRefresh,
+	ServiceSlice,
+} from "./goal-core-types.ts";
+
+/** What the completion flow and its audit read and change. */
+export type GoalCompletionCore = GoalFocusedGoalAccess &
+	GoalOperationGuard &
+	GoalModalAccess &
+	GoalAuditStateAccess &
+	GoalAuditQueue &
+	GoalDependencies &
+	GoalUiRefresh &
+	GoalDiskSync &
+	GoalRunningGoal &
+	GoalTurnStopMarker &
+	GoalRecordWriter &
+	GoalProgressCharge &
+	ServiceSlice<"flushForAudit">;
 
 type CompletionOptions = {
 	goal: GoalRecord;
@@ -22,7 +52,7 @@ type CompletionOptions = {
 };
 
 /** One completion transaction, using current usage and the audited disk revision. */
-function commitCompletion(core: GoalCore, ctx: ExtensionContext, opts: CompletionOptions): AgentToolResult<unknown> {
+function commitCompletion(core: GoalCompletionCore, ctx: ExtensionContext, opts: CompletionOptions): AgentToolResult<unknown> {
 	if (!core.state.isTokenCurrent(opts.focus)) return core.state.cancelledResult("Goal completion", opts.focus);
 	core.reconcileFocusedGoalFromDisk(ctx);
 	if (core.state.goal?.revision !== opts.goal.revision) return {
@@ -48,7 +78,7 @@ function commitCompletion(core: GoalCore, ctx: ExtensionContext, opts: Completio
 }
 
 /** Capture one audit owner; every outcome and callback belongs to that owner. */
-export async function runGoalCompletionFlow(core: GoalCore, ctx: ExtensionContext, completionSummary?: string): Promise<AgentToolResult<unknown>> {
+export async function runGoalCompletionFlow(core: GoalCompletionCore, ctx: ExtensionContext, completionSummary?: string): Promise<AgentToolResult<unknown>> {
 	const flushError = core.goalService.flushForAudit(ctx);
 	if (flushError) return {content: [{type: "text", text: flushError}], details: goalDetails(core.state.goal)};
 	core.reconcileFocusedGoalFromDisk(ctx);

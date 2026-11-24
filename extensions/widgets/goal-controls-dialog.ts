@@ -10,8 +10,11 @@ import { formatGoalKeybinding, type GoalSettings, type SettingsScope } from "../
 import { invalidateGoalSettingsCache } from "../settings/files.ts";
 import { loadSettingsSnapshot, type SettingsSnapshot } from "../settings/resolve.ts";
 import { mutateSettingsLayer, type SettingsMutation } from "../settings/mutate.ts";
-import type { GoalCore } from "../goal-state.ts";
+import type { GoalLoadedCommands, GoalModalAccess, GoalUiRefresh, HostSlice, InterruptionSlice } from "../goal-core-types.ts";
 import { truncateToWidth } from "./text-cache.ts";
+
+/** What the controls dialog reads from the session. */
+export type GoalControlsCore = GoalLoadedCommands & GoalUiRefresh & GoalModalAccess & HostSlice<"getCommands"> & InterruptionSlice<"isHeld">;
 
 type Tab = "Commands" | "Keys" | "Pausing";
 type Row = { label: string; path: string[]; help: string; kind: "commands" | "keys" | "order" | "reset"; defaults: unknown; action?: GoalKeyAction };
@@ -44,13 +47,13 @@ export class GoalControlsDialog implements Component {
 	private closed = false;
 	private pageSize = 8;
 	private showCursor: boolean;
-	private core: GoalCore;
+	private core: GoalControlsCore;
 	private ctx: ExtensionContext;
 	private tui: TUI;
 	private theme: Theme;
 	private keymap: KeybindingsManager;
 	private done: (result: "reload" | undefined) => void;
-	constructor(core: GoalCore, ctx: ExtensionContext, tui: TUI, theme: Theme, keymap: KeybindingsManager, done: (result: "reload" | undefined) => void, scope: SettingsScope = "project") {
+	constructor(core: GoalControlsCore, ctx: ExtensionContext, tui: TUI, theme: Theme, keymap: KeybindingsManager, done: (result: "reload" | undefined) => void, scope: SettingsScope = "project") {
 		this.core = core; this.ctx = ctx; this.tui = tui; this.theme = theme; this.keymap = keymap; this.done = done;
 		this.scope = scope;
 		this.snapshot = loadSettingsSnapshot(ctx.cwd);
@@ -318,7 +321,7 @@ export class GoalControlsDialog implements Component {
 	}
 }
 
-export async function showGoalControls(core: GoalCore, ctx: ExtensionContext, scope: SettingsScope = "project"): Promise<boolean> {
+export async function showGoalControls(core: GoalControlsCore, ctx: ExtensionContext, scope: SettingsScope = "project"): Promise<boolean> {
 	if (!ctx.hasUI) { ctx.ui.notify("Open /goal-settings controls in an interactive Pi session to customize controls.", "info"); return false; }
 	core.state.enterModal();
 	let reload: "reload" | undefined;

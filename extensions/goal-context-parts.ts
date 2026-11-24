@@ -8,7 +8,24 @@ import { modelBudgetLine, budgetRemaining } from "./goal-accounting.ts";
 import type { GoalRecord } from "./goal-record.ts";
 import { otherOpenGoalCount } from "./goal-pool.ts";
 import { hasActiveDraft } from "./goal-drafting.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type {
+	GoalContinuationControl,
+	GoalFocusedGoalAccess,
+	GoalLoadedCommands,
+	GoalPoolAccess,
+	RuntimeSlice,
+	SchedulerSlice,
+	WatchSlice,
+} from "./goal-core-types.ts";
+
+/** What building the model-facing goal state reads. */
+export type GoalContextCore = GoalFocusedGoalAccess &
+	GoalPoolAccess &
+	GoalLoadedCommands &
+	Pick<GoalContinuationControl, "isActionableContinuationGoal"> &
+	RuntimeSlice<"clearPostCompactReminder" | "consumePostBudgetReminder" | "getCheckpointGoalId" | "isPostCompactReminderPending"> &
+	SchedulerSlice<"isDenied"> &
+	WatchSlice<"checkStall">;
 import { loadGoalSettings } from "./settings/resolve.ts";
 import {
 	goalPromptParts,
@@ -32,7 +49,7 @@ function auditorRejectionBody(report: string): string {
  * per-turn counters. Other branches are stable-only: no live counters, focus,
  * or reminders enter the system prefix.
  */
-export function goalContextParts(core: GoalCore, ctx: ExtensionContext): GoalContextParts | undefined {
+export function goalContextParts(core: GoalContextCore, ctx: ExtensionContext): GoalContextParts | undefined {
 	// During a draft the drafting prompt is in charge. The goal block would
 	// ask for update_goal, which is blocked until the draft ends, and the
 	// unfocused reminder would tell the agent to stop.
@@ -59,7 +76,7 @@ export function goalContextParts(core: GoalCore, ctx: ExtensionContext): GoalCon
 	}
 }
 
-function unfocusedState(core: GoalCore, ctx: ExtensionContext): GoalContextParts | undefined {
+function unfocusedState(core: GoalContextCore, ctx: ExtensionContext): GoalContextParts | undefined {
 	// Issue #72: hideUnfocusedPrompt opts out of the model-facing unfocused
 	// reminder only. The stale-checkpoint guard and all focused-goal context are
 	// unaffected.
@@ -69,7 +86,7 @@ function unfocusedState(core: GoalCore, ctx: ExtensionContext): GoalContextParts
 	return { state: commandInstructions(unfocusedOpenGoalsPrompt(openCount), core.loadedCommands) };
 }
 
-function pausedState(core: GoalCore, goal: GoalRecord, ledgerEvents: () => GoalLedgerEvent[]): string {
+function pausedState(core: GoalContextCore, goal: GoalRecord, ledgerEvents: () => GoalLedgerEvent[]): string {
 	const pauseExtras: string[] = [];
 	if (goal.stopReason === "agent") {
 		pauseExtras.push("");
@@ -90,7 +107,7 @@ function pausedState(core: GoalCore, goal: GoalRecord, ledgerEvents: () => GoalL
 }
 
 /** Token-budget-limited goals get one-time wrap-up steering: summarize, do not start new substantive work, never claim completion unless real. */
-function budgetLimitedState(core: GoalCore, goal: GoalRecord): string {
+function budgetLimitedState(core: GoalContextCore, goal: GoalRecord): string {
 	const budgetText = modelBudgetLine(goal);
 	// E4: surface the remaining-vs-overshoot fact in the wrap-up steering.
 	const remaining = budgetRemaining(goal);
@@ -105,11 +122,11 @@ function budgetLimitedState(core: GoalCore, goal: GoalRecord): string {
 	return `[PI GOAL BUDGET LIMITED goalId=${goal.id}]\n${untrustedObjectiveBlock(goal)}${budgetText ? `\n${budgetText}` : ""}${reminder}`;
 }
 
-function blockedState(core: GoalCore, goal: GoalRecord): string {
+function blockedState(core: GoalContextCore, goal: GoalRecord): string {
 	return `[PI GOAL BLOCKED goalId=${goal.id}]\n${untrustedObjectiveBlock(goal)}\nBlocker: ${goal.pauseReason ?? "unspecified"}\nThe goal is blocked; the user must run ${commandHint("goal-resume", core.loadedCommands)} before goal work continues.`;
 }
 
-function activeState(core: GoalCore, ctx: ExtensionContext, goal: GoalRecord, ledgerEvents: () => GoalLedgerEvent[]): GoalContextParts {
+function activeState(core: GoalContextCore, ctx: ExtensionContext, goal: GoalRecord, ledgerEvents: () => GoalLedgerEvent[]): GoalContextParts {
 	const settings = loadGoalSettings(ctx.cwd);
 	const { state: policy, counters } = goalPromptParts(goal, { ...settings, commands: core.loadedCommands }, ctx.getContextUsage?.());
 	// Rare transitional steering rides in the stable block; per-turn usage and

@@ -16,7 +16,33 @@ import { readGoalLedger } from "./goal-ledger.ts";
 import { loadGoalSettings } from "./settings/resolve.ts";
 import { deriveTasksFromObjective } from "./goal-task-derive.ts";
 import { type GoalRecord, type GoalTask, validateTokenBudgetInput } from "./goal-record.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type { GoalCompletionCore } from "./goal-completion.ts";
+import type {
+	GoalDiskSync,
+	GoalLoadedCommands,
+	GoalPoolAccess,
+	HostSlice,
+	LifecycleSlice,
+	SchedulerSlice,
+	ServiceSlice,
+	ViewSlice,
+} from "./goal-core-types.ts";
+import type { GoalUpdateFlowsCore } from "./goal-update-flows.ts";
+
+/**
+ * What the goal tools read and change. The completion and update flows run
+ * from `update_goal`, so their needs are part of it.
+ */
+export type CoreToolsCore = GoalCompletionCore &
+	GoalUpdateFlowsCore &
+	GoalPoolAccess &
+	GoalDiskSync &
+	GoalLoadedCommands &
+	HostSlice<"registerTool"> &
+	ServiceSlice<"flushTurn"> &
+	LifecycleSlice<"create" | "syncPromptFromDisk"> &
+	SchedulerSlice<"declare"> &
+	ViewSlice<"goalForDisplay">;
 import { promptProfile } from "./prompts/goal-prompts.ts";
 import { runGoalAgentPauseFlow, runGoalBlockedFlow } from "./goal-update-flows.ts";
 
@@ -30,7 +56,7 @@ function conciseTaskPointers(goal: GoalRecord): { findCurrentTask?: GoalTask; fi
 }
 
 /** The first two lines of every get_goal state read: identity and scheduler. */
-function goalHeaderLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecord): string[] {
+function goalHeaderLines(core: CoreToolsCore, ctx: ExtensionContext, view: GoalRecord): string[] {
 	const settings = loadGoalSettings(ctx.cwd);
 	return [
 		`Goal ${view.id}: ${statusLabel(view)}, ${view.sisyphus ? "sisyphus" : "regular"}`,
@@ -39,7 +65,7 @@ function goalHeaderLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecord
 }
 
 /** Full legacy get_goal output. */
-function verboseGoalLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecord, includeHistory: boolean): string[] {
+function verboseGoalLines(core: CoreToolsCore, ctx: ExtensionContext, view: GoalRecord, includeHistory: boolean): string[] {
 	const lines = goalHeaderLines(core, ctx, view);
 	lines.push(`Objective: ${view.objective}`, "");
 	lines.push(`Status: ${statusLabel(view)}`);
@@ -81,7 +107,7 @@ function verboseGoalLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecor
 }
 
 /** Compact state read; full requirements remain available through detail pages. */
-function compactGoalLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecord, includeHistory: boolean): string[] {
+function compactGoalLines(core: CoreToolsCore, ctx: ExtensionContext, view: GoalRecord, includeHistory: boolean): string[] {
 	const lines = goalHeaderLines(core, ctx, view);
 	lines.push(`Objective: ${truncateText(view.objective, 180)}${view.objective.length > 180 ? " (full: get_goal section=objective)" : ""}`);
 	if (view.taskList) {
@@ -110,9 +136,9 @@ function compactGoalLines(core: GoalCore, ctx: ExtensionContext, view: GoalRecor
 }
 
 export function registerCoreTools(
-	core: GoalCore,
+	core: CoreToolsCore,
 	deps: {
-		runGoalCompletionFlow: (core: GoalCore, ctx: ExtensionContext, completionSummary?: string) => Promise<AgentToolResult<unknown>>;
+		runGoalCompletionFlow: (core: GoalCompletionCore, ctx: ExtensionContext, completionSummary?: string) => Promise<AgentToolResult<unknown>>;
 	},
 ): void {
 	const { pi } = core;

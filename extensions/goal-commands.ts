@@ -22,7 +22,48 @@ import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
 import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "./goal-drafting.ts";
 import { formatRecoveryReport, runRecoveryReport, runRecoveryRepair } from "./goal-recovery.ts";
 import { formatCheckpointHealthReport, readSessionCheckpointHealth } from "./goal-session-health.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type {
+	GoalCommandInvoker,
+	GoalContinuationControl,
+	GoalControlWarnings,
+	GoalModalAccess,
+	GoalOperationGuard,
+	GoalPoolAccess,
+	GoalRecordWriter,
+	GoalRunControl,
+	GoalTurnStopMarker,
+	FocusSlice,
+	HostSlice,
+	InterruptionSlice,
+	LifecycleSlice,
+	RuntimeSlice,
+	SchedulerSlice,
+	StateSlice,
+	ViewSlice,
+} from "./goal-core-types.ts";
+import type { SettingsMenuCore } from "./goal-settings-menu.ts";
+import type { GoalDraftingCore } from "./goal-drafting.ts";
+
+/** What the slash commands read and change. */
+export type GoalCommandsCore = SettingsMenuCore &
+	GoalDraftingCore &
+	GoalCommandInvoker &
+	GoalControlWarnings &
+	GoalContinuationControl &
+	GoalRunControl &
+	GoalPoolAccess &
+	GoalOperationGuard &
+	GoalModalAccess &
+	GoalRecordWriter &
+	GoalTurnStopMarker &
+	HostSlice<"registerCommand"> &
+	StateSlice<"activeAudit" | "openGoals"> &
+	FocusSlice<"setFocus" | "setGoal"> &
+	LifecycleSlice<"archive" | "create" | "syncPromptFromDisk"> &
+	InterruptionSlice<"reset"> &
+	RuntimeSlice<"clearPostCompactReminder" | "getCheckpointGoalId" | "setCheckpoint"> &
+	SchedulerSlice<"resume" | "refreshSettings"> &
+	ViewSlice<"goalForDisplay">;
 
 export interface GoalRefreshState {
 	poolIds: Iterable<string>;
@@ -65,7 +106,7 @@ function sessionFileOf(ctx: ExtensionContext): string | undefined {
  * paths are registered at load time; aliases and subcommands share the same
  * handler and argument completion. /goal-settings remains the recovery entry.
  */
-export function registerGoalCommands(core: GoalCore): void {
+export function registerGoalCommands(core: GoalCommandsCore): void {
 	const { pi } = core;
 	type Definition = { description: string; handler: (args: string, ctx: ExtensionContext) => Promise<void> };
 	const actions = new Map<GoalCommandId, Definition>();

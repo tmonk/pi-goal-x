@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { showGoalControls } from "./widgets/goal-controls-dialog.ts";
+import { showGoalControls, type GoalControlsCore } from "./widgets/goal-controls-dialog.ts";
 import { type GoalSettings, type SettingsScope } from "./settings/schema.ts";
 import { goalSettingsPath, goalGlobalSettingsPath } from "./settings/files.ts";
 import { loadGoalSettings, loadSettingsSnapshot, envOverrideFor, type SettingsSnapshot } from "./settings/resolve.ts";
@@ -13,7 +13,7 @@ import {
 	thinkingLevelChoices,
 	type AuditorChoice,
 } from "./auditor-selector.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type { GoalToolProfile, SchedulerSlice, StateSlice } from "./goal-core-types.ts";
 
 /**
  * One declarative row table for the settings menu. Rendering and dispatch
@@ -234,7 +234,10 @@ const ROW_EDITORS: Record<SettingRow["kind"], (edit: RowEdit) => Promise<void>> 
 	modelSelector: editModelRow,
 };
 
-export async function handleSettingsMenu(core: GoalCore, ctx: ExtensionContext): Promise<void> {
+/** What the settings menu reads from the session, on top of what the controls dialog needs. */
+export type SettingsMenuCore = GoalControlsCore & GoalToolProfile & StateSlice<"tasksEnabled"> & SchedulerSlice<"refreshSettings">;
+
+export async function handleSettingsMenu(core: SettingsMenuCore, ctx: ExtensionContext): Promise<void> {
 	if (!ctx.hasUI) {
 		// Headless: read-only report of both layer paths.
 		ctx.ui.notify(

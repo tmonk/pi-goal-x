@@ -29,7 +29,65 @@ import { LiveTailRetention } from "./goal-live-retention.ts";
 import { goalContextParts } from "./goal-context-parts.ts";
 import { hasActiveDraft, rehydrateDraft } from "./goal-drafting.ts";
 import { syncTerminalInputPause } from "./goal-terminal-input.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type { GoalContextCore } from "./goal-context-parts.ts";
+import type {
+	FocusSlice,
+	GoalAuditQueue,
+	GoalContinuationControl,
+	GoalControlWarnings,
+	GoalDiskSync,
+	GoalLoadedCommands,
+	GoalModalAccess,
+	GoalRunControl,
+	GoalSessionHandles,
+	GoalToolProfile,
+	GoalUiRefresh,
+	HostSlice,
+	InterruptionSlice,
+	LifecycleSlice,
+	ProgressSlice,
+	RuntimeSlice,
+	SchedulerSlice,
+	ServiceSlice,
+	StateSlice,
+	ViewSlice,
+	WatchSlice,
+} from "./goal-core-types.ts";
+import type { TerminalInputCore } from "./goal-terminal-input.ts";
+
+/** What the host event handlers read and change. */
+export type GoalEventsCore = GoalContextCore &
+	TerminalInputCore &
+	GoalAuditQueue &
+	GoalContinuationControl &
+	GoalControlWarnings &
+	GoalDiskSync &
+	GoalLoadedCommands &
+	GoalModalAccess &
+	GoalRunControl &
+	GoalSessionHandles &
+	GoalToolProfile &
+	GoalUiRefresh &
+	HostSlice<"on" | "appendEntry" | "sendMessage"> &
+	StateSlice<"assignFocusedGoalId" | "goalWorkToolCalledThisTurn" | "hasExplicitSessionFocus" | "invalidate"> &
+	FocusSlice<"appendEntry" | "load" | "setFocus"> &
+	ServiceSlice<"appendEvents" | "apply" | "beginTurn" | "endSession" | "endTurn" | "flushTurn" | "persist"> &
+	InterruptionSlice<"continueWithUser" | "finishTurn" | "ignoreAbort" | "isHeld" | "reset" | "settled"> &
+	LifecycleSlice<"persist" | "refreshDisplayFromDisk"> &
+	ProgressSlice<"begin" | "charge"> &
+	RuntimeSlice<
+		| "advanceTurn"
+		| "armPostCompactReminder"
+		| "clearContinuationState"
+		| "clearNetworkErrorBackoff"
+		| "currentTurnStoppedGoalId"
+		| "isStaleCheckpointBlocked"
+		| "scheduleNetworkErrorRetry"
+		| "setCheckpoint"
+	> &
+	SchedulerSlice<"begin" | "isDenied" | "message" | "pauseForError" | "recordWork" | "rejectCheckpoint" | "restore" | "resume" | "schedule" | "settled" | "shutdown" | "turn"> &
+	ViewSlice<"clear" | "clearAuditResult" | "stopAuditAnimation"> &
+	WatchSlice<"touchActivity">;
 import { filterGoalSessionContext, isStaleExtensionContextError } from "./goal-session-safety.ts";
 import { registerGoalContext } from "./goal-context.ts";
 import type { GoalMutationOutcome } from "./goal-service.ts";
@@ -52,7 +110,7 @@ export function compactGoalCheckpointContext(
 }
 
 /** Archive a goal marked complete whose archival was deferred, reporting success or failure to the user and ledger. */
-function archiveCompletedGoal(core: GoalCore, ctx: ExtensionContext, completedGoal: GoalRecord): void {
+function archiveCompletedGoal(core: GoalEventsCore, ctx: ExtensionContext, completedGoal: GoalRecord): void {
 	let archiveResult: GoalMutationOutcome;
 	try {
 		archiveResult = core.goalService.apply(ctx, {
@@ -91,7 +149,7 @@ function archiveCompletedGoal(core: GoalCore, ctx: ExtensionContext, completedGo
 	appendBestEffort(core, ctx, { type: "goal_archive_failed", goalId: completedGoal.id, message: archiveResult.message ?? "archive write failed", at: nowIso() });
 }
 
-function appendBestEffort(core: GoalCore, ctx: ExtensionContext, event: GoalLedgerEvent): void {
+function appendBestEffort(core: GoalEventsCore, ctx: ExtensionContext, event: GoalLedgerEvent): void {
 	try {
 		core.goalService.appendEvents(ctx, [event]);
 	} catch {
@@ -106,7 +164,7 @@ function appendBestEffort(core: GoalCore, ctx: ExtensionContext, event: GoalLedg
  * agent_end, agent_settled, session_shutdown). All state flows through the
  * GoalCore.
  */
-export function registerGoalEvents(core: GoalCore): void {
+export function registerGoalEvents(core: GoalEventsCore): void {
 	const { pi } = core;
 	// Transients are keyed per session: the context hook of session B must never
 	// overwrite the set that session A's provider request will consume.

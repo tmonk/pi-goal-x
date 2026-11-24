@@ -8,7 +8,26 @@ import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-age
 import { Text } from "@earendil-works/pi-tui";
 
 import type { GoalTaskUpdateSpec } from "./goal-service.ts";
-import type { GoalCore } from "./goal-state.ts";
+import type {
+	GoalDiskSync,
+	GoalFocusedGoalAccess,
+	GoalModalAccess,
+	GoalOperationGuard,
+	GoalTurnStopMarker,
+	GoalUiRefresh,
+	HostSlice,
+	ServiceSlice,
+} from "./goal-core-types.ts";
+
+/** What the task tools read and change. */
+export type TaskToolsCore = HostSlice<"registerTool"> &
+	GoalFocusedGoalAccess &
+	GoalOperationGuard &
+	GoalModalAccess &
+	GoalUiRefresh &
+	GoalDiskSync &
+	GoalTurnStopMarker &
+	ServiceSlice<"apply" | "updateTask" | "updateTasks">;
 import { goalDetails, renderGoalResult } from "./goal-format.ts";
 import { statusLabel, truncateText } from "./goal-display.ts";
 import { loadGoalSettings } from "./settings/resolve.ts";
@@ -23,7 +42,7 @@ import {
 import { nowIso, currentTaskIdIsPending, type GoalTask } from "./goal-record.ts";
 import { convertFlatTasks, countTasks, mergeTasksWithExisting, renderTaskLines, taskTreeSchema, type FlatTaskInput } from "./goal-task-tree.ts";
 
-function progressSpec(input: TaskProgressInput, core: GoalCore, ctx: ExtensionContext): GoalTaskUpdateSpec {
+function progressSpec(input: TaskProgressInput, core: TaskToolsCore, ctx: ExtensionContext): GoalTaskUpdateSpec {
 	const settings = loadGoalSettings(ctx.cwd);
 	const now = nowIso();
 	const evidence = input.evidence?.trim().slice(0, 200) || undefined;
@@ -66,7 +85,7 @@ function progressSpec(input: TaskProgressInput, core: GoalCore, ctx: ExtensionCo
 
 // ── Tool registration ─
 
-export function registerTaskTools(core: GoalCore): void {
+export function registerTaskTools(core: TaskToolsCore): void {
 	const { pi } = core;
 
 	// ── set_goal_tasks: flat parent-linked structural task-tree tool ───────────
