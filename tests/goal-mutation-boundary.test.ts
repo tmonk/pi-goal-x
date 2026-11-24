@@ -19,7 +19,10 @@ const extensionsDir = path.join(here, "..", "extensions");
 
 // Every extension module except the storage owners: GoalService is the only
 // mutation boundary, and goal-files/goal-ledger implement the primitives.
-const MUTATION_OWNERS = new Set(["goal-service.ts", "goal-ledger.ts", path.join("storage", "goal-files.ts")]);
+// goal-ledger-sink.ts is the best-effort ledger append that GoalService calls
+// for every write; it holds the retry loop and nothing else, so it owns the
+// ledger primitive on the service's behalf.
+const MUTATION_OWNERS = new Set(["goal-service.ts", "goal-ledger-sink.ts", "goal-ledger.ts", path.join("storage", "goal-files.ts")]);
 const implementationSources = (readdirSync(extensionsDir, { recursive: true }) as string[])
 	.filter((name) => name.endsWith(".ts") && !MUTATION_OWNERS.has(name))
 	.map((name) => readFileSync(path.join(extensionsDir, name), "utf8"))
