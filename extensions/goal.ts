@@ -1,6 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { runGoalCompletionAuditor } from "./goal-auditor.ts";
 import { registerGoalCommands } from "./goal-commands.ts";
+import { configureLocale } from "./i18n/locales.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 import { registerGoalEvents } from "./goal-events.ts";
 import {
 	GOAL_AUDIT_ENTRY,
@@ -39,6 +41,9 @@ export default function goalExtension(
 	const core = createGoalCore(pi, dependencies);
 	// Test/debug hook: expose the core for harness introspection (no behavior).
 	(pi as unknown as { _goalCore?: typeof core })._goalCore = core;
+	// Command descriptions are translated once, here, so pick the language first.
+	// The session start picks it again from the session folder.
+	configureLocale(loadGoalSettings(process.cwd()).locale);
 	registerGoalCommands(core);
 	registerCoreTools(core, { runGoalCompletionFlow });
 	registerTaskTools(core);

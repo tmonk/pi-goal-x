@@ -7,6 +7,7 @@
  * snapshot with per-leaf provenance, and reports it for /goal-status.
  */
 
+import { t } from "../i18n/index.ts";
 import { GOAL_COMMANDS, GOAL_KEY_ACTIONS, type GoalCommands, type GoalKeybinding } from "../goal-controls.ts";
 import { PI_GOAL_SETTINGS_FILE_ENV, goalGlobalSettingsPath, goalSettingsPath, readSettingsLayer, type SettingsLayerRead } from "./files.ts";
 import {
@@ -201,51 +202,51 @@ export function envOverrideFor(key: keyof GoalSettings | "settingsFile", env: No
  */
 export function effectiveSettingsReport(cwd: string, env: NodeJS.ProcessEnv = process.env): string[] {
 	const snapshot = loadSettingsSnapshot(cwd, env);
-	const lines = ["Settings (provenance):"];
+	const lines = [t("Settings (provenance):")];
 	const rows: Array<{ key: string; label: string; format: () => string }> = [
 		{ key: "autoSelectSingleGoal", label: "autoSelectSingleGoal", format: () => String(snapshot.value.autoSelectSingleGoal) },
 		{ key: "disableContracts", label: "disableContracts", format: () => String(snapshot.value.disableContracts) },
 		{ key: "disableTasks", label: "disableTasks", format: () => String(snapshot.value.disableTasks) },
 		{ key: "subtaskDepth", label: "subtaskDepth", format: () => String(snapshot.value.subtaskDepth) },
-		{ key: "disabled", label: "auditor disabled", format: () => String(snapshot.value.disabled) },
-		{ key: "provider", label: "provider", format: () => snapshot.value.provider ?? "(default)" },
-		{ key: "model", label: "model", format: () => snapshot.value.model ?? "(default)" },
-		{ key: "thinkingLevel", label: "thinking_level", format: () => snapshot.value.thinkingLevel ?? "(default)" },
-		{ key: "auditorProjectResources", label: "auditor project resources", format: () => String(snapshot.value.auditorProjectResources) },
-		{ key: "hideUnfocusedBanner", label: "hide unfocused banner", format: () => String(snapshot.value.hideUnfocusedBanner) },
-		{ key: "showAutonomousRuns", label: "show autonomous runs line", format: () => String(snapshot.value.showAutonomousRuns) },
-		{ key: "showContextUsage", label: "show context usage line", format: () => String(snapshot.value.showContextUsage) },
-		{ key: "goalsRoot", label: "goals root (reload to change)", format: () => snapshot.value.goalsRoot ?? ".pi/goals" },
-		{ key: "locale", label: "language", format: () => snapshot.value.locale ?? "en (default)" },
-		{ key: "hideUnfocusedPrompt", label: "hide unfocused prompt", format: () => String(snapshot.value.hideUnfocusedPrompt) },
-		{ key: "idleContinuationBackoff", label: "slow repeated idle replies (opt-in)", format: () => String(snapshot.value.idleContinuationBackoff) },
-		{ key: "strictExecutionContract", label: "explicit execution contracts (opt-in)", format: () => String(snapshot.value.strictExecutionContract) },
-		{ key: "maxAutonomousRuns", label: "autonomous run allowance", format: () => snapshot.value.maxAutonomousRuns === 0 ? "0 (disabled)" : String(snapshot.value.maxAutonomousRuns ?? "unlimited (default)") },
-		{ key: "stallTimeoutMinutes", label: "stall timeout (minutes)", format: () => String(snapshot.value.stallTimeoutMinutes) },
-		{ key: "objectiveMaxChars", label: "max objective length (0 = none)", format: () => String(snapshot.value.objectiveMaxChars) },
-		{ key: "networkRecovery", label: "network recovery attempts (0 = unbounded)", format: () => String(snapshot.value.networkRecovery?.maxAttempts ?? 0) },
-		{ key: "networkRecovery", label: "network recovery max delay (ms)", format: () => String(snapshot.value.networkRecovery?.maxDelayMs ?? DEFAULT_NETWORK_RECOVERY_MAX_DELAY_MS) },
-		{ key: "pauseOrder", label: "pause order", format: () => snapshot.value.pauseOrder ?? "together" },
-		{ key: "keybindings", label: "dashboard keybindings", format: () => `${snapshot.value.keybindings!.dashboard.toggleExpand}, ${snapshot.value.keybindings!.dashboard.scrollUp}, ${snapshot.value.keybindings!.dashboard.scrollDown}` },
+		{ key: "disabled", label: t("auditor disabled"), format: () => String(snapshot.value.disabled) },
+		{ key: "provider", label: "provider", format: () => snapshot.value.provider ?? t("(default)") },
+		{ key: "model", label: "model", format: () => snapshot.value.model ?? t("(default)") },
+		{ key: "thinkingLevel", label: "thinking_level", format: () => snapshot.value.thinkingLevel ?? t("(default)") },
+		{ key: "auditorProjectResources", label: t("auditor project resources"), format: () => String(snapshot.value.auditorProjectResources) },
+		{ key: "hideUnfocusedBanner", label: t("hide unfocused banner"), format: () => String(snapshot.value.hideUnfocusedBanner) },
+		{ key: "showAutonomousRuns", label: t("show autonomous runs line"), format: () => String(snapshot.value.showAutonomousRuns) },
+		{ key: "showContextUsage", label: t("show context usage line"), format: () => String(snapshot.value.showContextUsage) },
+		{ key: "goalsRoot", label: t("goals root (reload to change)"), format: () => snapshot.value.goalsRoot ?? ".pi/goals" },
+		{ key: "locale", label: t("language"), format: () => snapshot.value.locale ?? t("en (default)") },
+		{ key: "hideUnfocusedPrompt", label: t("hide unfocused prompt"), format: () => String(snapshot.value.hideUnfocusedPrompt) },
+		{ key: "idleContinuationBackoff", label: t("slow repeated idle replies (opt-in)"), format: () => String(snapshot.value.idleContinuationBackoff) },
+		{ key: "strictExecutionContract", label: t("explicit execution contracts (opt-in)"), format: () => String(snapshot.value.strictExecutionContract) },
+		{ key: "maxAutonomousRuns", label: t("autonomous run allowance"), format: () => snapshot.value.maxAutonomousRuns === 0 ? t("0 (disabled)") : String(snapshot.value.maxAutonomousRuns ?? t("unlimited (default)")) },
+		{ key: "stallTimeoutMinutes", label: t("stall timeout (minutes)"), format: () => String(snapshot.value.stallTimeoutMinutes) },
+		{ key: "objectiveMaxChars", label: t("max objective length (0 = none)"), format: () => String(snapshot.value.objectiveMaxChars) },
+		{ key: "networkRecovery", label: t("network recovery attempts (0 = unbounded)"), format: () => String(snapshot.value.networkRecovery?.maxAttempts ?? 0) },
+		{ key: "networkRecovery", label: t("network recovery max delay (ms)"), format: () => String(snapshot.value.networkRecovery?.maxDelayMs ?? DEFAULT_NETWORK_RECOVERY_MAX_DELAY_MS) },
+		{ key: "pauseOrder", label: t("pause order"), format: () => snapshot.value.pauseOrder ?? "together" },
+		{ key: "keybindings", label: t("dashboard keybindings"), format: () => `${snapshot.value.keybindings!.dashboard.toggleExpand}, ${snapshot.value.keybindings!.dashboard.scrollUp}, ${snapshot.value.keybindings!.dashboard.scrollDown}` },
 	];
 	for (const row of rows) {
 		const resolved = snapshot.provenance.get(row.key);
 		let source: string;
-		if (resolved?.source === "environment") source = `env (${resolved.envVar})`;
+		if (resolved?.source === "environment") source = t("env ({envVar})", { envVar: String(resolved.envVar) });
 		else source = resolved?.source ?? "default";
 		lines.push(`  ${row.label}: ${row.format()} (${source})`);
 	}
 	for (const [id] of GOAL_COMMANDS) {
 		const source = snapshot.provenance.get(`commands.${id}`)?.source ?? "default";
-		lines.push(`  ${id}: ${(snapshot.provenance.get(`commands.${id}`)?.value as string[]).map(route => `/${route}`).join(", ") || "disabled"} (${source})`);
+		lines.push(`  ${id}: ${(snapshot.provenance.get(`commands.${id}`)?.value as string[]).map(route => `/${route}`).join(", ") || t("disabled")} (${source})`);
 	}
 	for (const action of GOAL_KEY_ACTIONS) {
 		const source = snapshot.provenance.get(action.path.join("."));
 		lines.push(`  ${action.label}: ${formatGoalKeybinding(source?.value as GoalKeybinding)} (${source?.source ?? "default"})`);
 	}
-	lines.push(`  project settings file: ${snapshot.project.path}`);
-	lines.push(`  global settings file: ${snapshot.global.path}`);
+	lines.push(`  ${t("project settings file: {path}", { path: snapshot.project.path })}`);
+	lines.push(`  ${t("global settings file: {path}", { path: snapshot.global.path })}`);
 	const fileOverride = envOverrideFor("settingsFile", env);
-	if (fileOverride) lines.push(`  (settings file overridden by ${fileOverride})`);
+	if (fileOverride) lines.push(`  ${t("(settings file overridden by {name})", { name: fileOverride })}`);
 	return lines;
 }
