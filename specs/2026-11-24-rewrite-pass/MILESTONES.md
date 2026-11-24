@@ -45,7 +45,7 @@
 
 ## Simplification pass
 
-Behavior is unchanged: tool schemas, prompt text, error messages, ledger and goal file formats and cache keys are the same, and the test count is the same (1,258 tests, 5 skipped). One commit per module.
+Behavior is unchanged: tool schemas, prompt text, error messages, ledger and goal file formats and cache keys are the same, and no tests were added or removed (1,258 tests before rebasing onto the questionnaire split, 1,270 after; 5 skipped, 0 failures). One commit per module.
 
 - `goal-ledger.ts` 992 -> 695 lines. `isValidLedgerEvent` is now a table of per-event field checks in `goal-ledger-validate.ts` (66 lines, with `sanitizeEvent`). The checkpoint types and JSON codec moved to `goal-ledger-checkpoint.ts` (224 lines); its parser is split into goal-state, runtime-index and recent-event parsers. The three copies of "write the checkpoint, then reset the write throttle" are one call, and the event switch merges the completed/aborted cases. Exports are unchanged (`goal-ledger.ts` re-exports the checkpoint file name and version).
 - `goal-service.ts` 819 -> 811 lines. `apply` is split into `applyBuffered` and `applyLocked` with one `commitMutation` tail. `updateTask` is split into a buffered path and the locked attempt, sharing `withUpdatedTask` and `taskLedgerEvents`. The batch update uses a small `TaskLocator` class. `persist` and the turn-conflict branch use named helpers. The two misplaced doc comments now sit above the type they describe.
