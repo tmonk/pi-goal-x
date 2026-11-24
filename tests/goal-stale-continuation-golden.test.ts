@@ -1,4 +1,3 @@
-import { saveGoalSettingsFileConfig } from "../extensions/goal-settings.ts";
 import type { GoalCore } from "../extensions/goal-state.ts";
 /**
  * Stage 0 golden tests: the continuation checkpoint contract.
@@ -29,6 +28,7 @@ import {
 	type GoalRecord,
 	type GoalStateEntry,
 } from "../extensions/goal-record.ts";
+import { writeProjectSettings } from "./support/settings.ts";
 
 const FIXTURE_GOAL = readFileSync(new URL("./fixtures/goals/active_goal_fixture.md", import.meta.url), "utf8");
 
@@ -247,7 +247,7 @@ async function declareNextRun(h: ReturnType<typeof createHarness>): Promise<void
 	await h.handlers["turn_start"]!({}, h.ctx);
 	await h.handlers["tool_call"]!({ toolName: "bash", args: { command: "ls" } }, h.ctx);
 	await h.handlers["tool_execution_end"]!({}, h.ctx);
-	saveGoalSettingsFileConfig(h.ctx.cwd, { maxAutonomousRuns: 5 });
+	writeProjectSettings(h.ctx.cwd, { maxAutonomousRuns: 5 });
 	assert.equal(h.core.scheduler.declare(h.ctx, { kind: "ready" }).terminate, true);
 }
 
@@ -386,7 +386,7 @@ test("successful agent_end waits for agent_settled before queuing a continuation
 
 for (const optIn of [false, true]) test(`empty no-tool runs continue implicitly; pacing opt-in=${optIn}`, async () => {
 	const { cwd, goal } = fixtureCwd();
-	saveGoalSettingsFileConfig(cwd, { idleContinuationBackoff: optIn });
+	writeProjectSettings(cwd, { idleContinuationBackoff: optIn });
 	const h = createHarness(cwd);
 	try {
 		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));

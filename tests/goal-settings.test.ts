@@ -14,66 +14,65 @@ import {
 } from "../extensions/goal-record.ts";
 import {
 	goalSettingsPath,
-	parseGoalSettings,
 	parseSettingsLayer,
 	loadGoalSettingsFileConfig,
 	loadGoalSettings,
-	saveGoalSettingsFileConfig,
 	effectiveSettingsReport,
 	formatGoalKeybinding,
 } from "../extensions/goal-settings.ts";
+import { writeProjectSettings, parseSettings } from "./support/settings.ts";
 
-// ── parseGoalSettings ───────────────────────────────────────────────────
+// ── parseSettings ───────────────────────────────────────────────────
 
-test("parseGoalSettings: null/undefined returns empty defaults", () => {
-	assert.deepEqual(parseGoalSettings(null), {});
-	assert.deepEqual(parseGoalSettings(undefined as unknown), {});
-	assert.deepEqual(parseGoalSettings(""), {});
-	assert.deepEqual(parseGoalSettings(42), {});
-	assert.deepEqual(parseGoalSettings([]), {});
+test("parseSettings: null/undefined returns empty defaults", () => {
+	assert.deepEqual(parseSettings(null), {});
+	assert.deepEqual(parseSettings(undefined as unknown), {});
+	assert.deepEqual(parseSettings(""), {});
+	assert.deepEqual(parseSettings(42), {});
+	assert.deepEqual(parseSettings([]), {});
 });
 
-test("parseGoalSettings: empty object returns empty defaults", () => {
-	assert.deepEqual(parseGoalSettings({}), {});
+test("parseSettings: empty object returns empty defaults", () => {
+	assert.deepEqual(parseSettings({}), {});
 });
 
-test("parseGoalSettings: both flags false returns false defaults", () => {
-	const result = parseGoalSettings({ disableTasks: false, disableContracts: false });
+test("parseSettings: both flags false returns false defaults", () => {
+	const result = parseSettings({ disableTasks: false, disableContracts: false });
 	assert.equal(result.disableTasks, false);
 	assert.equal(result.disableContracts, false);
 });
 
-test("parseGoalSettings: both flags true", () => {
-	const result = parseGoalSettings({ disableTasks: true, disableContracts: true });
+test("parseSettings: both flags true", () => {
+	const result = parseSettings({ disableTasks: true, disableContracts: true });
 	assert.equal(result.disableTasks, true);
 	assert.equal(result.disableContracts, true);
 });
 
-test("parseGoalSettings: boolean false stored correctly", () => {
-	const result = parseGoalSettings({ disableTasks: false, disableContracts: true });
+test("parseSettings: boolean false stored correctly", () => {
+	const result = parseSettings({ disableTasks: false, disableContracts: true });
 	assert.equal(result.disableTasks, false);
 	assert.equal(result.disableContracts, true);
 });
 
-test("parseGoalSettings: string true/false values accepted", () => {
-	assert.deepEqual(parseGoalSettings({ disableTasks: "true", disableContracts: "false" }), {
+test("parseSettings: string true/false values accepted", () => {
+	assert.deepEqual(parseSettings({ disableTasks: "true", disableContracts: "false" }), {
 		disableTasks: true,
 		disableContracts: false,
 	});
 });
 
-test("parseGoalSettings: autoSelectSingleGoal accepted as bool or string; explicit false preserved (layering)", () => {
-	assert.deepEqual(parseGoalSettings({ autoSelectSingleGoal: true }), { autoSelectSingleGoal: true });
-	assert.deepEqual(parseGoalSettings({ autoSelectSingleGoal: "true" }), { autoSelectSingleGoal: true });
+test("parseSettings: autoSelectSingleGoal accepted as bool or string; explicit false preserved (layering)", () => {
+	assert.deepEqual(parseSettings({ autoSelectSingleGoal: true }), { autoSelectSingleGoal: true });
+	assert.deepEqual(parseSettings({ autoSelectSingleGoal: "true" }), { autoSelectSingleGoal: true });
 	// Issue #27 layering requirement: explicit false must survive parsing so a
 	// project can override a global true.
-	assert.deepEqual(parseGoalSettings({ autoSelectSingleGoal: false }), { autoSelectSingleGoal: false });
-	assert.deepEqual(parseGoalSettings({ autoSelectSingleGoal: "false" }), { autoSelectSingleGoal: false });
+	assert.deepEqual(parseSettings({ autoSelectSingleGoal: false }), { autoSelectSingleGoal: false });
+	assert.deepEqual(parseSettings({ autoSelectSingleGoal: "false" }), { autoSelectSingleGoal: false });
 });
 
-test("parseGoalSettings: unknown keys rejected", () => {
+test("parseSettings: unknown keys rejected", () => {
 	assert.throws(
-		() => parseGoalSettings({ disableTasks: true, disableContracts: false, foo: "bar" }),
+		() => parseSettings({ disableTasks: true, disableContracts: false, foo: "bar" }),
 		/Unknown pi-goal-x-settings.json key/,
 	);
 });
@@ -87,8 +86,8 @@ test("formatGoalKeybinding: renders readable labels for named keys", () => {
 	assert.equal(formatGoalKeybinding("ctrl+alt+enter"), "Ctrl+Alt+Enter");
 });
 
-test("parseGoalSettings: task keybindings use pi-tui key names", () => {
-	assert.deepEqual(parseGoalSettings({ keybindings: { dashboard: {
+test("parseSettings: task keybindings use pi-tui key names", () => {
+	assert.deepEqual(parseSettings({ keybindings: { dashboard: {
 		toggleExpand: "ctrl+shift+t",
 		scrollUp: "ctrl+shift+up",
 		scrollDown: "ctrl+shift+down",
@@ -100,15 +99,15 @@ test("parseGoalSettings: task keybindings use pi-tui key names", () => {
 	assert.equal(loadGoalSettings("/tmp/does-not-exist", {}).keybindings?.dashboard.toggleExpand, "ctrl+shift+t");
 });
 
-test("parseGoalSettings: unknown nested task keybindings become diagnostics, valid siblings still apply", () => {
+test("parseSettings: unknown nested task keybindings become diagnostics, valid siblings still apply", () => {
 	const result = parseSettingsLayer({ keybindings: { dashboard: { expand: "ctrl+t", scrollUp: "ctrl+u" } } }, "project", "t.json");
 	assert.equal(result.layer.keybindings?.dashboard?.scrollUp, "ctrl+u", "valid sibling key still applies");
 	assert.ok(result.diagnostics.some((d) => d.code === "unknown_key" && d.settingPath === "keybindings.dashboard.expand"));
 });
 
-test("parseGoalSettings: multiple unknown keys rejected with the full list", () => {
+test("parseSettings: multiple unknown keys rejected with the full list", () => {
 	assert.throws(
-		() => parseGoalSettings({ disableTasks: true, foo: "bar", baz: 42 }),
+		() => parseSettings({ disableTasks: true, foo: "bar", baz: 42 }),
 		/foo, baz/,
 	);
 });
@@ -117,7 +116,7 @@ test("parseGoalSettings: multiple unknown keys rejected with the full list", () 
 
 test("idleContinuationBackoff uses the existing strict boolean normalization", () => {
 	for (const [input, expected] of [[true, true], [false, false], ["true", true], ["false", false]] as const) {
-		assert.deepEqual(parseGoalSettings({ idleContinuationBackoff: input }), { idleContinuationBackoff: expected });
+		assert.deepEqual(parseSettings({ idleContinuationBackoff: input }), { idleContinuationBackoff: expected });
 	}
 	for (const invalid of [1, null, "enabled", {}, []]) {
 		const parsed = parseSettingsLayer({ idleContinuationBackoff: invalid }, "project", "inline");
@@ -275,12 +274,12 @@ test("loadGoalSettings: both flags disabled via file", () => {
 
 // ── objectiveMaxChars (goal length limit setting) ────────────────────────
 
-test("parseGoalSettings: objectiveMaxChars accepted as number or string, 0 allowed", () => {
-	assert.deepEqual(parseGoalSettings({ objectiveMaxChars: 0 }), { objectiveMaxChars: 0 });
-	assert.deepEqual(parseGoalSettings({ objectiveMaxChars: 5000 }), { objectiveMaxChars: 5000 });
-	assert.deepEqual(parseGoalSettings({ objectiveMaxChars: "2500" }), { objectiveMaxChars: 2500 });
-	assert.deepEqual(parseGoalSettings({ objectiveMaxChars: -1 }), {}, "negative rejected (invalid settings ignored)");
-	assert.deepEqual(parseGoalSettings({ objectiveMaxChars: 1.5 }), {}, "non-integer rejected");
+test("parseSettings: objectiveMaxChars accepted as number or string, 0 allowed", () => {
+	assert.deepEqual(parseSettings({ objectiveMaxChars: 0 }), { objectiveMaxChars: 0 });
+	assert.deepEqual(parseSettings({ objectiveMaxChars: 5000 }), { objectiveMaxChars: 5000 });
+	assert.deepEqual(parseSettings({ objectiveMaxChars: "2500" }), { objectiveMaxChars: 2500 });
+	assert.deepEqual(parseSettings({ objectiveMaxChars: -1 }), {}, "negative rejected (invalid settings ignored)");
+	assert.deepEqual(parseSettings({ objectiveMaxChars: 1.5 }), {}, "non-integer rejected");
 });
 
 test("loadGoalSettings: objectiveMaxChars defaults to no limit and honors the env override", () => {
@@ -296,14 +295,14 @@ test("loadGoalSettings: objectiveMaxChars defaults to no limit and honors the en
 
 // ── networkRecovery (provider-error recovery backoff) ─────────────────
 
-test("parseGoalSettings: networkRecovery accepts valid layers and rejects invalid leaves", () => {
-	assert.deepEqual(parseGoalSettings({ networkRecovery: { maxAttempts: 0 } }), { networkRecovery: { maxAttempts: 0 } });
-	assert.deepEqual(parseGoalSettings({ networkRecovery: { maxAttempts: 8, maxDelayMs: 30_000 } }), {
+test("parseSettings: networkRecovery accepts valid layers and rejects invalid leaves", () => {
+	assert.deepEqual(parseSettings({ networkRecovery: { maxAttempts: 0 } }), { networkRecovery: { maxAttempts: 0 } });
+	assert.deepEqual(parseSettings({ networkRecovery: { maxAttempts: 8, maxDelayMs: 30_000 } }), {
 		networkRecovery: { maxAttempts: 8, maxDelayMs: 30_000 },
 	});
-	assert.deepEqual(parseGoalSettings({ networkRecovery: { maxAttempts: -1 } }), {}, "negative attempts rejected");
-	assert.deepEqual(parseGoalSettings({ networkRecovery: { maxDelayMs: 500 } }), {}, "plateau below 1s rejected");
-	assert.deepEqual(parseGoalSettings({ networkRecovery: "nope" }), {}, "non-object rejected");
+	assert.deepEqual(parseSettings({ networkRecovery: { maxAttempts: -1 } }), {}, "negative attempts rejected");
+	assert.deepEqual(parseSettings({ networkRecovery: { maxDelayMs: 500 } }), {}, "plateau below 1s rejected");
+	assert.deepEqual(parseSettings({ networkRecovery: "nope" }), {}, "non-object rejected");
 });
 
 test("loadGoalSettings: networkRecovery defaults to unbounded and honors file + env layers", () => {
@@ -324,9 +323,9 @@ test("loadGoalSettings: networkRecovery defaults to unbounded and honors file + 
 	}, "unset resolves to unbounded default policy");
 });
 
-test("saveGoalSettingsFileConfig: task keybindings round-trip", () => {
+test("project settings: task keybindings round-trip", () => {
 	withTempDir((dir) => {
-		saveGoalSettingsFileConfig(dir, { keybindings: { dashboard: {
+		writeProjectSettings(dir, { keybindings: { dashboard: {
 			toggleExpand: "ctrl+shift+t",
 			scrollUp: "ctrl+shift+up",
 			scrollDown: "ctrl+shift+down",
@@ -339,14 +338,14 @@ test("saveGoalSettingsFileConfig: task keybindings round-trip", () => {
 	});
 });
 
-test("saveGoalSettingsFileConfig: objectiveMaxChars persists (including 0) and clears", () => {
+test("project settings: objectiveMaxChars persists (including 0) and clears", () => {
 	withTempDir((dir) => {
-		saveGoalSettingsFileConfig(dir, { objectiveMaxChars: 5000 });
+		writeProjectSettings(dir, { objectiveMaxChars: 5000 });
 		const loaded = loadGoalSettingsFileConfig(dir);
 		assert.equal(loaded.objectiveMaxChars, 5000, "persisted value round-trips");
-		saveGoalSettingsFileConfig(dir, { objectiveMaxChars: 0 });
+		writeProjectSettings(dir, { objectiveMaxChars: 0 });
 		assert.equal(loadGoalSettingsFileConfig(dir).objectiveMaxChars, 0, "0 (no limit) persists explicitly");
-		saveGoalSettingsFileConfig(dir, {});
+		writeProjectSettings(dir, {});
 		assert.equal(loadGoalSettingsFileConfig(dir).objectiveMaxChars, undefined, "cleared when omitted");
 	});
 });
@@ -440,23 +439,23 @@ test("goalPrompt: contract block shown when settings undefined (backward compat)
 
 // ── subtaskDepth ────────────────────────────────────────────────────────
 
-test("parseGoalSettings: parses subtaskDepth as number", () => {
-	const result = parseGoalSettings({ disableTasks: false, disableContracts: false, subtaskDepth: 2 });
+test("parseSettings: parses subtaskDepth as number", () => {
+	const result = parseSettings({ disableTasks: false, disableContracts: false, subtaskDepth: 2 });
 	assert.equal(result.subtaskDepth, 2);
 });
 
-test("parseGoalSettings: parses subtaskDepth string", () => {
-	const result = parseGoalSettings({ disableTasks: false, disableContracts: false, subtaskDepth: "3" });
+test("parseSettings: parses subtaskDepth string", () => {
+	const result = parseSettings({ disableTasks: false, disableContracts: false, subtaskDepth: "3" });
 	assert.equal(result.subtaskDepth, 3);
 });
 
-test("parseGoalSettings: rejects subtaskDepth below 1", () => {
-	const result = parseGoalSettings({ disableTasks: false, disableContracts: false, subtaskDepth: 0 });
+test("parseSettings: rejects subtaskDepth below 1", () => {
+	const result = parseSettings({ disableTasks: false, disableContracts: false, subtaskDepth: 0 });
 	assert.equal(result.subtaskDepth, undefined);
 });
 
-test("parseGoalSettings: rejects non-numeric subtaskDepth", () => {
-	const result = parseGoalSettings({ disableTasks: false, disableContracts: false, subtaskDepth: "abc" });
+test("parseSettings: rejects non-numeric subtaskDepth", () => {
+	const result = parseSettings({ disableTasks: false, disableContracts: false, subtaskDepth: "abc" });
 	assert.equal(result.subtaskDepth, undefined);
 });
 
