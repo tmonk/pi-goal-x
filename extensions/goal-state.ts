@@ -87,7 +87,6 @@ export interface GoalCore {
  invalidateSession(): void;
 	goalWorkToolCalledThisTurn: boolean;
 	tasksEnabled: boolean;
-	debugMode: boolean;
 	terminalInputUnsubscribe: (() => void) | null;
 	goalWidgetComponentRef: { current: GoalWidgetComponent | null };
 	goalService: GoalService;
@@ -275,7 +274,6 @@ export function createGoalCore(
  }
 
 	let goalModalDepth = 0;
-	let debugMode = false;
 	// §10: unified dashboard expansion state (compact vs expanded task view),
 	// owned by the core so it survives host-side widget re-instantiation.
 	let dashboardExpanded = false;
@@ -698,7 +696,6 @@ export function createGoalCore(
 						getOpenGoalCount: () => otherOpenGoalCount(goalsById, null),
 						getAuditorProgress: () => auditProgress,
 						getSettings: () => ({ ...loadGoalSettings(goalCwd), commands: core.loadedCommands }),
-						getDebugMode: () => debugMode,
 						getStalled: () => stallNotified,
 						getExpanded: () => dashboardExpanded,
 						getLedgerEvents: () => state.goal ? goalActivityEvents(storage, state.goal.id) : [],
@@ -729,7 +726,6 @@ export function createGoalCore(
 					getOpenGoalCount: () => otherOpenGoalCount(goalsById, null),
 					getAuditorProgress: () => auditProgress,
 					getSettings: () => ({ ...loadGoalSettings(goalCwd), commands: core.loadedCommands }),
-					getDebugMode: () => debugMode,
 					getStalled: () => stallNotified,
 					getExpanded: () => dashboardExpanded,
 					getLedgerEvents: () => state.goal ? goalActivityEvents(storage, state.goal.id) : [],
@@ -1021,12 +1017,6 @@ export function createGoalCore(
 		},
 		set tasksEnabled(value: boolean) {
 			tasksEnabled = value;
-		},
-		get debugMode() {
-			return debugMode;
-		},
-		set debugMode(value: boolean) {
-			debugMode = value;
 		},
 		get terminalInputUnsubscribe() {
 			return terminalInputUnsubscribe;

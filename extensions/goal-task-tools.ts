@@ -35,12 +35,6 @@ export interface FlatTaskInput {
 	lightweight_subtasks?: boolean;
 }
 
-export interface FlatTaskListInput {
-	tasks: FlatTaskInput[];
-	block_completion?: boolean;
-	change_summary?: string;
-}
-
 export type FlatTaskConversion =
 	| { ok: true; tasks: GoalTask[] }
 	| { ok: false; message: string };

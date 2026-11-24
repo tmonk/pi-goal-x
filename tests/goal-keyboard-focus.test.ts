@@ -39,7 +39,6 @@ for (const surface of ["dialog", "overlay", "foreign-editor"]) for (const mode o
   }
   if (mode === "recovery") assert.ok(h.core.runtime.scheduleNetworkErrorRetry(h.ctx, h.core.state.goal!));
   const audit = h.core.activeAudit, progress = h.core.auditProgress, animation = h.core.auditAnimationTimer;
-  const debug = h.core.debugMode;
   const before = h.disk(), state = structuredClone(h.core.state.goal), ledger = h.ledger();
   const handle = surface === "overlay" ? tui.showOverlay(foreign) : undefined;
   if (!handle) tui.setFocus(foreign);
@@ -55,7 +54,6 @@ for (const surface of ["dialog", "overlay", "foreign-editor"]) for (const mode o
   assert.equal(h.core.auditAnimationTimer, animation);
   assert.equal(audit?.controller.signal.aborted ?? false, false);
   assert.equal(h.core.interruption.isHeld(), false);
-  assert.equal(h.core.debugMode, debug);
   assert.equal(aborts, 0);
   if (mode === "recovery") assert.equal(h.core.runtime.scheduleNetworkErrorRetry(h.ctx, h.core.state.goal!), null, "foreign keys did not cancel recovery");
   assert.equal(commands, 0);

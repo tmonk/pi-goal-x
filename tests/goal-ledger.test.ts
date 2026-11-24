@@ -9,7 +9,6 @@ import {
   goalLedgerPath,
   latestAuditorResultForGoal,
   latestEventsForGoal,
-  latestGoalLifecycleEvent,
   readGoalLedger,
   reconstructGoalLedger,
   type GoalLedgerEvent,
@@ -164,17 +163,6 @@ test("latestEventsForGoal returns capped recent events", () => {
   assert.equal(result.length, 2);
   assert.equal((result[0] as { reason: string }).reason, "b");
   assert.equal((result[1] as { reason: string }).reason, "c");
-});
-
-test("latestGoalLifecycleEvent returns last event for goal", () => {
-  const events: GoalLedgerEvent[] = [
-    { type: "goal_created", goalId: "g1", objective: "o1", sisyphus: false, autoContinue: true, at: "2024-01-01T00:00:00.000Z" },
-    { type: "goal_paused", goalId: "g1", reason: "a", at: "2024-01-01T00:00:01.000Z" },
-    { type: "goal_created", goalId: "g2", objective: "o2", sisyphus: false, autoContinue: true, at: "2024-01-01T00:00:02.000Z" },
-  ];
-
-  const result = latestGoalLifecycleEvent(events, "g1");
-  assert.equal(result?.type, "goal_paused");
 });
 
 test("appendGoalEvent handles multiple sequential appends", () => {

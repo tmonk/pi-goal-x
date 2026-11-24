@@ -5,14 +5,11 @@ import { findTaskInTree, updateTaskInTree } from "./goal-policy.ts";
 import {
 	GOALS_DIR,
 	archiveGoalFile,
-	atomicWriteGoalFile,
-	ensureDirectory,
 	mergeGoalPromptFromDisk,
 	parseGoalFile,
 	readActiveGoalPool,
  readActiveGoalPoolView,
 	resolveGoalPath,
-	safeUnlinkGoalFile,
 	sanitizeGoalPaths,
 	writeActiveGoalFile,
 	type GoalFileContext,
@@ -824,20 +821,4 @@ export class GoalService {
    this.lastPersistedUsage = null;
   }
  }
-
-	/** Diagnostic write for the debug widget toggle (separate debug dir; not a goal mutation). */
-	writeDebugFile(ctx: GoalServiceContext, relPath: string, content: string): void {
-		const gfc: GoalFileContext = ctx;
-		ensureDirectory(gfc, ".pi/goals/debug");
-		atomicWriteGoalFile(gfc, ".pi/goals/debug", relPath, content);
-	}
-
-	/** Diagnostic removal for the debug widget toggle. */
-	removeDebugFile(ctx: GoalServiceContext, relPath: string): void {
-		try {
-			safeUnlinkGoalFile(ctx, ".pi/goals/debug", relPath);
-		} catch {
-			// Debug file removal is best-effort.
-		}
-	}
 }

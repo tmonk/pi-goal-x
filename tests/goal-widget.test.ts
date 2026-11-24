@@ -1100,11 +1100,6 @@ test("GoalWidgetComponent bounds the audit dashboard, result card, debug panel, 
 	assert.ok(card.length <= Math.max(1, 6 - WIDGET_HEIGHT_RESERVE), `card rendered ${card.length}`);
 	assert.match(card[0]!, /^╭─ Audit result/, "card header preserved");
 
-	// Debug panel at its natural height (36) on a 36-row terminal.
-	const debug = mk({ rows: 36, extra: { getDebugMode: () => true } }).render(100);
-	assert.ok(debug.length <= Math.max(1, 36 - WIDGET_HEIGHT_RESERVE), `debug rendered ${debug.length}`);
-	assert.match(debug[0]!, /^╭─ pi-goal-x/, "dashboard header preserved");
-
 	// Unfocused panel on a 4-row terminal.
 	const unfocused = new GoalWidgetComponent({
 		tui: createMockTUI({ terminalRows: 4 }).tui,

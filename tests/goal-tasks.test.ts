@@ -12,9 +12,6 @@ import {
 	skipAllSubtasks,
 	taskCompletionBlockWarning,
 	updateTaskInTree,
-	validateTaskCompletion,
-	validateTaskSkip,
-	validateTaskListProposal,
 } from "../extensions/goal-policy.ts";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -147,166 +144,6 @@ test("taskCompletionBlockWarning: plural tasks", () => {
 	assert.match(result!, /2 tasks/);
 });
 
-// ── validateTaskCompletion ────────────────────────────────────────────────────
-
-test("validateTaskCompletion: no goal", () => {
-	const result = validateTaskCompletion({ goal: null, taskId: "t1" });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /No goal/);
-});
-
-test("validateTaskCompletion: no task list", () => {
-	const goal = { ...makeGoal([]), taskList: undefined };
-	const result = validateTaskCompletion({ goal: goal as any, taskId: "t1" });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /no task list/);
-});
-
-test("validateTaskCompletion: unknown task", () => {
-	const goal = makeGoal([{ id: "t1", title: "T1" }]);
-	const result = validateTaskCompletion({ goal, taskId: "t2" });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /not found/);
-});
-
-test("validateTaskCompletion: already complete", () => {
-	const goal = makeGoal([{ id: "t1", title: "T1", status: "complete" }]);
-	const result = validateTaskCompletion({ goal, taskId: "t1" });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /already complete/);
-});
-
-test("validateTaskCompletion: already skipped", () => {
-	const goal = makeGoal([{ id: "t1", title: "T1", status: "skipped" }]);
-	const result = validateTaskCompletion({ goal, taskId: "t1" });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /already skipped/);
-});
-
-test("validateTaskCompletion: valid pending task", () => {
-	const goal = makeGoal([{ id: "t1", title: "T1", status: "pending" }]);
-	const result = validateTaskCompletion({ goal, taskId: "t1" });
-	assert.equal(result.ok, true);
-});
-
-// ── validateTaskSkip ──────────────────────────────────────────────────────────
-
-test("validateTaskSkip: no goal", () => {
-	const result = validateTaskSkip({ goal: null, taskId: "t1", reason: "irrelevant" });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /No goal/);
-});
-
-test("validateTaskSkip: no task list", () => {
-	const goal = { ...makeGoal([]), taskList: undefined };
-	const result = validateTaskSkip({ goal: goal as any, taskId: "t1", reason: "irrelevant" });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /no task list/);
-});
-
-test("validateTaskSkip: unknown task", () => {
-	const goal = makeGoal([{ id: "t1", title: "T1" }]);
-	const result = validateTaskSkip({ goal, taskId: "t2", reason: "irrelevant" });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /not found/);
-});
-
-test("validateTaskSkip: already complete", () => {
-	const goal = makeGoal([{ id: "t1", title: "T1", status: "complete" }]);
-	const result = validateTaskSkip({ goal, taskId: "t1", reason: "irrelevant" });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /already complete/);
-});
-
-test("validateTaskSkip: already skipped passes validation (toggle handled by executor)", () => {
-	const goal = makeGoal([{ id: "t1", title: "T1", status: "skipped" }]);
-	const result = validateTaskSkip({ goal, taskId: "t1", reason: "irrelevant" });
-	assert.equal(result.ok, true, "Skipped tasks pass validation; executor handles the toggle");
-});
-
-test("validateTaskSkip: empty reason", () => {
-	const goal = makeGoal([{ id: "t1", title: "T1", status: "pending" }]);
-	const result = validateTaskSkip({ goal, taskId: "t1", reason: "" });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /non-empty reason/);
-});
-
-test("validateTaskSkip: valid skip", () => {
-	const goal = makeGoal([{ id: "t1", title: "T1", status: "pending" }]);
-	const result = validateTaskSkip({ goal, taskId: "t1", reason: "No longer needed" });
-	assert.equal(result.ok, true);
-});
-
-// ── validateTaskListProposal ──────────────────────────────────────────────────
-
-test("validateTaskListProposal: no goal", () => {
-	const result = validateTaskListProposal({ goal: null, tasks: [{ id: "t1", title: "T1", status: "pending" }] });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /No goal/);
-});
-
-test("validateTaskListProposal: valid proposal", () => {
-	const goal = makeGoal([]);
-	const result = validateTaskListProposal({ goal, tasks: [{ id: "t1", title: "Task 1", status: "pending" }, { id: "t2", title: "Task 2", status: "pending" }] });
-	assert.equal(result.ok, true);
-});
-
-test("validateTaskListProposal: duplicate ids", () => {
-	const goal = makeGoal([]);
-	const result = validateTaskListProposal({ goal, tasks: [{ id: "t1", title: "Task 1", status: "pending" }, { id: "t1", title: "Task 1 again", status: "pending" }] });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /Duplicate/);
-});
-
-test("validateTaskListProposal: empty id", () => {
-	const goal = makeGoal([]);
-	const result = validateTaskListProposal({ goal, tasks: [{ id: "", title: "Task", status: "pending" }] });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /non-empty id/);
-});
-
-test("validateTaskListProposal: empty title", () => {
-	const goal = makeGoal([]);
-	const result = validateTaskListProposal({ goal, tasks: [{ id: "t1", title: "", status: "pending" }] });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /non-empty title/);
-});
-
-test("validateTaskListProposal: over 50 tasks", () => {
-	const goal = makeGoal([]);
-	const tasks = Array.from({ length: 51 }, (_, i) => ({ id: `t${i}`, title: `Task ${i}`, status: "pending" as const }));
-	const result = validateTaskListProposal({ goal, tasks });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /cannot exceed 50/);
-});
-
-test("validateTaskListProposal: duplicate ids across nested subtasks", () => {
-	const goal = makeGoal([]);
-	const tasks = [{
-		id: "t1", title: "Task 1", status: "pending" as const,
-		subtasks: [{ id: "t2", title: "Subtask with same id", status: "pending" as const }],
-	}, {
-		id: "t2", title: "Task 2", status: "pending" as const,
-	}];
-	const result = validateTaskListProposal({ goal, tasks });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /Duplicate task id: "t2"/);
-});
-
-test("validateTaskListProposal: duplicate ids within same subtask tree", () => {
-	const goal = makeGoal([]);
-	const tasks = [{
-		id: "t1", title: "Task 1", status: "pending" as const,
-		subtasks: [
-			{ id: "sub-a", title: "Sub A", status: "pending" as const },
-			{ id: "sub-a", title: "Sub A dup", status: "pending" as const },
-		],
-	}];
-	const result = validateTaskListProposal({ goal, tasks });
-	assert.equal(result.ok, false);
-	assert.match(result.message, /Duplicate task id: "sub-a"/);
-});
-
 // ── Subtask depth validation ────────────────────────────────────────────
 
 test("findSubtaskDepthViolation: no violation at default depth", () => {
@@ -371,31 +208,6 @@ test("findSubtaskDepthViolation: no violation for tasks without subtasks", () =>
 		{ id: "t2", title: "Task 2", status: "pending" as const },
 	];
 	assert.equal(findSubtaskDepthViolation(tasks, 1), undefined);
-});
-
-test("validateTaskListProposal: passes with valid subtasks", () => {
-	const goal = makeGoal([]);
-	const tasks = [{
-		id: "t1", title: "Task 1", status: "pending" as const,
-		subtasks: [
-			{ id: "t1a", title: "Sub A", status: "pending" as const },
-		],
-	}];
-	const result = validateTaskListProposal({ goal, tasks, maxSubtaskDepth: 1 });
-	assert.equal(result.ok, true);
-});
-
-test("validateTaskListProposal: rejects with subtasks exceeding depth", () => {
-	const goal = makeGoal([]);
-	const tasks = [{
-		id: "t1", title: "Task 1", status: "pending" as const,
-		subtasks: [{
-			id: "t1a", title: "Sub A", status: "pending" as const,
-			subtasks: [{ id: "t1ai", title: "Sub-sub", status: "pending" as const }],
-		}],
-	}];
-	const result = validateTaskListProposal({ goal, tasks, maxSubtaskDepth: 1 });
-	assert.equal(result.ok, false);
 });
 
 // ── checkSubtasksComplete ───────────────────────────────────────────────

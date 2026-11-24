@@ -75,12 +75,8 @@ describe("goal mutation boundary", () => {
 		assert.equal(goalTs.includes("appendEvents"), false, "goal.ts must not append ledger events");
 	});
 
-	it("keeps pure serializers and readers importable (no mutation)", () => {
+	it("goal.ts installs the shared core", () => {
 		const goalTs = readFileSync(path.join(extensionsDir, "goal.ts"), "utf8");
-		const widgetSource = readFileSync(path.join(extensionsDir, "goal-widget.ts"), "utf8");
-		// serializeGoalFile is a pure content builder (used for the debug widget);
-		// mergeGoalPromptFromDisk / readActiveGoalPool / readGoalLedger are reads.
 		assert.ok(goalTs.includes("createGoalCore("), "goal.ts must install the core");
-		assert.ok(widgetSource.includes("serializeGoalFile"), "goal-widget.ts may use the pure serializer");
 	});
 });

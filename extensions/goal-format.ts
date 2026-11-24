@@ -27,7 +27,6 @@ export const STATE_ENTRY = "pi-goal-state";
 export const FOCUS_ENTRY = "pi-goal-focus";
 export const GOAL_EVENT_ENTRY = "pi-goal-event";
 export const GOAL_AUDIT_ENTRY = "pi-goal-audit-event";
-export const COMPLETE_STATUS = "complete";
 /**
  * Tools that count as "real work" toward the active goal. If a non-tool-use
  * turn ends without any of these having been called, we DO NOT queue the next
@@ -278,11 +277,6 @@ export function isNetworkErrorAssistantMessage(message: unknown): boolean {
 	// Quota/billing exhaustion is deterministic and must never be retried.
 	if (NON_TRANSIENT_PROVIDER_ERROR_RE.test(details)) return false;
 	return TRANSIENT_PROVIDER_ERROR_RE.test(details);
-}
-
-export function isToolUseAssistantMessage(message: unknown): boolean {
-	const raw = asRecord(message);
-	return raw?.role === "assistant" && raw.stopReason === "toolUse";
 }
 
 export function hasAbortedAssistantMessage(messages: unknown[]): boolean {

@@ -2,7 +2,7 @@
  * Single task-counting implementation (P1-10).
  *
  * Previously ~5 copies of the same subtree walker lived in goal-policy,
- * goal-auditor, widgets/goal-widget, widgets/task-list-overlay, and
+ * goal-auditor, widgets/goal-widget, and
  * prompts/goal-prompts, with subtly different shapes. All call sites now use
  * this one walker. `doneIncludesSkipped` is explicit so "skipped counts as
  * done" semantics can never drift silently again: today every call site uses

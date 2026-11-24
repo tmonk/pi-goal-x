@@ -19,7 +19,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import goalExtension from "../../extensions/goal.ts";
 import { readGoalLedger } from "../../extensions/goal-ledger.ts";
 import type { GoalRecord } from "../../extensions/goal-record.ts";
-import { parseGoalFile, readActiveGoalFiles } from "../../extensions/storage/goal-files.ts";
+import { parseGoalFile, readActiveGoalPool } from "../../extensions/storage/goal-files.ts";
 import { deriveGoalDashboardModel } from "../../extensions/widgets/goal-dashboard-model.ts";
 import { renderCompactDashboard, renderExpandedDashboard } from "../../extensions/widgets/goal-dashboard-renderer.ts";
 import { deriveAuditorDashboardModel } from "../../extensions/widgets/auditor-dashboard-model.ts";
@@ -296,7 +296,7 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 		assert.equal(activeGoalFiles(cwd).length, 0, "active record retired");
 
 		// ── Step 17: reload — the goal is no longer active ──────────────────
-		const reloaded = readActiveGoalFiles({ cwd });
+		const reloaded = [...readActiveGoalPool({ cwd }).values()];
 		assert.equal(reloaded.length, 0, "no active goals after reload");
 		const archivedRecord = parseGoalFile(path.join(cwd, ".pi", "goals", "archived", archived[0]!));
 		assert.equal(archivedRecord?.status, "complete", "archived record is complete and durable");

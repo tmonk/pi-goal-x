@@ -996,12 +996,3 @@ export function latestEventsForGoal(events: GoalLedgerEvent[], goalId: string, l
   return result;
 }
 
-export function latestGoalLifecycleEvent(events: GoalLedgerEvent[], goalId: string): GoalLedgerEvent | undefined {
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i]!
-    if ("goalId" in event && event.goalId === goalId) {
-      return event;
-    }
-  }
-  return undefined;
-}

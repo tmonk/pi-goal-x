@@ -70,13 +70,6 @@ export function parseAuditorDecision(output: string): { approved: boolean; disap
 	return { approved: marker === "<approved/>", disapproved: marker === "<disapproved/>" };
 }
 
-export interface AuditorVerificationEvidence {
-	/** The agent's verification summary describing what was checked. */
-	summary: string;
-	/** The goal's verification contract (what the agent was required to verify), if any. */
-	contract?: string;
-}
-
 function renderAuditorTaskTree(tasks: GoalTask[], indent: number): string[] {
 	const prefix = "  ".repeat(indent);
 	const lines: string[] = [];

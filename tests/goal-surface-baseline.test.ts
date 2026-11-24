@@ -20,7 +20,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import piGoalExtension from "../extensions/goal.ts";
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
-	CORE_GOAL_TOOLS,
+	CORE_GOAL_TOOL_NAMES,
 	DRAFTING_GOAL_TOOLS,
 	FIVE_GOAL_TOOLS,
 } from "../extensions/goal-tool-names.ts";
@@ -126,7 +126,7 @@ test("baseline: execution profiles remain three/five tools and drafting is separ
 		"create_goal", "get_goal", "update_goal",
 		"set_goal_tasks", "update_goal_task",
 	]);
-	assert.deepEqual(CORE_GOAL_TOOLS, [
+	assert.deepEqual(CORE_GOAL_TOOL_NAMES, [
 		"create_goal", "get_goal", "update_goal",
 	]);
 	assert.deepEqual(DRAFTING_GOAL_TOOLS, [

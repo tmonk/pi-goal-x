@@ -128,8 +128,6 @@ export interface GoalCheckpointDetailsV3 extends Omit<GoalCheckpointDetailsV2, "
 	dispatchId: string;
 }
 
-export type GoalEventEntryDetails = GoalCheckpointDetailsV3 | GoalCheckpointDetailsV2 | LegacyGoalEventDetails | GoalStaleDetails;
-
 /**
  * Legacy normalized renderer shape. Kept as the stable contract for
  * renderGoalEvent / registerMessageRenderer; v2 entries normalize into it.

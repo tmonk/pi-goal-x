@@ -11,7 +11,6 @@ import {
 	findProposalPresentationSegments,
 	fitDialogLines,
 	formatQuestionnaireAnswers,
-	isHeadlessQuestionSufficientForDraft,
 	normalizeQuestionnaireQuestions,
 	proposalDialogFailureMessage,
 	proposalDecisionFromQuestionnaireResult,
@@ -64,17 +63,6 @@ test("formatQuestionnaireAnswers emits stable Q/A records with context and optio
 		formatQuestionnaireAnswers(result),
 		"**Q:** Scope?\nPick one\nOptions: A / B\n**A:** A\n\n---\n\n**Q:** Notes?\n**A:** Custom",
 	);
-});
-
-test("headless question sufficiency blocks vague-topic default fabrication", () => {
-	assert.equal(isHeadlessQuestionSufficientForDraft({
-		topic: "整理笔记",
-		questionText: "你的笔记目前存放在哪里，是什么格式？输出为什么形式？",
-	}), false);
-	assert.equal(isHeadlessQuestionSufficientForDraft({
-		topic: "在 sandbox 当前目录创建 hello.txt，内容为 Hello, Goal!，不要修改其他文件。",
-		questionText: "如果 hello.txt 已存在，应该覆盖还是停止？",
-	}), true);
 });
 
 // Realistic repro content from the reported bug: the agent asked "via uv too?"

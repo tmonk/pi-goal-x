@@ -271,7 +271,8 @@ describe("scoped mutation", () => {
 		});
 	});
 
-	it("failed write preserves the original file (fault injection)", () => {
+	// Root ignores directory permissions, so the injected fault cannot occur.
+	it("failed write preserves the original file (fault injection)", {skip: process.getuid?.() === 0 && "running as root"}, () => {
 		withTempDir((dir) => {
 			const env = { PI_GOAL_GLOBAL_SETTINGS_FILE: path.join(dir, "g.json") };
 			const target = scopeTarget(dir, "global");

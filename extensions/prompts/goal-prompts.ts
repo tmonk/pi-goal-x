@@ -260,22 +260,6 @@ function buildGoalPrompt(goal: GoalRecord, settings?: GoalSettings): string {
  ].filter(Boolean).join("\n\n");
 }
 
-/** Steering injected when the user edits the objective (bounded). */
-export function objectiveEditedPrompt(goal: GoalRecord): string {
-	const budget = modelBudgetLine(goal);
-	let prompt = [
-		`[GOAL OBJECTIVE UPDATED goalId=${goal.id}]`,
-		"The user revised this goal's objective via /goal-tweak. Usage, tasks, mode, and budget were preserved.",
-		"",
-		untrustedObjectiveBlock(goal),
-		...(budget ? ["", budget] : []),
-		"",
-		"Re-read the full objective and continue from the authoritative current state.",
-	].join("\n");
-	return prompt.length > MAX_PROMPT_FRAGMENT_CHARS ? `${prompt.slice(0, MAX_PROMPT_FRAGMENT_CHARS)}\n…[prompt truncated]` : prompt;
-}
-
-
 /**
  * Deprecated compatibility wrapper (issue #30). The full continuation prompt
  * was the defect: every auto-continue turn persisted the whole objective/task/
@@ -285,11 +269,6 @@ export function objectiveEditedPrompt(goal: GoalRecord): string {
  *
  * Kept for one minor release so external call sites migrate explicitly.
  */
-/** @deprecated Use checkpointTriggerPrompt — full continuation prompts must not be persisted. */
-export function continuationPrompt(goal: GoalRecord, _settings?: GoalSettings): string {
-	return checkpointTriggerPrompt(goal.id);
-}
-
 export function staleContinuationPrompt(staleGoalId: string, current: GoalRecord | null): string {
 	const currentLine = current
 		? `Current goal: ${current.id} (${statusLabel(current)}) - ${truncateText(current.objective)}`

@@ -301,13 +301,6 @@ export function proposalDecisionFromQuestionnaireResult(args: { cancelled: boole
 	return "continue";
 }
 
-export function isHeadlessQuestionSufficientForDraft(args: { topic: string; questionText: string }): boolean {
-	const topic = args.topic.toLowerCase();
-	void args;
-	const vagueTopic = topic.trim().length < 20 || /(整理笔记|organize notes|notes|笔记)$/.test(topic.trim());
-	return !vagueTopic;
-}
-
 const CUSTOM_ANSWER_LABEL = "Write your own answer...";
 
 /** Sequential native dialogs for hosts that cannot render terminal components. */

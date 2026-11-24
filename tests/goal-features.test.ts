@@ -14,8 +14,7 @@ import { createGoalCore } from "../extensions/goal-state.ts";
 import { createGoal } from "../extensions/goal-record.ts";
 import { readGoalLedger } from "../extensions/goal-ledger.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
-import { showTaskListOverlay } from "../extensions/widgets/task-list-overlay.ts";
-import { toggleTaskViaService, syncTerminalInputPause } from "../extensions/goal-widget.ts";
+import { syncTerminalInputPause } from "../extensions/goal-widget.ts";
 import { renderGoalWidgetLines } from "../extensions/widgets/goal-widget.ts";
 import { createMockTheme, createMockExtensionContext, invokeCustomFactory, renderComponent } from "./tui-test-utils.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
@@ -110,51 +109,6 @@ describe("F2 objective→task bootstrap", () => {
 	it("returns null without structure or with a lone numbered line", () => {
 		assert.equal(deriveTasksFromObjective("just an objective"), null);
 		assert.equal(deriveTasksFromObjective("1. lone step"), null);
-	});
-});
-
-describe("F3 interactive overlay toggle", () => {
-	it("invokes the toggle callback with goal+task on Enter over a task row", async () => {
-		const goal = makeGoal({ objective: "F3 test" });
-		goal.taskList = { tasks: [{ id: "t1", title: "T1", status: "pending" }], blockCompletion: false, proposedAt: "2026-08-05T00:00:00.000Z" };
-		const mockCtx = createMockExtensionContext();
-		const goals = new Map([[goal.id, goal]]);
-		const toggled: string[] = [];
-		showTaskListOverlay(mockCtx, goals, goal.id, { onToggleTask: async (gid, tid) => { toggled.push(`${gid}:${tid}`); return { ok: true }; } });
-		const { component } = invokeCustomFactory(mockCtx._customCalls, 0);
-		const cmp = component as unknown as { handleInput?: (d: string) => void };
-		assert.ok(cmp.handleInput, "component has handleInput");
-		cmp.handleInput?.("\r"); // raw Enter data (matchesKey parses escape sequences)
-		await new Promise((r) => setTimeout(r, 10));
-		assert.equal(toggled.length, 1);
-		assert.equal(toggled[0], `${goal.id}:t1`);
-	});
-
-	it("toggleTaskViaService completes a pending task and reopens a complete one", async () => {
-		const cwd = fixtureCwd();
-		try {
-			const goal = writeActiveGoalFile({ cwd }, makeGoal({ objective: "F3 mutation test" }));
-			goal.taskList = { tasks: [{ id: "t1", title: "T1", status: "pending" }], blockCompletion: false, proposedAt: "2026-08-05T00:00:00.000Z" };
-			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx as never);
-			// focus the goal + set the in-memory task list
-			h.core.setFocusedGoalId(goal.id, h.ctx as never, "selected", { recordLedger: false });
-			const goalWithTasks = h.core.state.goal!;
-			goalWithTasks.taskList = { tasks: [{ id: "t1", title: "T1", status: "pending" }], blockCompletion: false, proposedAt: "2026-08-05T00:00:00.000Z" };
-			h.core.updateFocusedGoal(goalWithTasks, h.ctx as never, true);
-
-			let res = await toggleTaskViaService(h.core, h.ctx as never, goal.id, "t1");
-			assert.equal(res.ok, true);
-			const afterComplete = h.core.state.goal!;
-			assert.equal(afterComplete.taskList!.tasks[0]!.status, "complete");
-
-			res = await toggleTaskViaService(h.core, h.ctx as never, goal.id, "t1");
-			assert.equal(res.ok, true);
-			const afterReopen = h.core.state.goal!;
-			assert.equal(afterReopen.taskList!.tasks[0]!.status, "pending");
-		} finally {
-			rmSync(cwd, { recursive: true, force: true });
-		}
 	});
 });
 

@@ -515,17 +515,6 @@ export function mergeGoalPromptFromDisk(ctx: GoalFileContext, current: GoalRecor
 	}
 }
 
-export function readActiveGoalFiles(ctx: GoalFileContext): GoalRecord[] {
-	const root = goalStoragePath(ctx, GOALS_DIR);
-	const cachedPool = goalPoolCache.get(root);
-	if (cachedPool) return Array.from(cachedPool.values());
-	const goals = scanActiveGoalFiles(ctx, root);
-	const pool = new Map<string, GoalRecord>();
-	for (const goal of goals) pool.set(goal.id, goal);
-	goalPoolCache.set(root, pool);
-	return goals;
-}
-
 /** Uncached full scan (used when the zero-op pool cache is empty). */
 function scanActiveGoalFiles(ctx: GoalFileContext, root: string): GoalRecord[] {
 	let entries: string[];

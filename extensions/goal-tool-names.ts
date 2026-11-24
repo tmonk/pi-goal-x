@@ -17,9 +17,6 @@ export const TASK_TOOL_NAMES = [SET_GOAL_TASKS_TOOL_NAME, UPDATE_GOAL_TASK_TOOL_
 /** Fixed task-enabled profile: all five registered goal tools. */
 export const FIVE_GOAL_TOOLS = [...CORE_GOAL_TOOL_NAMES, ...TASK_TOOL_NAMES] as const;
 
-/** Fixed task-disabled profile: the three core tools. */
-export const CORE_GOAL_TOOLS = CORE_GOAL_TOOL_NAMES;
-
 /** User-started drafting uses a separate transient model profile. */
 export const DRAFTING_GOAL_TOOLS = [
 	QUESTION_TOOL_NAME,

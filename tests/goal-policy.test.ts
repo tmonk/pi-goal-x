@@ -7,7 +7,6 @@ import {
 	clearGoalCommandMessage,
 	shouldArmPostCompactReminder,
 	shouldInjectPostCompactReminder,
-	shouldQueueContinuation,
 	validateGoalBlock,
 	validateGoalCompletion,
 	validateResumeGoal,
@@ -129,10 +128,7 @@ test("resume and clear policy preserve human-owned lifecycle affordances", () =>
 	assert.ok(!skipPrecedence.includes("<approved/>"), "auditorReport must be ignored when auditSkippedReason is present");
 });
 
-test("continuation and compaction policies are deterministic", () => {
-	assert.equal(shouldQueueContinuation(goal({ status: "active", autoContinue: true })), true);
-	assert.equal(shouldQueueContinuation(goal({ status: "paused", autoContinue: true })), false);
-
+test("compaction policies are deterministic", () => {
 	assert.equal(shouldArmPostCompactReminder(sisyphus({ status: "active" })), true);
 	assert.equal(shouldArmPostCompactReminder(sisyphus({ status: "paused", autoContinue: false })), false);
 	assert.equal(shouldInjectPostCompactReminder({ pending: true, goal: sisyphus() }), true);

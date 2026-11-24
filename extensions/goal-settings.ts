@@ -60,10 +60,6 @@ export interface GoalKeybindings {
 	dialog?: Partial<Record<import("./goal-controls.ts").GoalDialogAction, GoalKeybinding>>;
 	commands?: Partial<Record<import("./goal-controls.ts").GoalCommandId, GoalKeybinding>>;
 }
-export interface GoalKeybindingsLayer extends Omit<GoalKeybindings, "dashboard"> {
-	dashboard?: GoalDashboardKeybindingsLayer;
-}
-
 export const DEFAULT_GOAL_KEYBINDINGS: GoalKeybindings = {
 	dashboard: {
 		toggleExpand: "ctrl+shift+t",
@@ -1365,6 +1361,3 @@ export function effectiveSettingsReport(cwd: string, env: NodeJS.ProcessEnv = pr
 	return lines;
 }
 
-export function isAuditorEnabledByDefault(settings: GoalSettings): boolean {
-	return settings.disabled !== true;
-}

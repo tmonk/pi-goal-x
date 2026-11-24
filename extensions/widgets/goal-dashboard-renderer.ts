@@ -613,7 +613,7 @@ const CHECK_COLOR = { passed: "success", running: "accent", pending: "muted", fa
  * Structured audit dashboard (§15.3): five check stages, a progress bar, and
  * the elapsed duration, using the same visual system as the goal dashboard.
  * Raw tools and recent output appear only when showToolDetails is set
- * (expanded/debug audit mode) or when the audit finished with a failure.
+ * (expanded audit mode) or when the audit finished with a failure.
  */
 export function renderAuditorDashboard(
 	model: AuditorDashboardModel,

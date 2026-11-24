@@ -5,28 +5,6 @@ import { renderConfirmationTasks } from "./goal-task-confirmation.ts";
 
 export type GoalDraftingFocus = "goal" | "sisyphus";
 
-export interface GoalConfirmationIntentLike {
-	focus: GoalDraftingFocus;
-	originalTopic: string;
-	startedAt?: number;
-}
-
-export interface DraftProposalInput {
-	intent: GoalConfirmationIntentLike | null;
-	hasUnfinishedGoal: boolean;
-	objective: string;
-	sisyphus?: boolean;
-	draftId?: string;
-}
-
-export type DraftProposalValidation =
-	| { ok: true; objective: string; expectedSisyphus: boolean }
-	| { ok: false; message: string; clearDrafting?: boolean };
-
-export type ToolGateDecision =
-	| { block: false }
-	| { block: true; reason: string };
-
 // ── Shared formatting helpers ──────────────────────────────────────────────
 function formatModeLabel(sisyphus: boolean): string {
 	return sisyphus ? "Sisyphus (prompt/criteria style)" : "Normal goal";
@@ -91,46 +69,6 @@ export function buildTweakConfirmationText(args: {
 		lines.push(`└──────────────────────────────────────────────┘`);
 	}
 	return lines.join("\n");
-}
-
-export function evaluateDraftingToolGate(args: {
-	toolName: string;
-	draftingFocus?: GoalDraftingFocus | null;
-	tweakDraftingGoalId?: string | null;
-	activeGoalId?: string | null;
-	proposeToolName?: string;
-	tweakApplyToolName?: string;
-	getGoalToolName?: string;
-}): ToolGateDecision {
-	// Goal confirmation is prompt-guided, not runtime-enforced. The agent should
-	// avoid substantive work before confirmation, but minimal reconnaissance is allowed.
-	void args;
-	return { block: false };
-}
-
-export function validateGoalDraftProposal(input: DraftProposalInput): DraftProposalValidation {
-	if (input.intent === null) {
-		return {
-			ok: false,
-			message: "propose_goal_draft REJECTED: no /goal, /sisyphus, or /goal-tweak guided draft is in progress.",
-		};
-	}
-
-	const expectedSisyphus = input.intent.focus === "sisyphus";
-	const actualSisyphus = input.sisyphus === true;
-	if (actualSisyphus !== expectedSisyphus) {
-		return {
-			ok: false,
-			message: `propose_goal_draft REJECTED (focus gate): the user invoked ${input.intent.focus === "sisyphus" ? "/sisyphus" : "/goal"} but you passed sisyphus=${actualSisyphus}. Set sisyphus=${expectedSisyphus} to match their choice.`,
-		};
-	}
-
-	const objective = input.objective.trim();
-	if (!objective) {
-		return { ok: false, message: "propose_goal_draft REJECTED: objective is empty." };
-	}
-
-	return { ok: true, objective, expectedSisyphus };
 }
 
 export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, commands?: GoalCommands): string {

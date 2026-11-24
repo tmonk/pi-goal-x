@@ -4,7 +4,6 @@ import test from "node:test";
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
 	CORE_GOAL_TOOL_NAMES,
-	CORE_GOAL_TOOLS,
 	CREATE_GOAL_TOOL_NAME,
 	DRAFTING_GOAL_TOOLS,
 	FIVE_GOAL_TOOLS,
@@ -45,7 +44,6 @@ test("fixed profiles: core three, task two, all five registered", () => {
 	assert.deepEqual(CORE_GOAL_TOOL_NAMES, CORE);
 	assert.deepEqual(TASK_TOOL_NAMES, ["set_goal_tasks", "update_goal_task"]);
 	assert.deepEqual(FIVE_GOAL_TOOLS, [...CORE, ...TASK_TOOL_NAMES]);
-	assert.deepEqual(CORE_GOAL_TOOLS, CORE);
 	assert.deepEqual(DRAFTING_GOAL_TOOLS, DRAFTING);
 	// The registry is the fixed five plus the transient drafting profile; the
 	// INSTALLED profile (installGoalToolProfile) still only ever installs the
