@@ -64,7 +64,7 @@ function unfocusedState(core: GoalCore, ctx: ExtensionContext): GoalContextParts
 	// reminder only. The stale-checkpoint guard and all focused-goal context are
 	// unaffected.
 	if (loadGoalSettings(ctx.cwd).hideUnfocusedPrompt === true) return;
-	const openCount = otherOpenGoalCount(core.goalsById, null);
+	const openCount = otherOpenGoalCount(core.state.goalsById, null);
 	if (openCount === 0) return;
 	return { state: commandInstructions(unfocusedOpenGoalsPrompt(openCount), core.loadedCommands) };
 }
@@ -116,7 +116,7 @@ function activeState(core: GoalCore, ctx: ExtensionContext, goal: GoalRecord, le
 	// scheduling counters stay in the volatile block so retention grows slowly.
 	let state = policy;
 	// F5: [GOAL STALLED] steering note when the detector fired.
-	const stalledNote = core.checkStall(ctx);
+	const stalledNote = core.watch.checkStall(ctx);
 	if (stalledNote) state += stalledNote;
 	// Inject durable auditor feedback if the latest result was a rejection
 	try {
@@ -134,7 +134,7 @@ function activeState(core: GoalCore, ctx: ExtensionContext, goal: GoalRecord, le
 		// and task contract, so inject only what compaction may have lost.
 		// Falls back to a generic note if the ledger can't be read.
 		try {
-			const otherOpenCount = core.openGoals().filter((g) => g.id !== goal.id).length;
+			const otherOpenCount = core.state.openGoals().filter((g) => g.id !== goal.id).length;
 			const delta = buildPostCompactionGoalDelta({ goal, ledgerEvents: ledgerEvents(), otherOpenCount });
 			state = `${state}\n\n${delta}`;
 		} catch {

@@ -320,10 +320,10 @@ export class GoalControlsDialog implements Component {
 
 export async function showGoalControls(core: GoalCore, ctx: ExtensionContext, scope: SettingsScope = "project"): Promise<boolean> {
 	if (!ctx.hasUI) { ctx.ui.notify("Open /goal-settings controls in an interactive Pi session to customize controls.", "info"); return false; }
-	core.enterGoalModal();
+	core.state.enterModal();
 	let reload: "reload" | undefined;
 	try { reload = await ctx.ui.custom((tui, theme, keymap, done) => new GoalControlsDialog(core, ctx, tui, theme, keymap, done, scope)); }
-	finally { core.exitGoalModal(); }
+	finally { core.state.exitModal(); }
 	if (reload && "reload" in ctx) { await (ctx as ExtensionContext & { reload(): Promise<void> }).reload(); return true; }
 	return false;
 }

@@ -77,7 +77,7 @@ export async function runGoalBlockedFlow(core: GoalCore, ctx: ExtensionContext, 
 	if (!oracleSettings?.enabled) return commitBlocked();
 
 	const goalAtBlock = core.state.goal;
-	const focusToken = core.focusedOperationToken(goalAtBlock.id);
+	const focusToken = core.state.focusToken(goalAtBlock.id);
 	const fingerprint = buildBlockerFingerprint(goalAtBlock, reason);
 	const consult = goalOracleState(ctx, goalAtBlock.id, fingerprint);
 
@@ -130,8 +130,8 @@ export async function runGoalBlockedFlow(core: GoalCore, ctx: ExtensionContext, 
 		recentEvidence: "",
 	});
 
-	if (!core.isFocusedOperationCurrent(focusToken)) {
-		return core.focusedOperationCancelledResult("Blocker Oracle", focusToken);
+	if (!core.state.isTokenCurrent(focusToken)) {
+		return core.state.cancelledResult("Blocker Oracle", focusToken);
 	}
 
 	if (!run.ok) {
@@ -189,7 +189,7 @@ export async function runGoalAgentPauseFlow(core: GoalCore, ctx: ExtensionContex
 		return goalTextResult('update_goal({ status: "paused" }) requires a "reason" describing why the work is pausing.', core.state.goal);
 	}
 	if (!core.state.goal) throw new Error("Goal disappeared during pause validation.");
-	core.accountProgress(ctx);
+	core.progress.charge(ctx);
 	const trimmedAction = suggestedAction?.trim();
 	const result = core.goalService.apply(ctx, {
 		reconcile: false,

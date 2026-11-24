@@ -172,7 +172,7 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 		assert.equal(goal.taskList?.tasks.length, 5, "five top-level tasks");
 		const t3 = goal.taskList?.tasks.find((t) => t.id === "t3");
 		assert.deepEqual(t3?.subtasks?.map((s) => s.id), ["t3.1", "t3.2", "t3.3"], "nested tasks persisted");
-		assert.ok(h.core.focusedGoalId === goal.id, "goal is focused");
+		assert.ok(h.core.state.focusedGoalId === goal.id, "goal is focused");
 		assert.ok(ledgerEvents(cwd).some((e) => e.type === "goal_created"), "goal_created ledger event");
 
 		// ── Step 5: start the first task ────────────────────────────────────
@@ -235,7 +235,7 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 			{ auditorLabel: "mock/auditor" },
 		);
 		assert.deepEqual(auditModel.checks.map((c) => c.state), ["passed", "passed", "passed", "running", "pending"]);
-		assert.equal(h.core.auditResult?.verdict, "approved", "approval sets the result card");
+		assert.equal(h.core.view.auditResult?.verdict, "approved", "approval sets the result card");
 
 		// ── Step 14: deferred completion ────────────────────────────────────
 		goal = currentGoal(cwd)!;

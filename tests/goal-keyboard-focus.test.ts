@@ -30,7 +30,7 @@ for (const surface of ["dialog", "overlay", "foreign-editor"]) for (const mode o
 		h.ctx.ui.onTerminalInput = (listener: any) => tui.addInputListener(listener);
 		tui.addChild(editor); tui.setFocus(editor); tui.start();
 		await h.start();
-		h.core.updateFocusedGoal({...h.core.state.goal!, autoContinue: true}, h.ctx);
+		h.core.focus.updateFocused({...h.core.state.goal!, autoContinue: true}, h.ctx);
 		if (mode === "audit") {completion = h.call("update_goal", {status: "complete"}); await started.promise;}
 		if (mode === "wait") {
 			h.core.scheduler.begin(h.ctx);
@@ -38,20 +38,20 @@ for (const surface of ["dialog", "overlay", "foreign-editor"]) for (const mode o
 			assert.equal(h.core.state.goal?.scheduler?.phase, "waiting");
 		}
 		if (mode === "recovery") assert.ok(h.core.runtime.scheduleNetworkErrorRetry(h.ctx, h.core.state.goal!));
-		const audit = h.core.activeAudit, progress = h.core.auditProgress, animation = h.core.auditAnimationTimer;
+		const audit = h.core.state.activeAudit, progress = h.core.view.auditProgress, animation = h.core.view.auditAnimationTimer;
 		const before = h.disk(), state = structuredClone(h.core.state.goal), ledger = h.ledger();
 		const handle = surface === "overlay" ? tui.showOverlay(foreign) : undefined;
 		if (!handle) tui.setFocus(foreign);
-		const expanded = h.core.isDashboardExpanded();
+		const expanded = h.core.view.isDashboardExpanded();
 		for (const key of ["\x1b[19~", "\x1b", "\x1b[17~", "\x1b[84;6u", "\x1b[65;6u", "\x1b[88;6u", "\x1b[17;1:2~", "\x1b[17;1:3~"]) input(key);
 		assert.ok(received.includes("\x1b") && received.includes("\x1b[17~"), "focused surface receives ordinary keys");
 		assert.equal(h.disk(), before);
 		assert.deepEqual(h.core.state.goal, state);
 		assert.deepEqual(h.ledger(), ledger);
-		assert.equal(h.core.isDashboardExpanded(), expanded);
-		assert.equal(h.core.activeAudit, audit);
-		assert.equal(h.core.auditProgress, progress);
-		assert.equal(h.core.auditAnimationTimer, animation);
+		assert.equal(h.core.view.isDashboardExpanded(), expanded);
+		assert.equal(h.core.state.activeAudit, audit);
+		assert.equal(h.core.view.auditProgress, progress);
+		assert.equal(h.core.view.auditAnimationTimer, animation);
 		assert.equal(audit?.controller.signal.aborted ?? false, false);
 		assert.equal(h.core.interruption.isHeld(), false);
 		assert.equal(aborts, 0);
@@ -69,8 +69,8 @@ for (const surface of ["dialog", "overlay", "foreign-editor"]) for (const mode o
 		}
 		assert.equal(h.core.state.goal?.status, "paused", "main editor keeps pause while a non-capturing overlay is visible");
 		passive.hide();
-		h.core.clearGoalWidget(h.ctx); h.core.updateUI(h.ctx);
+		h.core.view.clear(h.ctx); h.core.updateUI(h.ctx);
 		input("\x1b[84;6u");
-		assert.equal(h.core.isDashboardExpanded(), !expanded, "widget recreation keeps editor controls usable");
+		assert.equal(h.core.view.isDashboardExpanded(), !expanded, "widget recreation keeps editor controls usable");
 	} finally {pending.resolve(rejected); await completion; await h.cleanup(); tui.stop();}
 });

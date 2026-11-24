@@ -29,7 +29,7 @@ function progressSpec(input: TaskProgressInput, core: GoalCore, ctx: ExtensionCo
 	const evidence = input.evidence?.trim().slice(0, 200) || undefined;
 	const reason = input.reason?.trim();
 	return {
-		taskId: input.task_id, focusToken: core.focusedOperationToken(core.state.goal!.id),
+		taskId: input.task_id, focusToken: core.state.focusToken(core.state.goal!.id),
 		...(input.status === "start" ? {setCurrentTaskId: input.task_id} : {}),
 		validate: task => {
 			if (input.status === "start" && task.status !== "pending") return {ok: false, message: `Task "${task.id}" is ${task.status}; only pending tasks can be started.`};
@@ -102,18 +102,18 @@ export function registerTaskTools(core: GoalCore): void {
 			const taskLines = renderTaskLines(converted.tasks);
 			const gateLabel = blockCompletion ? " (blockCompletion enabled)" : "";
 			const proposalText = [`Proposed task list${gateLabel}:`, "", ...taskLines].join("\n");
-			const taskListFocus = core.focusedOperationToken(core.state.goal.id);
+			const taskListFocus = core.state.focusToken(core.state.goal.id);
 			// Task-only confirmation: the complete result is the user's decision.
 			// No auditor toggle and no goal-state mutation happen here.
-			core.enterGoalModal();
+			core.state.enterModal();
 			let dialogResult: TaskConfirmationResult;
 			try {
 				dialogResult = await showTaskConfirmation(ctx, proposalText);
 			} finally {
-				core.exitGoalModal();
+				core.state.exitModal();
 			}
-			if (!core.isFocusedOperationCurrent(taskListFocus)) {
-				return core.focusedOperationCancelledResult("Task list proposal", taskListFocus);
+			if (!core.state.isTokenCurrent(taskListFocus)) {
+				return core.state.cancelledResult("Task list proposal", taskListFocus);
 			}
 			if (dialogResult.decision !== "confirm") return reply("Task list kept unchanged.");
 			const applyResult = core.goalService.apply(ctx, {
@@ -201,7 +201,7 @@ export function registerTaskTools(core: GoalCore): void {
 			const settings = loadGoalSettings(ctx.cwd);
 			const now = nowIso();
 			const taskId = params.task_id;
-			const taskFocus = core.focusedOperationToken(core.state.goal.id);
+			const taskFocus = core.state.focusToken(core.state.goal.id);
 			/** Apply one task update; on success refresh the UI and report `done()`. */
 			const updateOne = (spec: Omit<GoalTaskUpdateSpec, "focusToken" | "taskId">, done: () => string) => {
 				const result = core.goalService.updateTask(ctx, { focusToken: taskFocus, taskId, ...spec });

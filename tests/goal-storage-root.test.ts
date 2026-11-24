@@ -97,7 +97,7 @@ test("shared worktrees reject stale revisions and refresh the winning write", as
 	const coreFor = async (storage: typeof a) => {
 		const core = createGoalCore({getActiveTools: () => [], setActiveTools() {}, appendEntry() {}} as any);
 		const ctx = {...storage, hasUI: false, ui: {setStatus() {}, setWidget() {}, notify() {}}, sessionManager: {...storage.sessionManager, getBranch: () => [{type: "custom", customType: "pi-goal-focus", data: {...goalFocusDetails(goal.id, "created"), storageRoot: f.root}}]}} as any;
-		await core.loadState(ctx);
+		await core.focus.load(ctx);
 		return {core, ctx};
 	};
 	const first = await coreFor(a), second = await coreFor(b);
@@ -109,7 +109,7 @@ test("shared worktrees reject stale revisions and refresh the winning write", as
 	assert.equal(stale.ok, false);
 	if (!stale.ok) assert.match(stale.message, /revision/i);
 	invalidateGoalPoolCache();
-	await second.core.loadState(second.ctx);
+	await second.core.focus.load(second.ctx);
 	assert.equal(second.core.state.goal?.objective, "Winning edit");
 	assert.equal(second.core.goalService.apply(second.ctx, mutate("Fresh edit")).ok, true);
 	assert.equal(readActiveGoalPool(a).get(goal.id)?.objective, "Fresh edit");

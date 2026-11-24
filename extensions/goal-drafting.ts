@@ -120,14 +120,14 @@ export function rehydrateDraft(core: GoalCore, ctx: ExtensionContext): void {
 
 async function awaitDraftChoice(core: GoalCore, ctx: ExtensionContext, label: string): Promise<"resume" | "replace" | "cancel"> {
 	const choices = ["Resume the existing draft", "Replace it with a new draft", "Cancel"];
-	core.enterGoalModal();
+	core.state.enterModal();
 	try {
 		const selected = await ctx.ui.select(`A ${label.toLowerCase()} is already active`, choices);
 		if (!selected || selected === choices[0]!) return "resume";
 		if (selected === choices[2]) return "cancel";
 		return "replace";
 	} finally {
-		core.exitGoalModal();
+		core.state.exitModal();
 	}
 }
 

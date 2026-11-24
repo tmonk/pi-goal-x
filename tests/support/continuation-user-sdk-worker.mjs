@@ -109,7 +109,7 @@ try{
  if(process.env.PI_GOAL_USER_EVIDENCE)fs.writeFileSync(process.env.PI_GOAL_USER_EVIDENCE,JSON.stringify(result,null,2)+'\n');
  console.log(JSON.stringify(result));
 }finally{
- releaseSettlement?.();releaseHold?.();core?.scheduler.shutdown();core?.runtime.clearContinuationState();core?.stopAuditAnimation();
+ releaseSettlement?.();releaseHold?.();core?.scheduler.shutdown();core?.runtime.clearContinuationState();core?.view.stopAuditAnimation();
  if(session){await session.abort();session.dispose();}server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
  fs.rmSync(cwd,{recursive:true,force:true});if(originalGlobal===undefined)delete process.env.PI_GOAL_GLOBAL_SETTINGS_FILE;else process.env.PI_GOAL_GLOBAL_SETTINGS_FILE=originalGlobal;
 }

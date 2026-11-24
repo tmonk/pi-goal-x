@@ -73,9 +73,9 @@ function archiveCompletedGoal(core: GoalCore, ctx: ExtensionContext, completedGo
 		archiveResult = { ok: false, message: err instanceof Error ? err.message : String(err) };
 	}
 	if (archiveResult.ok) {
-		core.goalsById.delete(completedGoal.id);
-		core.assignFocusedGoalId(null);
-		core.appendFocusEntry(null, "completed");
+		core.state.goalsById.delete(completedGoal.id);
+		core.state.assignFocusedGoalId(null);
+		core.focus.appendEntry(null, "completed");
 		const path = archiveResult.goal?.archivedPath ?? "";
 		// Log goal_archived with the real archive path; the completion
 		// transaction still writes goal_completed. Best-effort: the archive
@@ -167,17 +167,17 @@ export function registerGoalEvents(core: GoalCore): void {
 		if (core.scheduler.isDenied()) return;
 		core.scheduler.turn(ctx);
 		// Per-turn flag resets (#4 + C9 fix).
-		core.advanceTurnSeq();
-		core.goalWorkToolCalledThisTurn = false;
-		core.beginAccounting();
-		core.goalService.beginTurn(ctx, core.focusedGoalId); // P1-3 transaction buffer
-		core.touchGoalActivity(); // F5
+		core.runtime.advanceTurn();
+		core.state.goalWorkToolCalledThisTurn = false;
+		core.progress.begin();
+		core.goalService.beginTurn(ctx, core.state.focusedGoalId); // P1-3 transaction buffer
+		core.watch.touchActivity(); // F5
 		core.updateUI(ctx);
 	});
 
 	// #4 + C9 fix + Phase 5 C3: gate in-turn tool calls based on lifecycle state.
 	pi.on("tool_call", async (event, ctx) => {
-		const stoppedGoalId = core.currentTurnStoppedGoalId();
+		const stoppedGoalId = core.runtime.currentTurnStoppedGoalId();
 		if (core.scheduler.isDenied()) return { block: true, reason: `Stale goal dispatch; use ${commandHint("goal-resume", core.loadedCommands)}.` };
 		// Post-stop in-turn block: after update_goal / set_goal_tasks (or a user
 		// lifecycle command) fires in this turn, block all subsequent tool calls
@@ -192,7 +192,7 @@ export function registerGoalEvents(core: GoalCore): void {
 		// Stale checkpoint guard: if the turn was triggered by a queued continuation
 		// for a goal that is no longer active/autoContinue, block work tools.
 		const checkpointGoalId = core.runtime.getCheckpointGoalId();
-		if (checkpointGoalId !== null && !core.isActionableContinuationGoal(checkpointGoalId) && core.isStaleCheckpointBlockedToolCall(event.toolName)) {
+		if (checkpointGoalId !== null && !core.isActionableContinuationGoal(checkpointGoalId) && core.runtime.isStaleCheckpointBlocked(event.toolName)) {
 			// Block the tool call with a stale-checkpoint message.
 			return {
 				block: true,
@@ -212,14 +212,14 @@ export function registerGoalEvents(core: GoalCore): void {
 		}
 		// Track Oracle work attempts; this does not authorize scheduling.
 		if (isMeaningfulProgressToolCall(event.toolName, event.input)) {
-			core.goalWorkToolCalledThisTurn = true;
+			core.state.goalWorkToolCalledThisTurn = true;
 			// Goal mutations are measured by content changes at settlement. A
 			// ready declaration or an unchanged task update is only bookkeeping.
 			if (event.toolName !== "update_goal" && event.toolName !== "update_goal_task") core.scheduler.recordWork();
 			// Issue #26: record a meaningful work attempt against armed Oracle
 			// advice. get_goal / echo-only reads are excluded upstream by
 			// isMeaningfulProgressToolCall.
-			const focusedId = core.focusedGoalId;
+			const focusedId = core.state.focusedGoalId;
 			if (focusedId && hasPendingOracleAdviceForFocusedGoal(focusedId)) {
 				const armed = consumeOracleFollowupMarker(focusedId);
 				if (armed) {
@@ -241,16 +241,16 @@ export function registerGoalEvents(core: GoalCore): void {
 
 	pi.on("tool_execution_end", async (_event, ctx) => {
 		if (core.scheduler.isDenied()) return;
-		core.touchGoalActivity(); // F5
-		core.accountProgress(ctx);
+		core.watch.touchActivity(); // F5
+		core.progress.charge(ctx);
 	});
 
 	pi.on("turn_end", async (event, ctx) => {
 		if (core.scheduler.isDenied()) return;
 		const message = event.message as AssistantMessageLike;
 		const tokens = assistantTurnTokens(message);
-		core.touchGoalActivity(); // F5
-		core.accountProgress(ctx, { completedTurnTokens: tokens });
+		core.watch.touchActivity(); // F5
+		core.progress.charge(ctx, { completedTurnTokens: tokens });
 		core.interruption.finishTurn(ctx);
 
 		if (isAbortedAssistantMessage(message)) {
@@ -265,11 +265,11 @@ export function registerGoalEvents(core: GoalCore): void {
 		// reconciled (and accounting already ran above), but never queue a
 		// continuation for an error turn (danim47c pattern).
 		if (isErrorAssistantMessage(message)) {
-			core.refreshGoalDisplayFromDisk(ctx);
+			core.lifecycle.refreshDisplayFromDisk(ctx);
 			core.updateUI(ctx);
 			return;
 		}
-		core.refreshGoalDisplayFromDisk(ctx);
+		core.lifecycle.refreshDisplayFromDisk(ctx);
 
 		// Archive a goal that was marked complete but whose archival was deferred
 		// so the agent could see/recognize the audit result first.
@@ -301,26 +301,26 @@ export function registerGoalEvents(core: GoalCore): void {
 		const run = (action: () => void) => {
 			try {action();} catch (error) {if (!isStaleExtensionContextError(error)) failure ??= error;}
 		};
-		run(() => core.invalidateSession());
+		run(() => core.state.invalidate());
 		continuationAfterSettleFor = null;
 		networkErrorRecoveryAfterSettleFor = null;
 		run(() => core.interruption.settled());
 		run(() => core.interruption.reset());
 		run(() => core.auditMessages.clear());
 		run(() => core.scheduler.shutdown());
-		if (outgoing) run(() => core.accountProgress(outgoing.ctx));
+		if (outgoing) run(() => core.progress.charge(outgoing.ctx));
 		run(() => core.goalService.endSession(outgoing?.storage));
 		run(() => core.clearContinuationState());
 		run(() => core.clearActiveAccounting());
-		run(() => core.stopAuditAnimation());
-		run(() => core.clearAuditResult());
-		core.auditProgress = null;
-		core.goalModalDepth = 0;
+		run(() => core.view.stopAuditAnimation());
+		run(() => core.view.clearAuditResult());
+		core.view.auditProgress = null;
+		core.state.goalModalDepth = 0;
 		const unsubscribe = core.terminalInputUnsubscribe;
 		core.terminalInputUnsubscribe = null;
 		run(() => unsubscribe?.());
 		if (outgoing && core.state.goal) run(() => {core.goalService.persist(outgoing.storage);});
-		run(() => core.clearGoalWidget(outgoing?.ctx ?? ctx));
+		run(() => core.view.clear(outgoing?.ctx ?? ctx));
 		if (outgoing) for (const key of outgoing.keys) {
 			if (leases.get(key) !== outgoing) continue;
 			liveRetention.clear(key);
@@ -339,7 +339,7 @@ export function registerGoalEvents(core: GoalCore): void {
 			invalidateGoalSettingsCache();
 			invalidateGoalPoolCache();
 			invalidateGoalLedgerCache();
-			await core.loadState(ctx);
+			await core.focus.load(ctx);
 			if (session !== owner) return;
 			if (ctx.hasUI) ctx.ui.setStatus("goal-interrupt", undefined);
 			if (core.controlWarnings?.length) ctx.ui.notify(`Goal command settings were not applied: ${core.controlWarnings.join(" ")} Open /goal-settings controls to correct them.`, "warning");
@@ -349,21 +349,21 @@ export function registerGoalEvents(core: GoalCore): void {
 			// Ask resume questions only in the terminal. Over RPC, hasUI is also true,
 			// but the host may never show the dialog and session_start would wait forever.
 			const askOnResume = event.reason === "resume" && ctx.hasUI && ctx.mode === "tui";
-			if (askOnResume && !core.state.goal && !core.hasExplicitSessionFocus && otherOpenGoalCount(core.goalsById, null) > 1) {
+			if (askOnResume && !core.state.goal && !core.state.hasExplicitSessionFocus && otherOpenGoalCount(core.state.goalsById, null) > 1) {
 				// Prompt the user to pick which open goal to focus (mirrors /goal-focus).
-				const open = core.openGoals();
-				const labels = open.map((item) => goalSelectorLabel(item, core.focusedGoalId));
+				const open = core.state.openGoals();
+				const labels = open.map((item) => goalSelectorLabel(item, core.state.focusedGoalId));
 				const byLabel = new Map(labels.map((label, index) => [label, open[index]?.id]));
-				core.enterGoalModal();
+				core.state.enterModal();
 				try {
 					const selected = await ctx.ui.select("Focus open goal", labels);
 					const selectedId = selected ? byLabel.get(selected) : undefined;
 					if (selectedId && session === owner) {
-						core.setFocusedGoalId(selectedId, ctx, "selected");
+						core.focus.setFocus(selectedId, ctx, "selected");
 						core.armFocusedContinuation(ctx);
 					}
 				} finally {
-					if (session === owner) core.exitGoalModal();
+					if (session === owner) core.state.exitModal();
 				}
 			}
 			if (session !== owner) return;
@@ -374,26 +374,26 @@ export function registerGoalEvents(core: GoalCore): void {
 				if (shouldResume && session === owner) core.scheduler.resume(ctx);
 			}
 			if (session !== owner) return;
-			core.beginAccounting();
+			core.progress.begin();
 			core.scheduler.restore(ctx);
 		} catch (error) {if (!isStaleExtensionContextError(error)) throw error;}
 	}
 	pi.on("session_start", startSession);
 
 	pi.on("session_before_compact", async (_event, ctx) => {
-		core.accountProgress(ctx);
+		core.progress.charge(ctx);
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
 		core.goalService.flushTurn(ctx); // P1-3: persist any buffered transaction before reload
-		if (core.state.goal) core.persist(ctx);
-		core.beginAccounting();
+		if (core.state.goal) core.lifecycle.persist(ctx);
+		core.progress.begin();
 		// Arm a deterministic compaction summary for the next agent turn.
 		// This replaces the generic reminder with artifact-backed state.
 		if (shouldArmPostCompactReminder(core.state.goal)) {
 			core.runtime.armPostCompactReminder();
 		}
-		core.queueContinuation(ctx, true);
+		core.scheduler.schedule(ctx);
 	});
 
 	pi.on("session_compact_failed", async (event, ctx) => {
@@ -402,7 +402,7 @@ export function registerGoalEvents(core: GoalCore): void {
 		// record and the ledger can disagree about a compaction that never
 		// happened.
 		core.goalService.flushTurn(ctx);
-		if (core.state.goal) core.persist(ctx);
+		if (core.state.goal) core.lifecycle.persist(ctx);
 		if (event.aborted || !core.state.goal) return;
 		const detail = event.errorMessage ? `: ${event.errorMessage}` : "";
 		ctx.ui.notify(
@@ -414,7 +414,7 @@ export function registerGoalEvents(core: GoalCore): void {
 	pi.on("session_tree", (_event, ctx) => startSession({}, ctx));
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		core.advanceTurnSeq();
+		core.runtime.advanceTurn();
 		core.installGoalToolProfile(!loadGoalSettings(ctx.cwd).disableTasks);
 		const incomingGoalId = event.messageType === "custom"
 			? goalEventMessageId(event.message) : extractGoalIdFromInjectedMessage(event.prompt ?? "");
@@ -467,7 +467,7 @@ export function registerGoalEvents(core: GoalCore): void {
 			.filter(isAbortedAssistantMessage)
 			.reduce((sum, message) => sum + assistantTurnTokens(message), 0);
 		if (abortedTokens > 0 && endedGoalId && core.state.goal?.id === endedGoalId) {
-			core.accountProgress(ctx, { completedTurnTokens: abortedTokens });
+			core.progress.charge(ctx, { completedTurnTokens: abortedTokens });
 		}
 
 		// Keep any prior recovery attempt while Pi finishes its own automatic
@@ -490,7 +490,7 @@ export function registerGoalEvents(core: GoalCore): void {
 		// display, but never queue a continuation for a run whose messages
 		// include an assistant error (danim47c pattern).
 		if (hasNetworkErrorAssistantMessage(event.messages) || hasAbortedAssistantMessage(event.messages)) {
-			core.persist(ctx);
+			core.lifecycle.persist(ctx);
 			core.updateUI(ctx);
 			networkErrorRecoveryAfterSettleFor = core.state.goal.id;
 			return;
@@ -499,14 +499,14 @@ export function registerGoalEvents(core: GoalCore): void {
 		// settles (it may still retry by itself) so the goal does not sit there
 		// looking "running" with nothing scheduled.
 		if (hasErrorAssistantMessage(event.messages)) {
-			core.persist(ctx);
+			core.lifecycle.persist(ctx);
 			core.updateUI(ctx);
 			const detail = providerErrorText(event.messages);
 			errorPauseAfterSettle = { goalId: core.state.goal.id, reason: `The provider returned an error${detail ? `: ${detail}` : ""}.` };
 			return;
 		}
 		core.runtime.clearNetworkErrorBackoff();
-		core.persist(ctx);
+		core.lifecycle.persist(ctx);
 		core.updateUI(ctx);
 		// agent_end runs before pi finishes retries, compaction, terminating-tool
 		// settlement, and queued messages. Starting the continuation timer here

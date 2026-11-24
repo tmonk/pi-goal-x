@@ -252,7 +252,7 @@ export async function handleSettingsMenu(core: GoalCore, ctx: ExtensionContext):
 	 */
 	const applyEffectiveSettings = (): void => {
 		const tasksEnabledNow = !loadGoalSettings(ctx.cwd).disableTasks;
-		if (tasksEnabledNow !== core.tasksEnabled) {
+		if (tasksEnabledNow !== core.state.tasksEnabled) {
 			core.installGoalToolProfile(tasksEnabledNow);
 		}
 		// PR #29: settings changes must be visible immediately — the banner
@@ -275,7 +275,7 @@ export async function handleSettingsMenu(core: GoalCore, ctx: ExtensionContext):
 	const scopePath = (scope: SettingsScope): string =>
 		scope === "global" ? goalGlobalSettingsPath() : goalSettingsPath(ctx.cwd);
 
-	core.enterGoalModal();
+	core.state.enterModal();
 	try {
 		let scope: SettingsScope = "project";
 		while (true) {
@@ -332,6 +332,6 @@ export async function handleSettingsMenu(core: GoalCore, ctx: ExtensionContext):
 			});
 		}
 	} finally {
-		core.exitGoalModal();
+		core.state.exitModal();
 	}
 }

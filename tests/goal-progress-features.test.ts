@@ -95,11 +95,11 @@ describe("auditor toggle (Ctrl+Shift+A)", () => {
 		try {
 			const goal = writeActiveGoalFile({ cwd }, makeGoal({ objective: "Auditor toggle test" }));
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx);
-			h.core.setFocusedGoalId(goal.id, h.ctx, "selected", { recordLedger: false });
+			await h.core.focus.load(h.ctx);
+			h.core.focus.setFocus(goal.id, h.ctx, "selected", { recordLedger: false });
 			assert.equal(h.core.state.goal?.skipAuditor, undefined, "auditor on by default");
 
-			h.core.toggleGoalAuditor(h.ctx);
+			h.core.lifecycle.toggleAuditor(h.ctx);
 			assert.equal(h.core.state.goal?.skipAuditor, true, "toggle disables the auditor in memory");
 			let toggled = readGoalLedger({ cwd }).events.filter((e) => e.type === "auditor_toggled");
 			assert.equal(toggled.length, 1, "one auditor_toggled event");
@@ -108,7 +108,7 @@ describe("auditor toggle (Ctrl+Shift+A)", () => {
 			const onDisk = parseGoalFile(path.join(cwd, h.core.state.goal!.activePath!))!;
 			assert.equal(onDisk.skipAuditor, true, "skipAuditor persisted to the goal file");
 
-			h.core.toggleGoalAuditor(h.ctx);
+			h.core.lifecycle.toggleAuditor(h.ctx);
 			assert.equal(h.core.state.goal?.skipAuditor, undefined, "toggling again enables the auditor");
 			toggled = readGoalLedger({ cwd }).events.filter((e) => e.type === "auditor_toggled");
 			assert.equal(toggled.length, 2, "second event recorded");
@@ -124,8 +124,8 @@ describe("auditor toggle (Ctrl+Shift+A)", () => {
 		const cwd = fixtureCwd();
 		try {
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx);
-			h.core.toggleGoalAuditor(h.ctx);
+			await h.core.focus.load(h.ctx);
+			h.core.lifecycle.toggleAuditor(h.ctx);
 			assert.ok(h.notifications.some((message) => message.includes("No focused goal")), "no-goal guard announces");
 			assert.equal(readGoalLedger({ cwd }).events.filter((e) => e.type === "auditor_toggled").length, 0, "no event without a goal");
 		} finally {
@@ -138,9 +138,9 @@ describe("auditor toggle (Ctrl+Shift+A)", () => {
 		try {
 			const goal = makeGoal({ objective: "Complete toggle test" });
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx);
-			h.core.setGoal({ ...goal, status: "complete" }, h.ctx, true);
-			h.core.toggleGoalAuditor(h.ctx);
+			await h.core.focus.load(h.ctx);
+			h.core.focus.setGoal({ ...goal, status: "complete" }, h.ctx, true);
+			h.core.lifecycle.toggleAuditor(h.ctx);
 			assert.ok(h.notifications.some((message) => message.includes("complete; the auditor no longer applies")), "complete-goal guard announces");
 			assert.equal(h.core.state.goal?.skipAuditor, undefined, "no mutation on a complete goal");
 		} finally {
@@ -177,14 +177,14 @@ describe("stall detector", () => {
 			writeFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ stallTimeoutMinutes: 1 }));
 			const goal = writeActiveGoalFile({ cwd }, makeGoal({ objective: "F5 test" }));
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx);
-			h.core.setFocusedGoalId(goal.id, h.ctx, "selected", { recordLedger: false });
+			await h.core.focus.load(h.ctx);
+			h.core.focus.setFocus(goal.id, h.ctx, "selected", { recordLedger: false });
 
 			// no activity for >1 minute: age Date.now for the check
 			const realNow = Date.now;
 			(Date as unknown as { now: () => number }).now = () => realNow() + 70_000;
 			try {
-				const note = h.core.checkStall(h.ctx);
+				const note = h.core.watch.checkStall(h.ctx);
 				assert.match(note, /\[GOAL STALLED/);
 				assert.match(note, /No continuation or tool activity for 1 minute/);
 			} finally {
@@ -195,7 +195,7 @@ describe("stall detector", () => {
 			// second call: one-shot (stallNotified)
 			(Date as unknown as { now: () => number }).now = () => realNow() + 70_000;
 			try {
-				assert.equal(h.core.checkStall(h.ctx), "", "stall note fires once");
+				assert.equal(h.core.watch.checkStall(h.ctx), "", "stall note fires once");
 			} finally {
 				(Date as unknown as { now: () => number }).now = realNow;
 			}
@@ -209,9 +209,9 @@ describe("stall detector", () => {
 		try {
 			const goal = writeActiveGoalFile({ cwd }, makeGoal({ objective: "F5 off" }));
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx);
-			h.core.setFocusedGoalId(goal.id, h.ctx, "selected", { recordLedger: false });
-			assert.equal(h.core.checkStall(h.ctx), "");
+			await h.core.focus.load(h.ctx);
+			h.core.focus.setFocus(goal.id, h.ctx, "selected", { recordLedger: false });
+			assert.equal(h.core.watch.checkStall(h.ctx), "");
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}
@@ -224,12 +224,12 @@ describe("token-budget threshold alerts", () => {
 		try {
 			const goal = writeActiveGoalFile({ cwd }, makeGoal({ objective: "F6 test", budget: 100000 }));
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx);
-			h.core.setFocusedGoalId(goal.id, h.ctx, "selected", { recordLedger: false });
-			h.core.beginAccounting();
-			h.core.accountProgress(h.ctx, { completedTurnTokens: 60000 }); // 60% → 50% warning
-			h.core.accountProgress(h.ctx, { completedTurnTokens: 20000 }); // 80% → 75% warning
-			h.core.accountProgress(h.ctx, { completedTurnTokens: 20000 }); // 100% → 90% warning + budget_limited
+			await h.core.focus.load(h.ctx);
+			h.core.focus.setFocus(goal.id, h.ctx, "selected", { recordLedger: false });
+			h.core.progress.begin();
+			h.core.progress.charge(h.ctx, { completedTurnTokens: 60000 }); // 60% → 50% warning
+			h.core.progress.charge(h.ctx, { completedTurnTokens: 20000 }); // 80% → 75% warning
+			h.core.progress.charge(h.ctx, { completedTurnTokens: 20000 }); // 100% → 90% warning + budget_limited
 			const ledger = ledgerText(cwd);
 			const warnings = (ledger.match(/"type":"goal_budget_warning"/g) ?? []).length;
 			assert.equal(warnings, 3, "one warning per crossed threshold (50/75/90)");
