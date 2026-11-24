@@ -11,6 +11,7 @@ import { createGoal } from "../extensions/goal-record.ts";
 import { readGoalLedger } from "../extensions/goal-ledger.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { renderGoalWidgetLines } from "../extensions/widgets/goal-widget.ts";
+import { createFakeHost } from "./support/extension-harness.ts";
 import { createMockTheme } from "./support/tui-test-utils.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
@@ -22,37 +23,18 @@ function makeGoal(opts: { objective: string; sisyphus?: boolean; budget?: number
 	return goal;
 }
 
+/** A GoalCore on its own, without the rest of the extension, on the shared fake host. */
 function coreHarness(cwd: string) {
-	const handlers = new Map();
-	const tools = new Map();
-	const notifies: Array<{ msg: string; level: string }> = [];
-	const pi = {
-		registerTool: (def: unknown) => tools.set((def as { name: string }).name, def),
-		registerCommand: () => {},
-		on: (event: string, handler: unknown) => handlers.set(event, handler),
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendMessage: () => {},
-		getActiveTools: () => ["read", "bash", "edit", "write"],
-		setActiveTools: () => {},
+	const host = createFakeHost({
+		cwd,
 		hasUI: true,
-	};
-	const ctx = {
-		cwd, hasUI: true,
-		sessionManager: { getBranch: () => [], getCwd: () => cwd, getSessionId: () => "s", getRoot: () => cwd },
-		ui: {
-			notify: (msg: string, level: string) => notifies.push({ msg, level }),
-			setStatus: () => {}, setWidget: () => {},
-			onTerminalInput: (cb: unknown) => cb,
-			select: async () => undefined,
-			input: async () => "evidence from test",
-			confirm: async () => true,
-			custom: async () => undefined,
-		},
-		getSystemPrompt: () => "", isIdle: () => true, hasPendingMessages: () => false, abort: () => {},
-	};
-	const core = createGoalCore(pi as never, {});
-	return { core, ctx, handlers, notifies };
+		sessionEntries: [],
+		sessionId: "s",
+		systemPrompt: "",
+		ui: { input: async () => "evidence from test", confirm: async () => true },
+	});
+	const core = createGoalCore(host.pi as never, {});
+	return Object.assign(host, { core });
 }
 
 function fixtureCwd(prefix = "goal-feat-") {
@@ -113,20 +95,20 @@ describe("auditor toggle (Ctrl+Shift+A)", () => {
 		try {
 			const goal = writeActiveGoalFile({ cwd }, makeGoal({ objective: "Auditor toggle test" }));
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx as never);
-			h.core.setFocusedGoalId(goal.id, h.ctx as never, "selected", { recordLedger: false });
+			await h.core.loadState(h.ctx);
+			h.core.setFocusedGoalId(goal.id, h.ctx, "selected", { recordLedger: false });
 			assert.equal(h.core.state.goal?.skipAuditor, undefined, "auditor on by default");
 
-			h.core.toggleGoalAuditor(h.ctx as never);
+			h.core.toggleGoalAuditor(h.ctx);
 			assert.equal(h.core.state.goal?.skipAuditor, true, "toggle disables the auditor in memory");
 			let toggled = readGoalLedger({ cwd }).events.filter((e) => e.type === "auditor_toggled");
 			assert.equal(toggled.length, 1, "one auditor_toggled event");
 			assert.equal((toggled[0] as any).enabled, false, "event records the new disabled state");
-			assert.ok(h.notifies.some((n) => n.msg.includes("Auditor disabled")), "disabling is announced");
+			assert.ok(h.notifications.some((message) => message.includes("Auditor disabled")), "disabling is announced");
 			const onDisk = parseGoalFile(path.join(cwd, h.core.state.goal!.activePath!))!;
 			assert.equal(onDisk.skipAuditor, true, "skipAuditor persisted to the goal file");
 
-			h.core.toggleGoalAuditor(h.ctx as never);
+			h.core.toggleGoalAuditor(h.ctx);
 			assert.equal(h.core.state.goal?.skipAuditor, undefined, "toggling again enables the auditor");
 			toggled = readGoalLedger({ cwd }).events.filter((e) => e.type === "auditor_toggled");
 			assert.equal(toggled.length, 2, "second event recorded");
@@ -142,9 +124,9 @@ describe("auditor toggle (Ctrl+Shift+A)", () => {
 		const cwd = fixtureCwd();
 		try {
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx as never);
-			h.core.toggleGoalAuditor(h.ctx as never);
-			assert.ok(h.notifies.some((n) => n.msg.includes("No focused goal")), "no-goal guard announces");
+			await h.core.loadState(h.ctx);
+			h.core.toggleGoalAuditor(h.ctx);
+			assert.ok(h.notifications.some((message) => message.includes("No focused goal")), "no-goal guard announces");
 			assert.equal(readGoalLedger({ cwd }).events.filter((e) => e.type === "auditor_toggled").length, 0, "no event without a goal");
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
@@ -156,10 +138,10 @@ describe("auditor toggle (Ctrl+Shift+A)", () => {
 		try {
 			const goal = makeGoal({ objective: "Complete toggle test" });
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx as never);
-			h.core.setGoal({ ...goal, status: "complete" }, h.ctx as never, true);
-			h.core.toggleGoalAuditor(h.ctx as never);
-			assert.ok(h.notifies.some((n) => n.msg.includes("complete; the auditor no longer applies")), "complete-goal guard announces");
+			await h.core.loadState(h.ctx);
+			h.core.setGoal({ ...goal, status: "complete" }, h.ctx, true);
+			h.core.toggleGoalAuditor(h.ctx);
+			assert.ok(h.notifications.some((message) => message.includes("complete; the auditor no longer applies")), "complete-goal guard announces");
 			assert.equal(h.core.state.goal?.skipAuditor, undefined, "no mutation on a complete goal");
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
@@ -195,25 +177,25 @@ describe("stall detector", () => {
 			writeFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ stallTimeoutMinutes: 1 }));
 			const goal = writeActiveGoalFile({ cwd }, makeGoal({ objective: "F5 test" }));
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx as never);
-			h.core.setFocusedGoalId(goal.id, h.ctx as never, "selected", { recordLedger: false });
+			await h.core.loadState(h.ctx);
+			h.core.setFocusedGoalId(goal.id, h.ctx, "selected", { recordLedger: false });
 
 			// no activity for >1 minute: age Date.now for the check
 			const realNow = Date.now;
 			(Date as unknown as { now: () => number }).now = () => realNow() + 70_000;
 			try {
-				const note = h.core.checkStall(h.ctx as never);
+				const note = h.core.checkStall(h.ctx);
 				assert.match(note, /\[GOAL STALLED/);
 				assert.match(note, /No continuation or tool activity for 1 minute/);
 			} finally {
 				(Date as unknown as { now: () => number }).now = realNow;
 			}
-			assert.ok(h.notifies.some((n) => n.msg.includes("Goal stalled")), "stall notification fired");
+			assert.ok(h.notifications.some((message) => message.includes("Goal stalled")), "stall notification fired");
 			assert.match(ledgerText(cwd), /goal_stalled/);
 			// second call: one-shot (stallNotified)
 			(Date as unknown as { now: () => number }).now = () => realNow() + 70_000;
 			try {
-				assert.equal(h.core.checkStall(h.ctx as never), "", "stall note fires once");
+				assert.equal(h.core.checkStall(h.ctx), "", "stall note fires once");
 			} finally {
 				(Date as unknown as { now: () => number }).now = realNow;
 			}
@@ -227,9 +209,9 @@ describe("stall detector", () => {
 		try {
 			const goal = writeActiveGoalFile({ cwd }, makeGoal({ objective: "F5 off" }));
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx as never);
-			h.core.setFocusedGoalId(goal.id, h.ctx as never, "selected", { recordLedger: false });
-			assert.equal(h.core.checkStall(h.ctx as never), "");
+			await h.core.loadState(h.ctx);
+			h.core.setFocusedGoalId(goal.id, h.ctx, "selected", { recordLedger: false });
+			assert.equal(h.core.checkStall(h.ctx), "");
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}
@@ -242,12 +224,12 @@ describe("token-budget threshold alerts", () => {
 		try {
 			const goal = writeActiveGoalFile({ cwd }, makeGoal({ objective: "F6 test", budget: 100000 }));
 			const h = coreHarness(cwd);
-			await h.core.loadState(h.ctx as never);
-			h.core.setFocusedGoalId(goal.id, h.ctx as never, "selected", { recordLedger: false });
+			await h.core.loadState(h.ctx);
+			h.core.setFocusedGoalId(goal.id, h.ctx, "selected", { recordLedger: false });
 			h.core.beginAccounting();
-			h.core.accountProgress(h.ctx as never, { completedTurnTokens: 60000 }); // 60% → 50% warning
-			h.core.accountProgress(h.ctx as never, { completedTurnTokens: 20000 }); // 80% → 75% warning
-			h.core.accountProgress(h.ctx as never, { completedTurnTokens: 20000 }); // 100% → 90% warning + budget_limited
+			h.core.accountProgress(h.ctx, { completedTurnTokens: 60000 }); // 60% → 50% warning
+			h.core.accountProgress(h.ctx, { completedTurnTokens: 20000 }); // 80% → 75% warning
+			h.core.accountProgress(h.ctx, { completedTurnTokens: 20000 }); // 100% → 90% warning + budget_limited
 			const ledger = ledgerText(cwd);
 			const warnings = (ledger.match(/"type":"goal_budget_warning"/g) ?? []).length;
 			assert.equal(warnings, 3, "one warning per crossed threshold (50/75/90)");

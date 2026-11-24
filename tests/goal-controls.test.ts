@@ -5,8 +5,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, getKeybindings } from "@earendil-works/pi-tui";
-import goalExtension from "../extensions/goal.ts";
-import type { GoalCore } from "../extensions/goal-state.ts";
 import {
 	GOAL_COMMANDS, GOAL_KEY_ACTIONS, commandProblems, commandRoutes, matchCommandRoute,
 	normalizeGoalKey, sameGoalKey, parseCommandPaths, parseGoalKeybinding, keybindingProblems, commandHint,
@@ -16,6 +14,7 @@ import { loadSettingsSnapshot } from "../extensions/settings/resolve.ts";
 import { mutateSettingsLayer, SettingsMutationError } from "../extensions/settings/mutate.ts";
 import { syncTerminalInputPause } from "../extensions/goal-terminal-input.ts";
 import { GoalControlsDialog, commandControlsFingerprint } from "../extensions/widgets/goal-controls-dialog.ts";
+import { createExtensionHarness } from "./support/extension-harness.ts";
 import { createMockTheme, createMockTUI } from "./support/tui-test-utils.ts";
 import { goalPrompt } from "../extensions/prompts/goal-prompts.ts";
 import { goalDialogControls } from "../extensions/goal-dialog-controls.ts";
@@ -36,41 +35,27 @@ function fixture(settings: unknown = {}) {
 	const previous = { project: process.env.PI_GOAL_SETTINGS_FILE, global: process.env.PI_GOAL_GLOBAL_SETTINGS_FILE };
 	process.env.PI_GOAL_SETTINGS_FILE = file;
 	process.env.PI_GOAL_GLOBAL_SETTINGS_FILE = path.join(cwd, "global.json");
-	const handlers = new Map<string, Function>();
-	const commands = new Map<string, any>();
-	const notifications: string[] = [];
 	const messages: unknown[] = [];
-	const statuses = new Map<string, string | undefined>();
-	let terminal: ((data: string) => unknown) | undefined;
-	let busy = true, aborts = 0;
-	let activeTools = ["read", "write", "bash", "edit"];
-	const pi = {
-		on: (event: string, fn: Function) => { handlers.set(event, fn); },
-		registerCommand: (name: string, definition: any) => commands.set(name, definition),
-		registerTool: () => {}, registerMessageRenderer: () => {}, appendEntry: () => {},
-		getActiveTools: () => [...activeTools], setActiveTools: (names: string[]) => { activeTools = names; },
-		sendMessage: (message: unknown) => messages.push(message), sendUserMessage: (message: unknown) => messages.push(message),
-		getCommands: () => [...commands.keys()].map(name => ({ name, source: "extension" })),
-	};
-	const ctx = {
-		cwd, hasUI: true, isIdle: () => !busy, abort: () => { aborts++; }, hasPendingMessages: () => false,
-		getSystemPrompt: () => "base", modelRegistry: { getAvailable: () => [] },
-		sessionManager: { getBranch: () => [], getSessionId: () => "controls-session", getCwd: () => cwd },
-		ui: {
-			notify: (message: string) => notifications.push(message),
-			setStatus: (key: string, value: string | undefined) => statuses.set(key, value),
-			setWidget: () => {}, setWorkingVisible: () => {},
-			onTerminalInput: (callback: (data: string) => unknown) => { terminal = callback; return () => {}; },
-			input: async () => undefined, select: async () => undefined, confirm: async () => true,
+	let busy = true;
+	const harness = createExtensionHarness({
+		cwd,
+		hasUI: true,
+		sessionEntries: [],
+		sessionId: "controls-session",
+		isIdle: () => !busy,
+		ui: { confirm: async () => true },
+		ctx: { modelRegistry: { getAvailable: () => [] } },
+		pi: {
+			sendMessage: (message: unknown) => messages.push(message),
+			sendUserMessage: (message: unknown) => messages.push(message),
+			getCommands: () => [...harness.commands.keys()].map(name => ({ name, source: "extension" })),
 		},
-	} as unknown as ExtensionContext;
-	goalExtension(pi as never);
-	const core = (pi as unknown as { _goalCore: GoalCore })._goalCore;
-	const emit = (event: string, payload: unknown = {}) => handlers.get(event)?.(payload, ctx);
+	});
+	const { core, ctx } = harness;
 	const mutate = (scope: "global" | "project", op: "set" | "unset", key: string[], value?: unknown) => mutateSettingsLayer({ scope, cwd, mutation: { op, path: key, value } });
-	return {
-		cwd, file, core, ctx, commands, notifications, messages, statuses, emit, mutate,
-		press: (data: string) => terminal?.(data), aborts: () => aborts, idle: () => { busy = false; },
+	return Object.assign(harness, {
+		cwd, file, messages, mutate,
+		press: harness.terminalInput, aborts: () => harness.abortCount, idle: () => { busy = false; },
 		start: async () => { await core.invokeGoalCommand!("goal-direct", "Create result.txt and verify its contents.", ctx); syncTerminalInputPause(core, ctx); },
 		close: () => {
 			core.scheduler.shutdown(); core.runtime.clearContinuationState();
@@ -79,7 +64,7 @@ function fixture(settings: unknown = {}) {
 			}
 			invalidateGoalSettingsCache(); rmSync(cwd, { recursive: true, force: true });
 		},
-	};
+	});
 }
 
 test("control grammar normalizes aliases/modifiers, preserves disabled lists and rejects typos", () => {

@@ -4,40 +4,28 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, it, before } from "node:test";
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import piGoalExtension from "../extensions/goal.ts";
 import {
 	createGoal,
 	goalFocusDetails,
 	type GoalStateEntry,
 } from "../extensions/goal-record.ts";
 import { writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
-import type { ToolDefinition, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createExtensionHarness } from "./support/extension-harness.ts";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function createMockCtx(cwd: string, sessionEntries: unknown[]): ExtensionContext {
-	return {
-		cwd,
-		hasUI: false,
-		sessionManager: {
-			getBranch: () => sessionEntries,
-			getCwd: () => cwd,
-			getSessionId: () => "test-session",
-			getRoot: () => cwd,
-			append: () => {},
-			appendModelChange: () => {},
-			appendThinkingLevelChange: () => {},
-			appendCompetingWriteCheck: () => {},
-			buildSessionContext: () => ({ messages: [], sessionId: "test", model: null, thinkingLevel: "medium" }),
-		},
-		getSystemPrompt: () => "",
-		isIdle: () => true,
-		hasPendingMessages: () => false,
-		abort: () => {},
-	} as unknown as ExtensionContext;
+// One extension is loaded for the whole file; each test supplies its own session context.
+const host = createExtensionHarness({ cwd: process.cwd(), systemPrompt: "" });
+const registeredTools = [...host.tools.values()] as ToolDefinition[];
+const lifecycleHandlers = host.handlers;
+
+/** Sets the host's active tool set, which the extension must leave alone. */
+function seedHostTools(names: readonly string[]): void {
+	host.pi.setActiveTools([...names]);
 }
 
 function testFixture() {
@@ -59,7 +47,7 @@ function testFixture() {
 		{ type: "custom", customType: "pi-goal-state", data: stateEntry },
 	];
 
-	const mockCtx = createMockCtx(cwd, sessionEntries);
+	const mockCtx = host.createContext({ cwd, sessionEntries });
 	const cleanup = () => { try { rmSync(cwd, { recursive: true, force: true }); } catch {} };
 
 	return { cwd, goal: written, mockCtx, cleanup };
@@ -85,62 +73,38 @@ const REMOVED_TOOLS = [
 // ── Test Suite ───────────────────────────────────────────────────────────────
 
 describe("Fixed goal tool list", () => {
-	const registeredTools: ToolDefinition[] = [];
-	const lifecycleHandlers = new Map<string, Function>();
-	let apiCalls: Array<{ type: string; data?: unknown }> = [];
-	let activeToolNames: string[] = [...HOST_SEED_A];
-
-	const mockPi = {
-		registerTool: (def: ToolDefinition) => { registeredTools.push(def); },
-		registerCommand: () => {},
-		on: (event: string, handler: Function) => { lifecycleHandlers.set(event, handler); },
-		appendEntry: (customType: string, data: unknown) => {
-			apiCalls.push({ type: "appendEntry", data: { customType, data } });
-		},
-		registerMessageRenderer: () => {},
-		sendMessage: () => {},
-		getActiveTools: () => [...activeToolNames],
-		setActiveTools: (names: string[]) => { activeToolNames = [...names]; },
-		hasUI: false,
-	};
-
-	before(() => {
-		piGoalExtension(mockPi as any);
-	});
-
 	function expectGoalProfile(expected: readonly string[]): void {
 		for (const tool of expected) {
-			assert.ok(activeToolNames.includes(tool),
-				`goal tool "${tool}" must be advertised. Active: ${JSON.stringify(activeToolNames)}`);
+			assert.ok(host.activeTools.includes(tool),
+				`goal tool "${tool}" must be advertised. Active: ${JSON.stringify(host.activeTools)}`);
 		}
 		for (const removed of REMOVED_TOOLS) {
-			assert.equal(activeToolNames.includes(removed), false,
-				`removed tool "${removed}" must never be advertised. Active: ${JSON.stringify(activeToolNames)}`);
+			assert.equal(host.activeTools.includes(removed), false,
+				`removed tool "${removed}" must never be advertised. Active: ${JSON.stringify(host.activeTools)}`);
 		}
 		// Exactly the expected goal tools: no extras, no missing.
-		const goalTools = activeToolNames.filter((t) => [...ALL_GOAL_TOOLS, ...REMOVED_TOOLS].includes(t));
+		const goalTools = host.activeTools.filter((t) => [...ALL_GOAL_TOOLS, ...REMOVED_TOOLS].includes(t));
 		assert.equal(goalTools.length, expected.length,
 			`goal profile must be exactly [${expected.join(", ")}], got: ${JSON.stringify(goalTools)}`);
 	}
 
 	function expectHostUntouched(seed: readonly string[]): void {
-		const host = activeToolNames.filter((t) => !ALL_GOAL_TOOLS.includes(t));
-		assert.deepEqual(host.sort(), [...seed].sort(),
-			`host tool selection must be untouched. Active: ${JSON.stringify(activeToolNames)}`);
+		const hostTools = host.activeTools.filter((t) => !ALL_GOAL_TOOLS.includes(t));
+		assert.deepEqual(hostTools.sort(), [...seed].sort(),
+			`host tool selection must be untouched. Active: ${JSON.stringify(host.activeTools)}`);
 	}
 
 	async function runSession(cwd: string, entries: unknown[]): Promise<void> {
 		const ss = lifecycleHandlers.get("session_start");
 		assert.ok(ss, "session_start handler must be registered");
-		await ss({ reason: "start" }, createMockCtx(cwd, entries));
+		await ss({ reason: "start" }, host.createContext({ cwd, sessionEntries: entries }));
 	}
 
 	// ── Fixed profile across every lifecycle state ─────────────────────────
 	it("an active goal without tasks gets the full list and host tools are untouched", async () => {
 		const f = testFixture();
 		try {
-			activeToolNames = [...HOST_SEED_A];
-			apiCalls = [];
+			seedHostTools(HOST_SEED_A);
 			await runSession(f.cwd, f.mockCtx.sessionManager.getBranch() as unknown[]);
 			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_A);
@@ -153,8 +117,7 @@ describe("Fixed goal tool list", () => {
 		const cwd = mkdtempSync(path.join(tmpdir(), "goal-tool-vis-nogoal-"));
 		try {
 			mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
-			activeToolNames = [...HOST_SEED_A];
-			apiCalls = [];
+			seedHostTools(HOST_SEED_A);
 			await runSession(cwd, []);
 			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_A);
@@ -182,8 +145,7 @@ describe("Fixed goal tool list", () => {
 					{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") },
 					{ type: "custom", customType: "pi-goal-state", data: { version: 3, goal: { ...goal, activePath: written.activePath } } },
 				];
-				activeToolNames = [...HOST_SEED_A];
-				apiCalls = [];
+				seedHostTools(HOST_SEED_A);
 				await runSession(f.cwd, entries);
 				expectGoalProfile(WITH_TASKS);
 				expectHostUntouched(HOST_SEED_A);
@@ -210,8 +172,7 @@ describe("Fixed goal tool list", () => {
 					{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") },
 					{ type: "custom", customType: "pi-goal-state", data: { version: 3, goal: { ...goal, activePath: written.activePath } } },
 				];
-				activeToolNames = [...HOST_SEED_B];
-				apiCalls = [];
+				seedHostTools(HOST_SEED_B);
 				await runSession(cwd, entries);
 				expectGoalProfile(WITHOUT_TASKS);
 				expectHostUntouched(HOST_SEED_B);
@@ -225,8 +186,7 @@ describe("Fixed goal tool list", () => {
 	it("turn_start / before_agent_start / turn_end cycles leave profile and host unchanged", async () => {
 		const f = testFixture();
 		try {
-			activeToolNames = [...HOST_SEED_B];
-			apiCalls = [];
+			seedHostTools(HOST_SEED_B);
 			await runSession(f.cwd, f.mockCtx.sessionManager.getBranch() as unknown[]);
 			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_B);
@@ -251,8 +211,7 @@ describe("Fixed goal tool list", () => {
 	it("blocking a goal leaves the list unchanged", async () => {
 		const f = testFixture();
 		try {
-			activeToolNames = [...HOST_SEED_A];
-			apiCalls = [];
+			seedHostTools(HOST_SEED_A);
 			await runSession(f.cwd, f.mockCtx.sessionManager.getBranch() as unknown[]);
 			const bas = lifecycleHandlers.get("before_agent_start")!;
 			await bas({ systemPrompt: "", prompt: "start", systemPromptOptions: {} }, f.mockCtx);
@@ -286,8 +245,7 @@ describe("Fixed goal tool list", () => {
 				{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(paused.id, "created") },
 				{ type: "custom", customType: "pi-goal-state", data: { version: 3, goal: { ...paused, activePath: written.activePath } } },
 			];
-			activeToolNames = [...HOST_SEED_A];
-			apiCalls = [];
+			seedHostTools(HOST_SEED_A);
 			await runSession(f.cwd, entries);
 
 			const update = registeredTools.find((t) => t.name === "update_goal");
@@ -359,8 +317,7 @@ describe("Fixed goal tool list", () => {
 				{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goalWithTasks.id, "created") },
 				{ type: "custom", customType: "pi-goal-state", data: { version: 3, goal: { ...goalWithTasks, activePath: written.activePath, taskList: goalData.taskList, updatedAt: now } } },
 			];
-			activeToolNames = [...HOST_SEED_A];
-			apiCalls = [];
+			seedHostTools(HOST_SEED_A);
 			await runSession(f.cwd, entries);
 			const bas = lifecycleHandlers.get("before_agent_start")!;
 			await bas({ systemPrompt: "", prompt: "start", systemPromptOptions: {} }, f.mockCtx);
@@ -391,8 +348,7 @@ describe("Fixed goal tool list", () => {
 	it("arbitrary host tool sets survive session, turn, and tool events untouched", async () => {
 		const f = testFixture();
 		try {
-			activeToolNames = [...HOST_SEED_B];
-			apiCalls = [];
+			seedHostTools(HOST_SEED_B);
 			await runSession(f.cwd, f.mockCtx.sessionManager.getBranch() as unknown[]);
 			const ts = lifecycleHandlers.get("turn_start")!;
 			const bas = lifecycleHandlers.get("before_agent_start")!;
