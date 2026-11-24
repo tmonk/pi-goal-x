@@ -5,7 +5,7 @@
  * appends ledger events directly — every mutation routes through `GoalService`
  * (extensions/goal-service.ts), which owns the ordered write→ledger→archive→memory
  * pipeline. The thin installer (goal.ts) delegates all state to the GoalCore
- * (goal-state.ts); handlers live in the tools/commands/events/widget modules.
+ * (goal-state.ts and its services); handlers live in the tools/commands/events/widget modules.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -51,11 +51,12 @@ describe("goal mutation boundary", () => {
 	});
 
 	it("instantiates the GoalService and uses it for persistence", () => {
-		const coreSource = readFileSync(path.join(extensionsDir, "goal-state.ts"), "utf8");
-		assert.ok(coreSource.includes("new GoalService("), "goal-state.ts must construct the GoalService");
-		assert.ok(coreSource.includes("goalService.persist("), "goal-state.ts must persist through the service");
-		assert.ok(coreSource.includes("goalService.apply("), "goal-state.ts must mutate through the service");
-		assert.ok(coreSource.includes("goalService.appendEvents("), "goal-state.ts must append ledger events through the service");
+		const read = (name: string) => readFileSync(path.join(extensionsDir, name), "utf8");
+		assert.ok(read("goal-state.ts").includes("new GoalService("), "goal-state.ts must construct the GoalService");
+		const services = ["goal-lifecycle.ts", "goal-progress.ts", "goal-focus.ts", "goal-watch.ts"].map(read).join("\n");
+		assert.ok(services.includes("goalService.persist("), "the core services must persist through the service");
+		assert.ok(services.includes("goalService.apply("), "the core services must mutate through the service");
+		assert.ok(services.includes("goalService.appendEvents("), "the core services must append ledger events through the service");
 	});
 
 	it("goal.ts is a thin installer with no direct mutation or ledger calls", () => {
