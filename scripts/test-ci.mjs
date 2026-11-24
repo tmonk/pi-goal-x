@@ -4,7 +4,7 @@ import {mkdtempSync,readFileSync,rmSync,mkdirSync,writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {needsRuntimeChecks,needsBench,needsControls,changedFiles} from './ci-scope.mjs';
+import {needsRuntimeChecks,runsHeavyChecks,changedFiles} from './ci-scope.mjs';
 import {runChecks} from './ci-checks.mjs';
 
 test('only known prose/assets skip runtime checks; uncertainty and mixed changes run them',()=>{
@@ -17,18 +17,11 @@ test('only known prose/assets skip runtime checks; uncertainty and mixed changes
  assert.equal(changedFiles('not-a-sha'),undefined);
 });
 
-test('the benchmark gate is skipped only for tests and prose',()=>{
- assert.equal(needsBench(['tests/goal-controls.test.ts','docs/controls.md']),false);
- for(const file of ['extensions/goal.ts','experiments/bench/run-bench.mjs','tests/support/tui-test-utils.ts','tests/stubs/x.mjs','package-lock.json','.github/workflows/ci.yml','unknown.file']) assert.equal(needsBench(['tests/a.test.ts',file]),true,file);
- assert.equal(needsBench([]),true);
-});
-
-test('the walkthrough is skipped only when nothing it loads changed',()=>{
- assert.equal(needsControls(['tests/a.test.ts','experiments/bench/run-bench.mjs','scripts/ci-scope.mjs','docs/x.md']),false);
- for(const file of ['extensions/goal.ts','experiments/controls/cli-walkthrough.mjs','experiments/continuation/terminal.mjs','scripts/pi-host.mjs','package-lock.json','.github/workflows/ci.yml','unknown.file']) assert.equal(needsControls(['tests/a.test.ts',file]),true,file);
- assert.equal(needsBench(['experiments/controls/cli-walkthrough.mjs','scripts/test-ci.mjs']),false);
- assert.equal(needsBench(['scripts/pi-host.mjs']),true);
- assert.equal(needsControls([]),true);
+test('the slow checks run on pushes and on unreadable diffs, not on pull requests',()=>{
+ assert.equal(runsHeavyChecks('pull_request',['extensions/goal.ts']),false);
+ assert.equal(runsHeavyChecks('push',['docs/x.md']),true);
+ assert.equal(runsHeavyChecks('push',undefined),true);
+ assert.equal(runsHeavyChecks('pull_request',undefined),true);
 });
 
 test('change detection includes deleted runtime files and compares actual commit trees',()=>{
