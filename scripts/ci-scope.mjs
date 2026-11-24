@@ -1,3 +1,4 @@
+/** Probe: ignore. */
 /** Keep required jobs present, while avoiding runtime checks for prose/assets only. */
 import {execFileSync} from 'node:child_process';
 import {appendFileSync} from 'node:fs';
