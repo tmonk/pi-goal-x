@@ -1,36 +1,45 @@
 import type { KeyId } from "@earendil-works/pi-tui";
+import { t } from "./i18n/index.ts";
 
 /** Stable action IDs; invocation names are preferences, not lifecycle logic. */
+/** Label and help are read lazily, so they follow the language chosen at startup. */
+const command = <const Id extends string>(id: Id, label: () => string, help: () => string): readonly [Id, string, string] => {
+	const row: [Id, string, string] = [id, "", ""];
+	Object.defineProperties(row, { 1: { get: label, enumerable: true }, 2: { get: help, enumerable: true } });
+	return row;
+};
 export const GOAL_COMMANDS = [
-	["goal", "Draft a goal", "Start a guided goal with confirmation."],
-	["sisyphus", "Draft a Sisyphus goal", "Draft an ordered, persistent goal."],
-	["goal-direct", "Start a goal directly", "Create a goal immediately from the supplied objective."],
-	["sisyphus-direct", "Start Sisyphus directly", "Create an ordered goal immediately."],
-	["goal-tweak", "Revise the goal", "Revise the objective or budget, with confirmation."],
-	["goal-pause", "Pause the goal", "Pause the goal and stop the current turn."],
-	["goal-resume", "Resume the goal", "Continue and renew the autonomous run allowance."],
-	["goal-clear", "Clear the goal", "Archive the goal after confirmation."],
-	["goal-list", "List goals", "Show the open goals in this project."],
-	["goal-status", "Show goal status", "Show progress; accepts verbose and health."],
-	["goal-refresh", "Refresh goal state", "Read goal files and settings again."],
-	["goal-recovery", "Recover goal files", "Inspect recovery information; repair requires confirmation."],
-	["goal-focus", "Focus a goal", "Choose the goal this session works on."],
-	["goal-unfocus", "Unfocus the goal", "Detach this session, leaving the shared goal open."],
-	["goal-settings", "Goal settings", "Open settings. /goal-settings always remains available."],
-	["goal-cancel", "Cancel a draft", "Cancel the guided draft without creating a goal."],
+	command("goal", () => t("Draft a goal"), () => t("Start a guided goal with confirmation.")),
+	command("sisyphus", () => t("Draft a Sisyphus goal"), () => t("Draft an ordered, persistent goal.")),
+	command("goal-direct", () => t("Start a goal directly"), () => t("Create a goal immediately from the supplied objective.")),
+	command("sisyphus-direct", () => t("Start Sisyphus directly"), () => t("Create an ordered goal immediately.")),
+	command("goal-tweak", () => t("Revise the goal"), () => t("Revise the objective or budget, with confirmation.")),
+	command("goal-pause", () => t("Pause the goal"), () => t("Pause the goal and stop the current turn.")),
+	command("goal-resume", () => t("Resume the goal"), () => t("Continue and renew the autonomous run allowance.")),
+	command("goal-clear", () => t("Clear the goal"), () => t("Archive the goal after confirmation.")),
+	command("goal-list", () => t("List goals"), () => t("Show the open goals in this project.")),
+	command("goal-status", () => t("Show goal status"), () => t("Show progress; accepts verbose and health.")),
+	command("goal-refresh", () => t("Refresh goal state"), () => t("Read goal files and settings again.")),
+	command("goal-recovery", () => t("Recover goal files"), () => t("Inspect recovery information; repair requires confirmation.")),
+	command("goal-focus", () => t("Focus a goal"), () => t("Choose the goal this session works on.")),
+	command("goal-unfocus", () => t("Unfocus the goal"), () => t("Detach this session, leaving the shared goal open.")),
+	command("goal-settings", () => t("Goal settings"), () => t("Open settings. /goal-settings always remains available.")),
+	command("goal-cancel", () => t("Cancel a draft"), () => t("Cancel the guided draft without creating a goal.")),
 ] as const;
 export type GoalCommandId = typeof GOAL_COMMANDS[number][0];
 export type GoalCommands = Partial<Record<GoalCommandId, string[]>>;
 export const GOAL_COMMAND_INPUTS: Partial<Record<GoalCommandId, string>> = {
-	"goal-direct": "Goal objective", "sisyphus-direct": "Sisyphus objective and ordered steps", "goal-tweak": "Change to the goal",
+	get "goal-direct"() { return t("Goal objective"); },
+	get "sisyphus-direct"() { return t("Sisyphus objective and ordered steps"); },
+	get "goal-tweak"() { return t("Change to the goal"); },
 };
 export type GoalKeybinding = KeyId | KeyId[];
 export type PauseOrder = "together" | "goal-first" | "turn-first";
 
 export const PAUSE_ORDERS: ReadonlyArray<{ id: PauseOrder; label: string; help: string }> = [
-	{ id: "together", label: "Goal and turn together", help: "One press pauses the goal and stops the current turn." },
-	{ id: "goal-first", label: "Goal first", help: "First: pause the goal; the turn finishes. Next: stop the turn." },
-	{ id: "turn-first", label: "Turn first", help: "First: stop the turn and wait. Next: pause the goal. Resume or a message continues." },
+	{ id: "together", get label() { return t("Goal and turn together"); }, get help() { return t("One press pauses the goal and stops the current turn."); } },
+	{ id: "goal-first", get label() { return t("Goal first"); }, get help() { return t("First: pause the goal; the turn finishes. Next: stop the turn."); } },
+	{ id: "turn-first", get label() { return t("Turn first"); }, get help() { return t("First: stop the turn and wait. Next: pause the goal. Resume or a message continues."); } },
 ];
 
 type GoalKeyContext = "global" | "compact" | "expanded" | "audit" | "dialog";
@@ -46,31 +55,49 @@ export interface GoalKeyAction {
 	context: GoalKeyContext;
 	defaults: GoalKeybinding;
 }
-const dashboard = (name: string, label: string, defaults: GoalKeybinding, context: GoalKeyContext, help: string): GoalKeyAction =>
-	({ path: ["keybindings", "dashboard", name], label, defaults, context, help });
+/** Label and help are read lazily, so they follow the language chosen at startup. */
+const keyAction = (path: string[], label: () => string, defaults: GoalKeybinding, context: GoalKeyContext, help: () => string): GoalKeyAction =>
+	({ path, get label() { return label(); }, defaults, context, get help() { return help(); } });
+const dashboard = (name: string, label: () => string, defaults: GoalKeybinding, context: GoalKeyContext, help: () => string): GoalKeyAction =>
+	keyAction(["keybindings", "dashboard", name], label, defaults, context, help);
+const DIALOG_KEY_LABELS: Record<GoalDialogAction, () => string> = {
+	confirm: () => t("Dialog: confirm selection"),
+	cancel: () => t("Dialog: cancel / go back"),
+	up: () => t("Dialog: previous option"),
+	down: () => t("Dialog: next option"),
+	next: () => t("Dialog: next question"),
+	previous: () => t("Dialog: previous question"),
+	pageUp: () => t("Dialog: page up"),
+	pageDown: () => t("Dialog: page down"),
+	scrollUp: () => t("Dialog: scroll up"),
+	scrollDown: () => t("Dialog: scroll down"),
+	toggleAuditor: () => t("Dialog: toggle auditor"),
+};
 export const GOAL_KEY_ACTIONS: readonly GoalKeyAction[] = [
-	{ path: ["keybindings", "pause"], label: "Pause / interrupt", defaults: "escape", context: "global", help: "Uses the chosen pause order. Dialogs, audit and expanded view take priority." },
-	{ path: ["keybindings", "toggleAuditor"], label: "Toggle completion auditor", defaults: "ctrl+shift+a", context: "global", help: "Enable or disable the independent auditor for the focused goal." },
-	dashboard("toggleExpand", "Expand / collapse dashboard", "ctrl+shift+t", "global", "Switch between the compact and expanded task list."),
-	dashboard("scrollUp", "Compact: scroll up", "ctrl+shift+up", "compact", "Scroll only when the compact task list overflows."),
-	dashboard("scrollDown", "Compact: scroll down", "ctrl+shift+down", "compact", "Scroll only when the compact task list overflows."),
-	dashboard("scrollPageUp", "Compact: page up", "ctrl+shift+pageUp", "compact", "Scroll the compact list by one page."),
-	dashboard("scrollPageDown", "Compact: page down", "ctrl+shift+pageDown", "compact", "Scroll the compact list by one page."),
-	dashboard("scrollFirst", "Compact: first task", "ctrl+shift+home", "compact", "Go to the start of the compact task list."),
-	dashboard("scrollLast", "Compact: last task", "ctrl+shift+end", "compact", "Go to the end of the compact task list."),
-	dashboard("collapse", "Expanded: close dashboard", "escape", "expanded", "Close the expanded view without pausing work."),
-	dashboard("up", "Expanded: scroll up", "up", "expanded", "Move up in the expanded task list."),
-	dashboard("down", "Expanded: scroll down", "down", "expanded", "Move down in the expanded task list."),
-	dashboard("pageUp", "Expanded: page up", "pageUp", "expanded", "Move one page up."),
-	dashboard("pageDown", "Expanded: page down", "pageDown", "expanded", "Move one page down."),
-	dashboard("first", "Expanded: first task", "home", "expanded", "Go to the start of the expanded task list."),
-	dashboard("last", "Expanded: last task", "end", "expanded", "Go to the end of the expanded task list."),
-	{ path: ["keybindings", "interruptAudit"], label: "Interrupt the audit", defaults: "escape", context: "audit", help: "Stop the audit and show the existing completion choices." },
-	...Object.entries(GOAL_DIALOG_KEYS).map(([name, defaults]): GoalKeyAction => ({
-		path: ["keybindings", "dialog", name], label: `Dialog: ${{ confirm: "confirm selection", cancel: "cancel / go back", up: "previous option", down: "next option", next: "next question", previous: "previous question", pageUp: "page up", pageDown: "page down", scrollUp: "scroll up", scrollDown: "scroll down", toggleAuditor: "toggle auditor" }[name]}`,
-		defaults, context: "dialog", help: "Applies to goal questionnaires and confirmations. Settings navigation and text editing keep Pi's controls.",
-	})),
-	...GOAL_COMMANDS.map(([id, label, help]): GoalKeyAction => ({ path: ["keybindings", "commands", id], label, help, context: "global", defaults: [] })),
+	keyAction(["keybindings", "pause"], () => t("Pause / interrupt"), "escape", "global", () => t("Uses the chosen pause order. Dialogs, audit and expanded view take priority.")),
+	keyAction(["keybindings", "toggleAuditor"], () => t("Toggle completion auditor"), "ctrl+shift+a", "global", () => t("Enable or disable the independent auditor for the focused goal.")),
+	dashboard("toggleExpand", () => t("Expand / collapse dashboard"), "ctrl+shift+t", "global", () => t("Switch between the compact and expanded task list.")),
+	dashboard("scrollUp", () => t("Compact: scroll up"), "ctrl+shift+up", "compact", () => t("Scroll only when the compact task list overflows.")),
+	dashboard("scrollDown", () => t("Compact: scroll down"), "ctrl+shift+down", "compact", () => t("Scroll only when the compact task list overflows.")),
+	dashboard("scrollPageUp", () => t("Compact: page up"), "ctrl+shift+pageUp", "compact", () => t("Scroll the compact list by one page.")),
+	dashboard("scrollPageDown", () => t("Compact: page down"), "ctrl+shift+pageDown", "compact", () => t("Scroll the compact list by one page.")),
+	dashboard("scrollFirst", () => t("Compact: first task"), "ctrl+shift+home", "compact", () => t("Go to the start of the compact task list.")),
+	dashboard("scrollLast", () => t("Compact: last task"), "ctrl+shift+end", "compact", () => t("Go to the end of the compact task list.")),
+	dashboard("collapse", () => t("Expanded: close dashboard"), "escape", "expanded", () => t("Close the expanded view without pausing work.")),
+	dashboard("up", () => t("Expanded: scroll up"), "up", "expanded", () => t("Move up in the expanded task list.")),
+	dashboard("down", () => t("Expanded: scroll down"), "down", "expanded", () => t("Move down in the expanded task list.")),
+	dashboard("pageUp", () => t("Expanded: page up"), "pageUp", "expanded", () => t("Move one page up.")),
+	dashboard("pageDown", () => t("Expanded: page down"), "pageDown", "expanded", () => t("Move one page down.")),
+	dashboard("first", () => t("Expanded: first task"), "home", "expanded", () => t("Go to the start of the expanded task list.")),
+	dashboard("last", () => t("Expanded: last task"), "end", "expanded", () => t("Go to the end of the expanded task list.")),
+	keyAction(["keybindings", "interruptAudit"], () => t("Interrupt the audit"), "escape", "audit", () => t("Stop the audit and show the existing completion choices.")),
+	...Object.entries(GOAL_DIALOG_KEYS).map(([name, defaults]) => keyAction(
+		["keybindings", "dialog", name], DIALOG_KEY_LABELS[name as GoalDialogAction], defaults, "dialog",
+		() => t("Applies to goal questionnaires and confirmations. Settings navigation and text editing keep Pi's controls."),
+	)),
+	...GOAL_COMMANDS.map(([id], index): GoalKeyAction => keyAction(
+		["keybindings", "commands", id], () => GOAL_COMMANDS[index]![1], [], "global", () => GOAL_COMMANDS[index]![2],
+	)),
 ];
 
 export function valueAtPath(value: unknown, path: readonly string[]): unknown {
@@ -166,10 +193,10 @@ export function commandProblems(commands: GoalCommands | undefined, occupiedRoot
 	const owners = new Map<string, GoalCommandId>();
 	for (const [id] of GOAL_COMMANDS) for (const route of commandPaths(commands, id)) {
 		const root = route.split(" ")[0]!;
-		if (PI_COMMAND_ROOTS.has(root) || occupiedRoots.includes(root)) problems.push(`/${root} belongs to Pi or another command.`);
-		if (root === "goal-settings" && id !== "goal-settings") problems.push("/goal-settings is reserved for settings recovery.");
+		if (PI_COMMAND_ROOTS.has(root) || occupiedRoots.includes(root)) problems.push(t("/{root} belongs to Pi or another command.", { root }));
+		if (root === "goal-settings" && id !== "goal-settings") problems.push(t("/goal-settings is reserved for settings recovery."));
 		const owner = owners.get(route);
-		if (owner && owner !== id) problems.push(`/${route} is already assigned to ${owner}.`);
+		if (owner && owner !== id) problems.push(t("/{route} is already assigned to {owner}.", { route, owner }));
 		owners.set(route, id);
 	}
 	return [...new Set(problems)];
@@ -195,7 +222,7 @@ export function keybindingProblems(settings: unknown, edited?: GoalKeyAction, ki
 			// These view-specific actions deliberately take priority over pause.
 			if ((a.path[1] === "pause" || b.path[1] === "pause") && [a, b].some(x => x.path[1] === "interruptAudit" || x.path[2] === "collapse")) continue;
 			const overlap = bindingKeys(keyActionBinding(settings, a)).filter(key => bindingKeys(keyActionBinding(settings, b)).some(bound => sameGoalKey(key, bound, kitty)));
-			if (overlap.length) problems.push(`${overlap.join(", ")} is also assigned to ${edited === b ? a.label : b.label}.`);
+			if (overlap.length) problems.push(t("{keys} is also assigned to {action}.", { keys: overlap.join(", "), action: edited === b ? a.label : b.label }));
 		}
 	}
 	return [...new Set(problems)];
