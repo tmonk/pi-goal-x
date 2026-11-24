@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LiveTailRetention, MAX_RETAINED_COUNTER_BYTES, MAX_RETAINED_LIVE_TAILS } from "../extensions/goal-live-retention.ts";
+import { LiveTailRetention, MAX_RETAINED_COUNTER_BYTES, MAX_RETAINED_LIVE_TAILS, MAX_RETAINED_POLICY_BLOCKS, POLICY_RECENCY_NOTE, POLICY_SUPERSEDED_NOTE } from "../extensions/goal-live-retention.ts";
 
 const msg = (role: string, content: string, timestamp: number): any => ({ role, content, timestamp });
 const contents = (messages: any[]): string[] => messages.map(message => message.content);
@@ -37,12 +37,72 @@ test("rewritten history resets once and never loses the live state", () => {
 	assert.deepEqual(contents(next.messages), ["compacted summary", "S", "V1"]);
 });
 
-test("a changed policy block drops stale tails and starts a fresh prefix", () => {
+test("a changed policy block is appended and supersedes the earlier one without breaking the prefix", () => {
 	const retention = new LiveTailRetention();
 	const base = [msg("user", "h", 1)];
-	retention.apply("s", base, { state: "S1", counters: "V1" });
-	const next = retention.apply("s", base, { state: "S2", counters: "V2" });
-	assert.deepEqual(contents(next.messages), ["h", "S2", "V2"]);
+	const first = retention.apply("s", base, { state: "S1", counters: "V1" });
+	const next = retention.apply("s", base, { state: "S2", counters: "V1" });
+	assert.deepEqual(next.messages.slice(0, first.messages.length), first.messages, "the earlier request is still a literal prefix");
+	assert.deepEqual(contents(next.messages), ["h", "S1", "V1", `${POLICY_SUPERSEDED_NOTE}\nS2`, POLICY_RECENCY_NOTE]);
+	assert.equal(next.stableLength, 4, "the recency note is request-only and sits after the stable prefix");
+});
+
+test("pausing and resuming keeps the prefix and does not resend an unchanged task list", () => {
+	const retention = new LiveTailRetention();
+	const base = [msg("user", "h", 1)];
+	const active = retention.apply("s", base, { state: "ACTIVE", counters: "TASKS", ephemeral: "usage 1", scope: "g" });
+	base.push(msg("assistant", "a", 2));
+	const paused = retention.apply("s", base, { state: "PAUSED", ephemeral: undefined, scope: "g" });
+	base.push(msg("user", "resume", 3));
+	const resumed = retention.apply("s", base, { state: "ACTIVE", counters: "TASKS", ephemeral: "usage 2", scope: "g" });
+	assert.deepEqual(paused.messages.slice(0, active.stableLength), active.messages.slice(0, active.stableLength));
+	assert.deepEqual(resumed.messages.slice(0, paused.stableLength), paused.messages.slice(0, paused.stableLength));
+	assert.equal(resumed.messages.filter((m: any) => m.content === "TASKS").length, 1, "the unchanged task list is not repeated");
+	assert.equal(contents(resumed.messages).at(-1), `${POLICY_RECENCY_NOTE}\nusage 2`);
+});
+
+test("request-only text is sent every time, never retained, and still counts as transient for the cache marker", () => {
+	const retention = new LiveTailRetention();
+	const base = [msg("user", "h", 1)];
+	const first = retention.apply("s", base, { state: "S", ephemeral: "usage 1" });
+	assert.deepEqual(contents(first.messages), ["h", "S", "usage 1"]);
+	assert.deepEqual(retention.contents("s"), ["S", "usage 1"]);
+	base.push(msg("assistant", "a", 2));
+	const second = retention.apply("s", base, { state: "S", ephemeral: "usage 2" });
+	assert.deepEqual(contents(second.messages), ["h", "S", "a", "usage 2"], "the old usage line is gone, not left mid-history");
+	assert.equal(second.stableLength, 3);
+	assert.deepEqual(second.transientContents, ["S", "usage 2"]);
+	const repeat = retention.apply("s", base, { state: "S", ephemeral: "usage 2" });
+	assert.deepEqual(repeat.messages, second.messages);
+});
+
+test("a different goal or a changed objective starts a fresh prefix", () => {
+	const retention = new LiveTailRetention();
+	const base = [msg("user", "h", 1)];
+	retention.apply("s", base, { state: "S1", counters: "V1", scope: "goal-a:1" });
+	const edited = retention.apply("s", base, { state: "S2", counters: "V1", scope: "goal-a:2" });
+	assert.deepEqual(contents(edited.messages), ["h", "S2", "V1"]);
+});
+
+test("policy blocks are bounded: past the limit one reset removes the superseded ones", () => {
+	const retention = new LiveTailRetention();
+	const base = [msg("user", "h", 1)];
+	let resets = 0;
+	let previous: any[] = [];
+	for (let i = 0; i < MAX_RETAINED_POLICY_BLOCKS + 3; i++) {
+		const out = retention.apply("s", base, { state: `S${i}` });
+		if (previous.length > 0 && JSON.stringify(out.messages.slice(0, previous.length)) !== JSON.stringify(previous)) resets++;
+		previous = out.messages.slice(0, out.stableLength);
+	}
+	assert.equal(resets, 1);
+	assert.ok(retention.contents("s")!.filter(text => text.includes("S")).length <= MAX_RETAINED_POLICY_BLOCKS);
+});
+
+test("a task list that disappears under the same policy is not replayed", () => {
+	const retention = new LiveTailRetention();
+	const base = [msg("user", "h", 1)];
+	retention.apply("s", base, { state: "S", counters: "TASKS" });
+	assert.deepEqual(contents(retention.apply("s", base, { state: "S" }).messages), ["h", "S"]);
 });
 
 test("retained growth is bounded with one amortized reset per window", () => {

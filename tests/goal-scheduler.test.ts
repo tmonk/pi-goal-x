@@ -796,7 +796,7 @@ test("prompt cache: normal and custom runs preserve history while refreshing all
 	const preflight = await h.handlers.before_agent_start!({prompt: "continue", systemPrompt: "host policy"}, h.ctx);
 	assert.equal(preflight, undefined, "goal state never rewrites the system prefix");
 	const first = await request();
-	assert.deepEqual(first.slice(0, -2), original, "stable policy and volatile counters ride as two request-only tails");
+	assert.deepEqual(first.slice(0, -2), original, "the policy block and the request-only usage line ride as two tails");
 	assert.equal(first.filter((m: any) => m.customType === "pi-goal-live-context").length, 2);
 	assert.match(first.at(-2).content, /PI GOAL ACTIVE/);
 	assert.match(first.at(-1).content, /Goal snapshot:/);
@@ -811,13 +811,13 @@ test("prompt cache: normal and custom runs preserve history while refreshing all
 	const toolResult = {role: "toolResult", toolCallId: "call-1", toolName: "read", content: [{type: "text", text: "file contents"}], isError: false, timestamp: 3};
 	history.push(toolCall, toolResult);
 	const second = await request();
-	assert.deepEqual(second.slice(0, first.length), first, "the advanced request literally extends the previous one");
-	assert.deepEqual(second.slice(3, 5), [toolCall, toolResult], "tool call and result stay adjacent");
+	assert.deepEqual(second.slice(0, first.length - 1), first.slice(0, -1), "the advanced request literally extends the previous one, up to its request-only usage line");
+	assert.deepEqual(second.slice(2, 4), [toolCall, toolResult], "tool call and result stay adjacent");
 	assert.match(second[1].content, /PI GOAL ACTIVE/);
-	assert.equal(second.filter((m: any) => m.customType === "pi-goal-live-context").length, 3, "changed counters append one small tail; the policy block is retained, not resent");
+	assert.equal(second.filter((m: any) => m.customType === "pi-goal-live-context").length, 2, "usage changes only the request-only line; the policy block is retained, not resent");
 	assert.match(second.at(-1).content, /12345 tokens/);
 	assert.doesNotMatch(second.at(-1).content, /Autonomous runs/, "an unlimited allowance reports no runs line");
-	// An objective edit changes the stable policy block: retention resets once so no
+	// An objective edit changes what the goal is about: retention resets once so no
 	// stale objective lingers mid-history, and the fresh pair anchors the new prefix.
 	h.core.state.goal!.objective = "Changed objective";
 	const third = await request();
@@ -839,8 +839,10 @@ test("prompt cache: normal and custom runs preserve history while refreshing all
 	for (const status of ["paused", "blocked", "budget_limited"] as const) {
 		h.core.state.goal!.status = status;
 		const stopped = await request();
-		assert.match(stopped.at(-1).content, new RegExp(status.replace("_", " ").toUpperCase()));
-		assert.doesNotMatch(stopped.at(-1).content, /PI GOAL ACTIVE/);
+		const policy = stopped.filter((m: any) => m.customType === "pi-goal-live-context").at(-2);
+		assert.match(policy.content, new RegExp(status.replace("_", " ").toUpperCase()));
+		assert.doesNotMatch(policy.content, /PI GOAL ACTIVE/);
+		assert.match(stopped.at(-1).content, /Only the latest goal policy block above applies/, "the model is told which policy block counts");
 	}
 });
 

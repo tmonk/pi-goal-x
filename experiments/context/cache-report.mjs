@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {ModelRuntime, convertToLlm} from '@earendil-works/pi-coding-agent';
 import {cacheGoalHistory} from '../../extensions/goal-prompt-cache.ts';
-import {LiveTailRetention, MAX_RETAINED_COUNTER_BYTES} from '../../extensions/goal-live-retention.ts';
+import {LiveTailRetention, MAX_RETAINED_COUNTER_BYTES, MAX_RETAINED_LIVE_TAILS} from '../../extensions/goal-live-retention.ts';
 import {captureOne} from './capture-context.mjs';
 import {FIXTURES, userMessage, assistantMessage} from './fixtures.mjs';
 import {digest, summarize, compareReports, investigateCache} from './cache-compare.mjs';
@@ -55,7 +55,8 @@ export async function buildReport() {
        const count=prefix(previous.blocks,current.blocks);
        // Explicit marker movement is covered separately; raw bytes stay recorded.
        current.reuse={blocks:count,bytes:previous.blocks.slice(0,count).reduce((s,b)=>s+b.bytes,0)};
-       if(flavor.startsWith('openai')) assert.equal(count,previous.blocks.length,'unchanged-policy prefix lost');
+       // The last block is the request-only usage line, resent at the end of each request.
+       if(flavor.startsWith('openai')) assert.ok(count>=previous.blocks.length-1,'unchanged-policy prefix lost');
       }
       const retry=await serialize(`retry-${n}`,captured,await capture.runContext(base));
       assert.deepEqual(retry.blocks,current.blocks,'identical retry changed');
@@ -73,7 +74,7 @@ export async function buildReport() {
    const fresh={state:'unchanging policy',counters:`Goal snapshot: ${n}`};
    const result=retention.apply('bounded',history,fresh);
    if(last && JSON.stringify(result.messages.slice(0,last.length))!==JSON.stringify(last)) breaks++;
-   assert.ok(result.transientContents.length<=32,'tail bound exceeded');
+   assert.ok(result.transientContents.length<=MAX_RETAINED_LIVE_TAILS,'tail bound exceeded');
    assert.ok(result.transientContents.slice(1).reduce((s,t)=>s+Buffer.byteLength(t),0)<=MAX_RETAINED_COUNTER_BYTES,'counter byte bound exceeded');
    assert.deepEqual(retention.apply('bounded',history,fresh),result,'retry changed at capacity');
    last=result.messages;

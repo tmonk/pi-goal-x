@@ -1,7 +1,7 @@
 /** Offline retention cost/space gate: no provider requests or agent runs. */
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { LiveTailRetention } from '../../extensions/goal-live-retention.ts';
+import { LiveTailRetention, MAX_RETAINED_LIVE_TAILS } from '../../extensions/goal-live-retention.ts';
 
 const median = values => values.sort((a,b) => a-b)[Math.floor(values.length / 2)];
 const rows = [];
@@ -17,7 +17,7 @@ for (const shape of ['text', 'tool-output', 'image']) for (const bytes of [64 * 
  for (let i=0;i<45;i++) {
   let start=performance.now(); JSON.stringify(base); const plain=performance.now()-start;
   start=performance.now(); const result=retention.apply('fixture',base,{state:'current policy',counters:`snapshot ${i}`}); const elapsed=performance.now()-start;
-  assert.ok(result.transientContents.length<=32);
+  assert.ok(result.transientContents.length<=MAX_RETAINED_LIVE_TAILS);
   assert.ok(result.transientContents.reduce((n,text)=>n+Buffer.byteLength(text),0)<=4096+14);
   if(i>=5) {serialize.push(plain);retained.push(elapsed);}
  }

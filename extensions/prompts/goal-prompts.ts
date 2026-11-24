@@ -226,25 +226,29 @@ function retainedTaskChars(task: GoalTask): number {
 		+ (task.skipReason?.length ?? 0) + (task.subtasks?.reduce((n, child) => n + retainedTaskChars(child), 0) ?? 0);
 }
 
-export function goalPromptParts(goal: GoalRecord, settings?: GoalSettings, contextUsage?: GoalContextUsage): { state: string; counters: string } {
-	// The policy block changes only when the goal itself changes. The snapshot
-	// (task list, usage, runs) changes often. Each is retained separately, so a
-	// task update appends a new snapshot instead of resetting the cached prefix
-	// (#108). Scheduling instructions stay in the policy block: they are cleared
-	// by omission, so a retained copy would keep issuing a cancelled order.
+/**
+ * The goal state for one request, split by how often each part changes:
+ * - state: rules, objective, contract, limits. Changes only when the goal does.
+ * - counters: the task list. Changes when a task starts or finishes.
+ * - ephemeral: scheduling instructions, usage and run counts. Changes every
+ *   turn, so it is sent with each request and never kept in history. The
+ *   scheduling instructions are cleared by omission, which is safe because
+ *   nothing stale is left behind.
+ */
+export function goalPromptParts(goal: GoalRecord, settings?: GoalSettings, contextUsage?: GoalContextUsage): { state: string; counters: string; ephemeral: string } {
 	const fixed = cachedPrompt(goal, settings, "goal", () => buildGoalPrompt(goal, settings));
 	const { runs, instructions } = schedulerSummaryParts(goal.scheduler, settings?.maxAutonomousRuns, settings?.showAutonomousRuns, settings?.idleContinuationBackoff === true, settings?.commands);
 	const limits = `Limits: lifetime tokens=${goal.tokenBudget ?? "none"}; runs=${settings?.maxAutonomousRuns ?? "unlimited"}.`;
-	const state = [fixed, instructions, limits, "Usage spans goal turns, not context. The latest snapshot, including its task list, supersedes earlier ones."].filter(Boolean).join("\n");
+	const state = [fixed, limits, "Usage spans goal turns, not context. The latest snapshot, including its task list, supersedes earlier ones."].join("\n");
 	const context = settings?.showContextUsage === true ? `\n${contextUsageLine(contextUsage)}` : "";
-	const tasks = taskListBlock(goal, settings);
-	const counters = `${tasks ? `${tasks}\n` : ""}Goal snapshot: ${formatUsage(goal)}${context}\n${runs}`;
-	return { state, counters };
+	const counters = taskListBlock(goal, settings);
+	const ephemeral = [instructions, `Goal snapshot: ${formatUsage(goal)}${context}\n${runs}`].filter(Boolean).join("\n");
+	return { state, counters, ephemeral };
 }
 
 export function goalPrompt(goal: GoalRecord, settings?: GoalSettings): string {
-	const { state, counters } = goalPromptParts(goal, settings);
-	return `${state}\n${counters}`;
+	const { state, counters, ephemeral } = goalPromptParts(goal, settings);
+	return [state, counters, ephemeral].filter(Boolean).join("\n");
 }
 
 function buildGoalPrompt(goal: GoalRecord, settings?: GoalSettings): string {

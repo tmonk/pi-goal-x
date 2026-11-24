@@ -213,8 +213,9 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		if (parts) {
 			// Retain previously sent tails verbatim at their anchors so this
 			// request extends the previous one instead of displacing its tail.
-			// Only genuinely new state/counters content is appended.
-			const { messages: retained } = liveRetention.apply(sessionKey, base, { state: parts.state, counters: parts.counters });
+			// Only genuinely new policy and task-list content is appended; usage
+			// and notes ride at the end of this request only.
+			const { messages: retained } = liveRetention.apply(sessionKey, base, parts);
 			return retained;
 		}
 		liveRetention.clear(sessionKey);

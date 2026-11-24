@@ -43,12 +43,11 @@ test("task progress from #108 no longer resets the prefix, and the gate rejects 
 	}
 });
 
-test("approved display removal must be exact and confined to a goal counter block", () => {
-	const baseline = {version: 1, rows: [{id: "counter", ...summarize({messages: [{role: "user", content: "Goal snapshot: 12 tokens\nContext snapshot: unavailable\nAutonomous runs: 1/3"}]})}]};
-	const candidate = {version: 1, rows: [{id: "counter", ...summarize({messages: [{role: "user", content: "Goal snapshot: 12 tokens\nAutonomous runs: 1/3"}]})}]};
-	assert.equal(compareReports(baseline, candidate).approvedDifferences.length, 1);
-	candidate.rows[0] = {id: "counter", ...summarize({messages: [{role: "user", content: "Goal snapshot: 12 tokens\nAutonomous runs: 1/3 extra instruction"}]})};
-	assert.throws(() => compareReports(baseline, candidate), /unexpected counter edit/);
+test("goal text may be re-split but nothing else may change", () => {
+	const make = (history: string, snapshot: string) => ({version: 1, rows: [{id: "split", ...summarize({messages: [{role: "user", content: history}, {role: "user", content: snapshot}]})}]});
+	const baseline = make("history", "Goal snapshot: 12 tokens\nAutonomous runs: 1/3");
+	assert.equal(compareReports(baseline, make("history", "Goal snapshot: 12 tokens")).approvedDifferences.length, 1);
+	assert.throws(() => compareReports(baseline, make("edited history", "Goal snapshot: 12 tokens")), /non-goal content changed/);
 });
 
 test("cache gate rejects serialized early-content changes and removed or relocated markers", () => {
