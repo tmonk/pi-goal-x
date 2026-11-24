@@ -1,4 +1,3 @@
-import type { GoalCore } from "../extensions/goal-state.ts";
 /**
  * Stage 0 golden tests: the continuation checkpoint contract.
  *
@@ -21,80 +20,31 @@ import path from "node:path";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import piGoalExtension from "../extensions/goal.ts";
 import {
 	createGoal,
 	goalFocusDetails,
 	type GoalRecord,
 	type GoalStateEntry,
 } from "../extensions/goal-record.ts";
+import { createExtensionHarness } from "./support/extension-harness.ts";
 import { writeProjectSettings } from "./support/settings.ts";
 
 const FIXTURE_GOAL = readFileSync(new URL("./fixtures/goals/active_goal_fixture.md", import.meta.url), "utf8");
 
-// ── Harness ──────────────────────────────────────────────────────────────────
+// ── Host ─────────────────────────────────────────────────────────────────────
 
-interface HandlerMap {
-	[key: string]: (event: any, ctx: ExtensionContext) => Promise<unknown> | unknown;
-}
-
-function createHarness(cwd: string) {
-	const handlers: HandlerMap = {};
-	const sentMessages: Array<{ customType?: string; details?: unknown }> = [];
-	const notifications: Array<{ message: string; level?: string }> = [];
-	let aborts = 0;
-	let toolCalls = 0;
-
-	const mockPi = {
-		registerTool: () => {},
-		registerCommand: () => {},
-		on: (event: string, handler: (...args: never[]) => unknown) => {
-			handlers[event] = handler as HandlerMap[string];
-		},
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendMessage: (msg: { customType?: string; details?: unknown }) => {
-			sentMessages.push(msg);
-		},
-		sendUserMessage: () => {},
-		getActiveTools: () => ["read", "bash", "edit", "write"],
-		setActiveTools: () => {},
-		hasUI: false,
-	};
-
-	const ctx = {
+/** A host that looks busy, so continuation reschedules; see idleCtx() for the idle one. */
+function createHarness(cwd: string, goal: GoalRecord) {
+	return createExtensionHarness({
 		cwd,
-		hasUI: false,
-		sessionManager: {
-			getBranch: () => [],
-			getCwd: () => cwd,
-			getSessionId: () => "test-session",
-			getRoot: () => cwd,
-			append: () => {},
-			appendModelChange: () => {},
-			appendThinkingLevelChange: () => {},
-			appendCompetingWriteCheck: () => {},
-			buildSessionContext: () => ({ messages: [], sessionId: "test", model: null, thinkingLevel: "medium" }),
-		},
-		getSystemPrompt: () => "",
+		sessionEntries: sessionEntriesFor(goal),
 		isIdle: () => false,
 		hasPendingMessages: () => true,
-		abort: () => { aborts++; },
-		ui: { notify: (message: string, level?: string) => { notifications.push({ message, level }); } },
-	} as unknown as ExtensionContext & { abort: () => void };
-
-	piGoalExtension(mockPi as never);
-
-	return {
-		core: (mockPi as unknown as { _goalCore: GoalCore })._goalCore,
-		handlers,
-		sentMessages,
-		notifications,
-		get aborts() { return aborts; },
-		get toolCalls() { return toolCalls; },
-		ctx,
-	};
+		systemPrompt: "",
+	});
 }
+
+type Harness = ReturnType<typeof createHarness>;
 
 function fixtureCwd(): { cwd: string; goal: GoalRecord } {
 	const cwd = mkdtempSync(path.join(tmpdir(), "goal-stale-"));
@@ -127,34 +77,24 @@ function sessionEntriesFor(goal: GoalRecord) {
 	];
 }
 
-async function startSession(handlers: HandlerMap, ctx: ExtensionContext, entries: unknown[]) {
-	const ss = handlers["session_start"];
-	assert.ok(ss, "session_start handler must be registered");
-	ctx.sessionManager.getBranch = () => entries as ReturnType<ExtensionContext["sessionManager"]["getBranch"]>;
-	await ss({ reason: "start" }, ctx);
-}
-
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 for (const custom of [false, true]) test(`golden: stale ${custom ? "custom" : "prompt"} checkpoint for a non-focused goal aborts the turn and injects GOAL STALE`, async () => {
 	const { cwd, goal } = fixtureCwd();
-	const h = createHarness(cwd);
+	const h = createHarness(cwd, goal);
 	try {
-		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
-
-		const bas = h.handlers["before_agent_start"];
-		assert.ok(bas);
+		await h.sessionStart();
 
 		// A checkpoint claims a goal that is not focused/active in this session.
-		await bas({
+		await h.emit("before_agent_start", {
 			systemPrompt: "base",
 			...(custom ? { messageType: "custom", message: { customType: "pi-goal-event", details: { goalId: "ghost-goal" }, content: "Checkpoint" } }
 				: { prompt: '<pi_goal_continuation goal_id="ghost-goal" kind="checkpoint">continue' }),
 			systemPromptOptions: {},
 		}, h.ctx);
 
-		assert.equal(h.aborts, 1, "stale checkpoint must abort the turn");
-		const result = await h.handlers["context_with_system"]!({ messages: [] }, h.ctx);
+		assert.equal(h.abortCount, 1, "stale checkpoint must abort the turn");
+		const result = await h.emit("context_with_system", { messages: [] }, h.ctx);
 		const systemPrompt = (result as { messages?: {content: string}[] } | undefined)?.messages?.at(-1)?.content ?? "";
 		assert.match(systemPrompt, /\[GOAL STALE goalId=ghost-goal\]/);
 		assert.match(systemPrompt, /Do not perform task work for this stale checkpoint/);
@@ -165,22 +105,19 @@ for (const custom of [false, true]) test(`golden: stale ${custom ? "custom" : "p
 
 for (const custom of [false, true]) test(`golden: matching ${custom ? "custom" : "prompt"} checkpoint proceeds without stale handling`, async () => {
 	const { cwd, goal } = fixtureCwd();
-	const h = createHarness(cwd);
+	const h = createHarness(cwd, goal);
 	try {
-		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+		await h.sessionStart();
 
-		const bas = h.handlers["before_agent_start"];
-		assert.ok(bas);
-
-		await bas({
+		await h.emit("before_agent_start", {
 			systemPrompt: "base",
 			...(custom ? { messageType: "custom", message: { customType: "pi-goal-event", details: { goalId: goal.id }, content: "Checkpoint" } }
 				: { prompt: `<pi_goal_continuation goal_id="${goal.id}" kind="checkpoint">continue` }),
 			systemPromptOptions: {},
 		}, h.ctx);
 
-		assert.equal(h.aborts, 0, "matching checkpoint must not abort");
-		const result = await h.handlers["context_with_system"]!({ messages: [] }, h.ctx);
+		assert.equal(h.abortCount, 0, "matching checkpoint must not abort");
+		const result = await h.emit("context_with_system", { messages: [] }, h.ctx);
 		const systemPrompt = (result as { messages?: {content: string}[] } | undefined)?.messages?.at(-1)?.content ?? "";
 		assert.doesNotMatch(systemPrompt, /GOAL STALE/);
 	} finally {
@@ -190,20 +127,20 @@ for (const custom of [false, true]) test(`golden: matching ${custom ? "custom" :
 
 test("golden: user-driven turn cancels a pending continuation", async () => {
 	const { cwd, goal } = fixtureCwd();
-	const h = createHarness(cwd);
+	const h = createHarness(cwd, goal);
 	try {
-		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+		await h.sessionStart();
 
 		// Simulate a work turn that queues a continuation: turn_start, a bash
 		// tool call, then a non-tool-use assistant message at turn_end.
-		await h.handlers["turn_start"]!({}, h.ctx);
-		await h.handlers["tool_call"]!({ toolName: "bash", args: { command: "ls" } }, h.ctx);
-		await h.handlers["tool_execution_end"]!({}, h.ctx);
-		await h.handlers["turn_end"]!({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } }, h.ctx);
+		await h.emit("turn_start", {}, h.ctx);
+		await h.emit("tool_call", { toolName: "bash", args: { command: "ls" } }, h.ctx);
+		await h.emit("tool_execution_end", {}, h.ctx);
+		await h.emit("turn_end", { message: { role: "assistant", content: [{ type: "text", text: "done" }] } }, h.ctx);
 
 		// The continuation timer is pending (non-idle ctx keeps it scheduled).
 		// A user-driven turn must cancel it before it fires.
-		await h.handlers["before_agent_start"]!({
+		await h.emit("before_agent_start", {
 			systemPrompt: "base",
 			prompt: "user typed a new instruction",
 			systemPromptOptions: {},
@@ -235,7 +172,7 @@ function idleCtx(ctx: ExtensionContext): ExtensionContext {
 	} as unknown as ExtensionContext;
 }
 
-async function countCheckpoints(h: ReturnType<typeof createHarness>): Promise<number> {
+async function countCheckpoints(h: Harness): Promise<number> {
 	await new Promise((resolve) => setTimeout(resolve, 20));
 	return h.sentMessages.filter(
 		(m) => m.customType === "pi-goal-event" && (m.details as { kind?: string } | undefined)?.kind === "checkpoint",
@@ -243,33 +180,33 @@ async function countCheckpoints(h: ReturnType<typeof createHarness>): Promise<nu
 }
 
 /** Mark this agent run as having done goal work (empty-turn gate). */
-async function declareNextRun(h: ReturnType<typeof createHarness>): Promise<void> {
-	await h.handlers["turn_start"]!({}, h.ctx);
-	await h.handlers["tool_call"]!({ toolName: "bash", args: { command: "ls" } }, h.ctx);
-	await h.handlers["tool_execution_end"]!({}, h.ctx);
+async function declareNextRun(h: Harness): Promise<void> {
+	await h.emit("turn_start", {}, h.ctx);
+	await h.emit("tool_call", { toolName: "bash", args: { command: "ls" } }, h.ctx);
+	await h.emit("tool_execution_end", {}, h.ctx);
 	writeProjectSettings(h.ctx.cwd, { maxAutonomousRuns: 5 });
 	assert.equal(h.core.scheduler.declare(h.ctx, { kind: "ready" }).terminate, true);
 }
 
 test("provider-error guard: turn_end with stopReason=error never queues a continuation", async () => {
 	const { cwd, goal } = fixtureCwd();
-	const h = createHarness(cwd);
+	const h = createHarness(cwd, goal);
 	try {
-		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+		await h.sessionStart();
 
 		// Cancel the continuation session_start armed (non-idle ctx keeps it
 		// scheduled) so the turn itself owns the queue decision.
-		await h.handlers["before_agent_start"]!({
+		await h.emit("before_agent_start", {
 			systemPrompt: "base",
 			prompt: "user typed: continue",
 			systemPromptOptions: {},
 		}, h.ctx);
 
 		// A work turn that ends in a provider error (work tool ran, then error).
-		await h.handlers["turn_start"]!({}, h.ctx);
-		await h.handlers["tool_call"]!({ toolName: "bash", args: { command: "ls" } }, h.ctx);
-		await h.handlers["tool_execution_end"]!({}, h.ctx);
-		await h.handlers["turn_end"]!({ message: { role: "assistant", stopReason: "error" } }, idleCtx(h.ctx));
+		await h.emit("turn_start", {}, h.ctx);
+		await h.emit("tool_call", { toolName: "bash", args: { command: "ls" } }, h.ctx);
+		await h.emit("tool_execution_end", {}, h.ctx);
+		await h.emit("turn_end", { message: { role: "assistant", stopReason: "error" } }, idleCtx(h.ctx));
 
 		assert.equal(await countCheckpoints(h), 0, "error turn must not queue a continuation");
 	} finally {
@@ -279,21 +216,21 @@ test("provider-error guard: turn_end with stopReason=error never queues a contin
 
 test("ordinary work without a disposition does not queue a continuation", async () => {
 	const { cwd, goal } = fixtureCwd();
-	const h = createHarness(cwd);
+	const h = createHarness(cwd, goal);
 	try {
-		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+		await h.sessionStart();
 
 		// Cancel the continuation session_start armed (see above).
-		await h.handlers["before_agent_start"]!({
+		await h.emit("before_agent_start", {
 			systemPrompt: "base",
 			prompt: "user typed: continue",
 			systemPromptOptions: {},
 		}, h.ctx);
 
-		await h.handlers["turn_start"]!({}, h.ctx);
-		await h.handlers["tool_call"]!({ toolName: "bash", args: { command: "ls" } }, h.ctx);
-		await h.handlers["tool_execution_end"]!({}, h.ctx);
-		await h.handlers["turn_end"]!({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } }, idleCtx(h.ctx));
+		await h.emit("turn_start", {}, h.ctx);
+		await h.emit("tool_call", { toolName: "bash", args: { command: "ls" } }, h.ctx);
+		await h.emit("tool_execution_end", {}, h.ctx);
+		await h.emit("turn_end", { message: { role: "assistant", content: [{ type: "text", text: "done" }] } }, idleCtx(h.ctx));
 
 		assert.equal(await countCheckpoints(h), 0, "work tools alone must not authorize continuation");
 	} finally {
@@ -303,12 +240,12 @@ test("ordinary work without a disposition does not queue a continuation", async 
 
 test("provider-error guard: agent_end with an error message never queues a continuation", async () => {
 	const { cwd, goal } = fixtureCwd();
-	const h = createHarness(cwd);
+	const h = createHarness(cwd, goal);
 	try {
-		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+		await h.sessionStart();
 
-		await h.handlers["agent_end"]!({ messages: [{ role: "assistant", stopReason: "error" }] }, idleCtx(h.ctx));
-		await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
+		await h.emit("agent_end", { messages: [{ role: "assistant", stopReason: "error" }] }, idleCtx(h.ctx));
+		await h.emit("agent_settled", {}, idleCtx(h.ctx));
 
 		assert.equal(await countCheckpoints(h), 0, "agent_end with an error message must not queue a continuation");
 	} finally {
@@ -318,23 +255,23 @@ test("provider-error guard: agent_end with an error message never queues a conti
 
 test("network-error recovery waits for agent_settled before scheduling its backoff", async () => {
 	const { cwd, goal } = fixtureCwd();
-	const h = createHarness(cwd);
+	const h = createHarness(cwd, goal);
 	try {
-		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
-		await h.handlers["before_agent_start"]!({
+		await h.sessionStart();
+		await h.emit("before_agent_start", {
 			systemPrompt: "base",
 			prompt: "user typed: continue",
 			systemPromptOptions: {},
 		}, h.ctx);
 
-		await h.handlers["agent_end"]!({
+		await h.emit("agent_end", {
 			messages: [{ role: "assistant", stopReason: "error", errorMessage: "Provider finish_reason: network_error" }],
 		}, idleCtx(h.ctx));
 		assert.equal(await countCheckpoints(h), 0, "agent_end must not race Pi's built-in retries");
 
-		await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
+		await h.emit("agent_settled", {}, idleCtx(h.ctx));
 		assert.equal(await countCheckpoints(h), 0, "the first recovery is delayed by the backoff policy");
-		assert.match(h.notifications.at(-1)?.message ?? "", /Retrying the goal in 5s \(recovery 1, unbounded\)/);
+		assert.match(h.notices.at(-1)?.message ?? "", /Retrying the goal in 5s \(recovery 1, unbounded\)/);
 	} finally {
 		// The delayed timer is unref'd and needs no test teardown.
 	}
@@ -342,26 +279,26 @@ test("network-error recovery waits for agent_settled before scheduling its backo
 
 test("a successful Pi retry clears the pending network-error recovery", async () => {
 	const { cwd, goal } = fixtureCwd();
-	const h = createHarness(cwd);
+	const h = createHarness(cwd, goal);
 	try {
-		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
-		await h.handlers["before_agent_start"]!({
+		await h.sessionStart();
+		await h.emit("before_agent_start", {
 			systemPrompt: "base",
 			prompt: "user typed: continue",
 			systemPromptOptions: {},
 		}, h.ctx);
 
-		await h.handlers["agent_end"]!({
+		await h.emit("agent_end", {
 			messages: [{ role: "assistant", stopReason: "error", errorMessage: "Provider finish_reason: network_error" }],
 		}, idleCtx(h.ctx));
 		await declareNextRun(h);
-		await h.handlers["agent_end"]!({
+		await h.emit("agent_end", {
 			messages: [{ role: "assistant", stopReason: "end_turn" }],
 		}, idleCtx(h.ctx));
-		await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
+		await h.emit("agent_settled", {}, idleCtx(h.ctx));
 
 		assert.equal(await countCheckpoints(h), 1, "the successful Pi retry uses the normal continuation path");
-		assert.equal(h.notifications.length, 0, "no goal-level recovery is announced after Pi retries successfully");
+		assert.equal(h.notices.length, 0, "no goal-level recovery is announced after Pi retries successfully");
 	} finally {
 		// No delayed timer should exist after the successful retry.
 	}
@@ -369,15 +306,15 @@ test("a successful Pi retry clears the pending network-error recovery", async ()
 
 test("successful agent_end waits for agent_settled before queuing a continuation", async () => {
 	const { cwd, goal } = fixtureCwd();
-	const h = createHarness(cwd);
+	const h = createHarness(cwd, goal);
 	try {
-		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
+		await h.sessionStart();
 		await declareNextRun(h);
 
-		await h.handlers["agent_end"]!({ messages: [{ role: "assistant", stopReason: "end_turn" }] }, idleCtx(h.ctx));
+		await h.emit("agent_end", { messages: [{ role: "assistant", stopReason: "end_turn" }] }, idleCtx(h.ctx));
 		assert.equal(await countCheckpoints(h), 0, "agent_end runs before pi is truly idle");
 
-		await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
+		await h.emit("agent_settled", {}, idleCtx(h.ctx));
 		assert.equal(await countCheckpoints(h), 1, "agent_settled queues the continuation without idle polling");
 	} finally {
 		// temp dir cleanup is best-effort.
@@ -387,25 +324,25 @@ test("successful agent_end waits for agent_settled before queuing a continuation
 for (const optIn of [false, true]) test(`empty no-tool runs continue implicitly; pacing opt-in=${optIn}`, async () => {
 	const { cwd, goal } = fixtureCwd();
 	writeProjectSettings(cwd, { idleContinuationBackoff: optIn });
-	const h = createHarness(cwd);
+	const h = createHarness(cwd, goal);
 	try {
-		await startSession(h.handlers, h.ctx, sessionEntriesFor(goal));
-		await h.handlers["before_agent_start"]!({
+		await h.sessionStart();
+		await h.emit("before_agent_start", {
 			systemPrompt: "base",
 			prompt: "Continue the fixture goal.",
 			systemPromptOptions: {},
 		}, h.ctx);
-		await h.handlers["agent_start"]!({}, idleCtx(h.ctx));
+		await h.emit("agent_start", {}, idleCtx(h.ctx));
 
-		await h.handlers["agent_end"]!({ messages: [{ role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "Paused. No action." }] }] }, idleCtx(h.ctx));
-		await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
+		await h.emit("agent_end", { messages: [{ role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "Paused. No action." }] }] }, idleCtx(h.ctx));
+		await h.emit("agent_settled", {}, idleCtx(h.ctx));
 
 		assert.equal(await countCheckpoints(h), 1, "a successful no-tool execution continues");
 		assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "ready");
-		await h.handlers["agent_start"]!({}, idleCtx(h.ctx));
-		await h.handlers["message_start"]!({ message: { ...h.sentMessages.at(-1), role: "custom" } }, idleCtx(h.ctx));
-		await h.handlers["agent_end"]!({ messages: [{ role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "Still no action." }] }] }, idleCtx(h.ctx));
-		await h.handlers["agent_settled"]!({}, idleCtx(h.ctx));
+		await h.emit("agent_start", {}, idleCtx(h.ctx));
+		await h.emit("message_start", { message: { ...h.sentMessages.at(-1), role: "custom" } }, idleCtx(h.ctx));
+		await h.emit("agent_end", { messages: [{ role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "Still no action." }] }] }, idleCtx(h.ctx));
+		await h.emit("agent_settled", {}, idleCtx(h.ctx));
 		assert.equal(await countCheckpoints(h), optIn ? 1 : 2, "only an explicit opt-in defers repeated idle replies");
 		assert.equal(h.core.state.goal?.status, "active");
 		assert.equal(h.core.state.goal?.scheduler?.phase, optIn ? "ready" : "claimed", "continuation stays authorized without a declaration");

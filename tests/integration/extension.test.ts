@@ -9,29 +9,16 @@
  */
 
 import { skipWhenRoot } from "../support/permissions.ts";
+import { createExtensionHarness } from "../support/extension-harness.ts";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, appendFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../../extensions/goal.ts";
 import { createGoal, goalFocusDetails } from "../../extensions/goal-record.ts";
 import { activePathForGoal, parseGoalFile, serializeGoalFile, writeActiveGoalFile } from "../../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../../extensions/goal-ledger.ts";
-
-interface Harness {
-	handlers: Map<string, Function>;
-	tools: Map<string, ToolDefinition>;
-	commands: Map<string, any>;
-	ctx: ExtensionContext;
-	notifies: Array<{ msg: string; level: string }>;
-	activeToolsHistory: string[][];
-	terminalInputHandler: ((data: string) => unknown) | null;
-	statusCalls: Array<{ key: string; value?: string }>;
-	widgetCalls: Array<{ key: string; factory: unknown }>;
-}
 
 interface HarnessOptions {
 	cwd: string;
@@ -44,58 +31,31 @@ interface HarnessOptions {
 	uiCustom?: () => Promise<any>;
 }
 
-function createHarness(options: HarnessOptions): Harness {
-	const handlers = new Map<string, Function>();
-	const tools = new Map<string, ToolDefinition>();
-	const commands = new Map<string, any>();
-	const notifies: Array<{ msg: string; level: string }> = [];
-	const activeToolsHistory: string[][] = [];
+/** The shared host, plus a record of the status and widget calls these tests inspect. */
+function createHarness(options: HarnessOptions) {
 	const statusCalls: Array<{ key: string; value?: string }> = [];
 	const widgetCalls: Array<{ key: string; factory: unknown }> = [];
-	let activeTools = ["read", "bash", "edit", "write"];
-	let terminalInputHandler: ((data: string) => unknown) | null = null;
-	const pi = {
-		registerTool: (def: ToolDefinition) => { tools.set(def.name, def); },
-		registerCommand: (name: string, def: any) => { commands.set(name, def); },
-		on: (event: string, handler: Function) => { handlers.set(event, handler); },
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendMessage: () => {},
-		getActiveTools: () => [...activeTools],
-		setActiveTools: (next: string[]) => { activeTools = [...next]; activeToolsHistory.push([...next]); },
-		hasUI: options.hasUI ?? false,
-	};
-	const ctx = {
+	const h = createExtensionHarness({
 		cwd: options.cwd,
-		hasUI: options.hasUI ?? false,
-		modelRegistry: { getAvailable: () => [] },
-		model: undefined,
-		sessionManager: {
-			getBranch: () => options.sessionEntries,
-			getCwd: () => options.cwd,
-			getSessionId: () => "integration-session",
-			getRoot: () => options.cwd,
-		},
+		sessionEntries: options.sessionEntries,
+		hasUI: options.hasUI,
+		sessionId: "integration-session",
+		systemPrompt: "base",
+		runCompletionAuditor: options.runCompletionAuditor,
+		ctx: { modelRegistry: { getAvailable: () => [] }, model: undefined },
 		ui: {
-			notify: (msg: string, level: string) => { notifies.push({ msg, level }); }, setStatus: (key: string, value?: string) => { statusCalls.push({ key, value }); }, setWidget: (key: string, factory: unknown) => { widgetCalls.push({ key, factory }); },
-			onTerminalInput: (cb: (data: string) => unknown) => { terminalInputHandler = cb; return () => {}; },
-			select: options.select ?? (async () => undefined),
-			input: options.input ?? (async () => undefined),
-			confirm: options.confirm ?? (async () => false),
-			custom: options.uiCustom ?? (async () => undefined),
+			setStatus: (key: string, value?: string) => { statusCalls.push({ key, value }); },
+			setWidget: (key: string, factory: unknown) => { widgetCalls.push({ key, factory }); },
+			...(options.select ? { select: options.select } : {}),
+			...(options.input ? { input: options.input } : {}),
+			...(options.confirm ? { confirm: options.confirm } : {}),
+			...(options.uiCustom ? { custom: options.uiCustom } : {}),
 		},
-		getSystemPrompt: () => "base",
-		isIdle: () => true,
-		hasPendingMessages: () => false,
-		abort: () => {},
-	} as unknown as ExtensionContext;
-	goalExtension(pi as any, options.runCompletionAuditor ? { runCompletionAuditor: options.runCompletionAuditor } : {});
-	return {
-		handlers, tools, commands, ctx, notifies, activeToolsHistory,
-		statusCalls, widgetCalls,
-		get terminalInputHandler() { return terminalInputHandler; },
-	};
+	});
+	return Object.assign(h, { statusCalls, widgetCalls });
 }
+
+type Harness = ReturnType<typeof createHarness>;
 
 async function start(h: Harness): Promise<void> {
 	await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
@@ -162,30 +122,21 @@ describe("five-tool handler integration", () => {
 		// The fixed profile is installed at session_start; extension loading
 		// itself must not touch the active-tool API (host compatibility).
 		let getActiveToolsCalls = 0;
-		const isolatedHandlers = new Map<string, Function>();
-		const isolatedPi = {
-			registerTool: () => {},
-			registerCommand: () => {},
-			on: (event: string, handler: Function) => { isolatedHandlers.set(event, handler); },
-			appendEntry: () => {}, registerMessageRenderer: () => {}, sendMessage: () => {},
-			getActiveTools: () => { getActiveToolsCalls++; throw new Error("Extension runtime not initialized."); },
-			setActiveTools: () => {}, hasUI: false,
-		};
-		goalExtension(isolatedPi as any);
-		assert.equal(getActiveToolsCalls, 0, "no getActiveTools call during extension loading");
 		const cwd = mkdtempSync(path.join(tmpdir(), "goal-int-load-"));
 		mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 		try {
-			const emptyCtx = {
-				cwd, hasUI: false,
-				sessionManager: { getBranch: () => [], getCwd: () => cwd, getSessionId: () => "s", getRoot: () => cwd },
-				ui: { notify: () => {}, setStatus: () => {}, setWidget: () => {}, onTerminalInput: () => () => {}, select: async () => undefined, confirm: async () => false, custom: async () => undefined },
-				getSystemPrompt: () => "", isIdle: () => true, hasPendingMessages: () => false, abort: () => {},
-			} as unknown as ExtensionContext;
+			const isolated = createExtensionHarness({
+				cwd,
+				sessionEntries: [],
+				systemPrompt: "",
+				sessionId: "s",
+				pi: { getActiveTools: () => { getActiveToolsCalls++; throw new Error("Extension runtime not initialized."); } },
+			});
+			assert.equal(getActiveToolsCalls, 0, "no getActiveTools call during extension loading");
 			const originalConsoleError = console.error;
 			console.error = () => {};
 			try {
-				await isolatedHandlers.get("session_start")?.({ reason: "start" }, emptyCtx);
+				await isolated.sessionStart();
 			} finally {
 				console.error = originalConsoleError;
 			}
@@ -201,7 +152,7 @@ describe("five-tool handler integration", () => {
 			const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries });
 			await start(h);
 			await h.commands.get("goal-status")?.handler("health", h.ctx);
-			const notification = h.notifies.at(-1)?.msg ?? "";
+			const notification = h.notices.at(-1)?.message ?? "";
 			assert.match(notification, /^Goal health: OK/);
 			assert.match(notification, /OK Goal file:/);
 			assert.equal(activeGoalFiles(f.cwd).length, 1, "health mode must not mutate goal storage");
@@ -222,7 +173,7 @@ describe("five-tool handler integration", () => {
 			await start(h);
 
 			await h.commands.get("goal-refresh")?.handler("", h.ctx);
-			const first = h.notifies.at(-1)?.msg ?? "";
+			const first = h.notices.at(-1)?.message ?? "";
 			assert.match(first, /no changes detected/, "unchanged state reports no changes");
 
 			// External edits (raw fs, bypassing the extension's own cache
@@ -234,7 +185,7 @@ describe("five-tool handler integration", () => {
 			writeFileSync(path.join(f.cwd, ".pi", "pi-goal-x-settings.json"), JSON.stringify({ subtaskDepth: 3, provider: "anthropic" }), "utf8");
 
 			await h.commands.get("goal-refresh")?.handler("", h.ctx);
-			const report = h.notifies.at(-1)?.msg ?? "";
+			const report = h.notices.at(-1)?.message ?? "";
 			assert.match(report, /goal-refresh: re-read caches from disk — 3 change\(s\):/);
 			assert.ok(report.includes(`pool: 1 goal(s) added — ${second.id}`), `pool addition reported for ${second.id}`);
 			assert.match(report, /ledger: 0 -> 1 events/);
@@ -242,7 +193,7 @@ describe("five-tool handler integration", () => {
 
 			// A second refresh with no new external edits reports no changes again.
 			await h.commands.get("goal-refresh")?.handler("", h.ctx);
-			const again = h.notifies.at(-1)?.msg ?? "";
+			const again = h.notices.at(-1)?.message ?? "";
 			assert.match(again, /no changes detected/);
 		} finally {
 			f.cleanup();
@@ -258,7 +209,7 @@ describe("five-tool handler integration", () => {
 				return { approved: true, disapproved: false, output: "All good\n<approved/>", model: "fixture" };
 			} });
 			await start(h);
-			assert.ok(installedProfileContains(h.activeToolsHistory, [...HOST_TOOLS, "create_goal", "get_goal", "update_goal", "set_goal_tasks"]),
+			assert.ok(installedProfileContains(h.toolHistory, [...HOST_TOOLS, "create_goal", "get_goal", "update_goal", "set_goal_tasks"]),
 				"session_start advertises active goal operations before a task tree exists");
 			const update = h.tools.get("update_goal")!;
 			const result = await (update.execute as any)("u-1", { status: "complete" }, new AbortController().signal, undefined, h.ctx);
@@ -362,9 +313,9 @@ describe("five-tool handler integration", () => {
 			}
 			// Captured setActiveTools calls (not just registered names): the
 			// three-core profile is installed and task tools are never active.
-			assert.ok(installedProfileContains(h.activeToolsHistory, [...HOST_TOOLS, ...THREE]),
+			assert.ok(installedProfileContains(h.toolHistory, [...HOST_TOOLS, ...THREE]),
 				"captured profile includes host + three core tools");
-			assert.ok(installedProfileExcludes(h.activeToolsHistory, ["set_goal_tasks", "update_goal_task"]),
+			assert.ok(installedProfileExcludes(h.toolHistory, ["set_goal_tasks", "update_goal_task"]),
 				"task tools are never installed when tasks are disabled");
 			// The executors reject task calls when disabled.
 			const setTasks = h.tools.get("set_goal_tasks")!;
@@ -583,7 +534,7 @@ describe("five-tool handler integration", () => {
 				});
 				await start(h2);
 				await h2.commands.get("goal-settings").handler("", h2.ctx);
-				assert.ok(h2.notifies.some((n) => n.level === "warning" && n.msg.includes("thinking_level must be one of")),
+				assert.ok(h2.notices.some((n) => n.level === "warning" && n.message.includes("thinking_level must be one of")),
 					"unknown thinking level warns");
 				assert.equal(readSettings(f.cwd).thinking_level, "max", "rejected value is not persisted");
 			} finally {
@@ -608,7 +559,7 @@ describe("five-tool handler integration", () => {
 				});
 				await start(h);
 				await h.commands.get("goal-settings").handler("", h.ctx);
-				const warnings = h.notifies.filter((n) => n.level === "warning" && n.msg.includes("subtaskDepth"));
+				const warnings = h.notices.filter((n) => n.level === "warning" && n.message.includes("subtaskDepth"));
 				assert.equal(warnings.length, rejects.length - 1, `every invalid input warns: ${warnings.length}`);
 				assert.equal(readSettings(f.cwd).subtaskDepth, 1, "only the valid input is persisted");
 			} finally {
@@ -631,11 +582,11 @@ describe("five-tool handler integration", () => {
 				});
 				await start(h);
 				// session_start installed the five-tool profile: history[0].
-				assert.equal(h.activeToolsHistory.length, 1, "one install at session_start");
+				assert.equal(h.toolHistory.length, 1, "one install at session_start");
 				await h.commands.get("goal-settings").handler("", h.ctx);
 				// Each real change reinstalls exactly once: three, five, three.
-				assert.equal(h.activeToolsHistory.length, 4, "three reinstalls after session_start");
-				const installed = h.activeToolsHistory.slice(1).map((tools) => (tools.includes("set_goal_tasks") ? "five" : "three"));
+				assert.equal(h.toolHistory.length, 4, "three reinstalls after session_start");
+				const installed = h.toolHistory.slice(1).map((tools) => (tools.includes("set_goal_tasks") ? "five" : "three"));
 				assert.deepEqual(installed, ["three", "five", "three"], "profile alternates three/five/three, never skipping a toggle");
 				const saved = readSettings(f.cwd);
 				assert.equal(saved.disableTasks, true, "final file state has tasks disabled");
@@ -713,8 +664,8 @@ describe("five-tool handler integration", () => {
 				const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: false });
 				await start(h);
 				await h.commands.get("goal-settings").handler("", h.ctx);
-				assert.ok(h.notifies.some((n) => n.msg.includes("project file: ") && n.msg.includes("pi-goal-x-settings.json") && n.msg.includes("Global file: ")),
-					`headless notification reports both layer paths: ${h.notifies.map((n) => n.msg).join(" | ")}`);
+				assert.ok(h.notices.some((n) => n.message.includes("project file: ") && n.message.includes("pi-goal-x-settings.json") && n.message.includes("Global file: ")),
+					`headless notification reports both layer paths: ${h.notices.map((n) => n.message).join(" | ")}`);
 				const p = settingsPath(f.cwd);
 				assert.ok(!existsSync(p), "headless invocation must not create the settings file");
 			} finally {
@@ -731,8 +682,8 @@ describe("five-tool handler integration", () => {
 				// override forces disableTasks even though the file is absent.
 				const h = createHarness({ cwd: f.cwd, sessionEntries: f.sessionEntries, hasUI: true });
 				await start(h);
-				assert.equal(h.activeToolsHistory.length, 1, "three-tool install at session_start");
-				assert.ok(!h.activeToolsHistory[0]!.includes("set_goal_tasks"), "env override installs the core profile");
+				assert.equal(h.toolHistory.length, 1, "three-tool install at session_start");
+				assert.ok(!h.toolHistory[0]!.includes("set_goal_tasks"), "env override installs the core profile");
 				// The env override makes the disableTasks row read-only: selecting it
 				// warns and never mutates, so no reinstall may happen.
 				const selects = ["  disableTasks: false (environment; read-only)", "Done"];
@@ -742,7 +693,7 @@ describe("five-tool handler integration", () => {
 				});
 				await start(h2);
 				await h2.commands.get("goal-settings").handler("", h2.ctx);
-				assert.equal(h2.activeToolsHistory.length, 1, "no reinstall when the effective setting never changed");
+				assert.equal(h2.toolHistory.length, 1, "no reinstall when the effective setting never changed");
 			} finally {
 				if (prevTasks === undefined) delete process.env.PI_GOAL_DISABLE_TASKS;
 				else process.env.PI_GOAL_DISABLE_TASKS = prevTasks;
@@ -769,7 +720,7 @@ describe("confirmation and audit UX (follow-up Stage 2)", () => {
 			const after = readFileSync(path.join(f.cwd, ".pi", "goals", activeGoalFiles(f.cwd)[0]!), "utf8");
 			assert.equal(after, before, "active goal file unchanged byte-for-byte");
 			assert.equal(ledgerEvents(f.cwd).length, ledgerBefore, "no ledger entry appended on cancel");
-			assert.ok(h.notifies.some((n) => n.msg.includes("cancelled")), "cancel acknowledged");
+			assert.ok(h.notices.some((n) => n.message.includes("cancelled")), "cancel acknowledged");
 		} finally {
 			f.cleanup();
 		}
@@ -787,7 +738,7 @@ describe("confirmation and audit UX (follow-up Stage 2)", () => {
 			assert.equal(activeGoalFiles(f.cwd).length, 0, "goal archived after confirm");
 			const archived = readdirSync(path.join(f.cwd, ".pi", "goals", "archived"));
 			assert.equal(archived.length, 1, "exactly one goal archived");
-			assert.ok(h.notifies.some((n) => n.msg.includes("cleared and archived")), "archive acknowledged");
+			assert.ok(h.notices.some((n) => n.message.includes("cleared and archived")), "archive acknowledged");
 		} finally {
 			f.cleanup();
 		}
@@ -804,7 +755,7 @@ describe("confirmation and audit UX (follow-up Stage 2)", () => {
 			assert.equal(activeGoalFiles(f.cwd).length, 1, "headless clear must not archive");
 			assert.equal(readFileSync(path.join(f.cwd, ".pi", "goals", activeGoalFiles(f.cwd)[0]!), "utf8"), before, "file unchanged");
 			assert.equal(ledgerEvents(f.cwd).length, ledgerBefore, "no ledger entry in headless clear");
-			assert.ok(h.notifies.some((n) => n.msg.includes("interactive session")), "headless guidance notification");
+			assert.ok(h.notices.some((n) => n.message.includes("interactive session")), "headless guidance notification");
 		} finally {
 			f.cleanup();
 		}
@@ -833,7 +784,7 @@ describe("confirmation and audit UX (follow-up Stage 2)", () => {
 			// controller are set. Simulate the user pressing Escape mid-audit.
 			await auditorStarted;
 			// The widget's Escape handler matches the raw ESC byte (\x1b).
-			h.terminalInputHandler?.("");
+			h.terminalInput("");
 			const result = await pending;
 			const text = result.content?.[0]?.text ?? "";
 			assert.ok(text.includes("Goal audit skipped"), `skip report: ${text.slice(0, 80)}`);
@@ -866,7 +817,7 @@ describe("confirmation and audit UX (follow-up Stage 2)", () => {
 			const pending = (update.execute as any)("abort-2", { status: "complete" }, new AbortController().signal, undefined, h.ctx);
 			await auditorStarted;
 			// The widget's Escape handler matches the raw ESC byte (\x1b).
-			h.terminalInputHandler?.("");
+			h.terminalInput("");
 			const result = await pending;
 			const text = result.content?.[0]?.text ?? "";
 			assert.ok(text.includes("remains active"), `continue-working report: ${text}`);
@@ -943,7 +894,7 @@ describe("completion transaction hardening (follow-up Stage 3)", () => {
 			await h.handlers.get("turn_end")?.({ message: { role: "assistant", stopReason: "stop", usage: { input: 0, output: 0 } } }, h.ctx);
 			const events = ledgerEvents(f.cwd);
 			assert.equal(events.some((e) => e.type === "goal_completed"), false, "no goal_completed when archive failed");
-			assert.ok(h.notifies.some((n) => n.msg.includes("Failed to archive completed goal")), "archive failure is observable");
+			assert.ok(h.notices.some((n) => n.message.includes("Failed to archive completed goal")), "archive failure is observable");
 			assert.equal(activeGoalFiles(f.cwd).length, 1, "goal file stays in the active pool");
 			// The active file still holds the completed goal (not archived).
 			const remaining = parseGoalFile(path.join(f.cwd, ".pi", "goals", activeGoalFiles(f.cwd)[0]!));

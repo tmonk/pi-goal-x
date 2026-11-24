@@ -51,6 +51,7 @@ export function createExtensionHarness(options: ExtensionHarnessOptions) {
 	let activeTools = [...DEFAULT_ACTIVE_TOOLS];
 	let abortCount = 0;
 	let resolvePendingDialog: ((result: unknown) => void) | null = null;
+	let terminalInputHandler: ((data: string) => unknown) | null = null;
 
 	const branch = options.sessionEntries ?? "recorded";
 	const getBranch = branch === "recorded" ? () => [...entries] : typeof branch === "function" ? branch : () => branch;
@@ -84,7 +85,11 @@ export function createExtensionHarness(options: ExtensionHarnessOptions) {
 			notify: (message: string, level?: string) => { notices.push({ message, level }); },
 			setStatus: () => {},
 			setWidget: () => {},
-			onTerminalInput: () => () => {},
+			setWorkingVisible: () => {},
+			onTerminalInput: (handler: (data: string) => unknown) => {
+				terminalInputHandler = handler;
+				return () => { terminalInputHandler = null; };
+			},
 			select: async () => undefined,
 			input: async () => undefined,
 			confirm: async () => false,
@@ -127,6 +132,8 @@ export function createExtensionHarness(options: ExtensionHarnessOptions) {
 			resolvePendingDialog = null;
 			resolve?.(result);
 		},
+		/** Sends a key to the extension's terminal-input handler, as pi does before the focused overlay. */
+		terminalInput: (data: string) => terminalInputHandler?.(data),
 		emit,
 		sessionStart: () => emit("session_start", { reason: "start" }),
 		callTool: (name: string, params: unknown, id = "call", context: ExtensionContext = ctx) =>
