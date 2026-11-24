@@ -8,6 +8,7 @@
  * `npm run test:integration`.
  */
 
+import { skipWhenRoot } from "../support/permissions.ts";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, appendFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -884,7 +885,7 @@ describe("confirmation and audit UX (follow-up Stage 2)", () => {
 });
 
 describe("completion transaction hardening (follow-up Stage 3)", () => {
-	it("completion commit write failure never reports success and never clears focus", async () => {
+	it("completion commit write failure never reports success and never clears focus", skipWhenRoot, async () => {
 		const f = fixture();
 		const goalsDir = path.join(f.cwd, ".pi", "goals");
 		try {

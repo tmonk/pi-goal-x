@@ -9,6 +9,7 @@
  * reflect real persisted state (§2.2).
  */
 
+import { skipWhenRoot } from "../support/permissions.ts";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -305,7 +306,7 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 	}
 });
 
-test("archive failure never reports success; the complete record stays recoverable (§16.6)", async () => {
+test("archive failure never reports success; the complete record stays recoverable (§16.6)", skipWhenRoot, async () => {
 	const cwd = mkdtempSync(path.join(tmpdir(), "goal-archive-fail-"));
 	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
 	const h = createHarness(cwd, {
