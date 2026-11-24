@@ -184,7 +184,8 @@ jobs:
         run: |
           url="repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100"
           while true; do
-            jobs=$(gh api "$url" --jq '[.jobs[] | select(.name != "validate")]')
+            # Right after the run starts the jobs list can answer 404. Ask again.
+            jobs=$(gh api "$url" --jq '[.jobs[] | select(.name != "validate")]') || { sleep 2; continue; }
             bad=$(jq -r '[.[] | select(.conclusion != null and .conclusion != "success" and .conclusion != "skipped") | .name] | join(", ")' <<<"$jobs")
             if [ -n "$bad" ]; then echo "Failed: $bad"; exit 1; fi
             open=$(jq '[.[] | select(.status != "completed")] | length' <<<"$jobs")
