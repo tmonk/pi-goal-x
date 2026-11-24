@@ -1,371 +1,261 @@
 # pi-goal Architecture
 
-This document describes the shipped `pi-goal` extension as it exists now. It focuses on implemented behavior.
+This describes the extension as shipped. For how the agent, the auditor and
+the runtime work together, see [agent flow design](agent-flow-design.md).
 
 ## Runtime shape
 
-`extensions/goal.ts` is a thin installer (under 50 lines). It registers the two
-custom message renderers, builds the shared `GoalCore` (goal-state.ts), and
-registers the command palette, the tool surface, and the lifecycle event
-handlers from their dedicated modules:
+`extensions/goal.ts` is a thin installer. It registers two message renderers,
+builds one `GoalCore`, then registers commands, tools and event handlers. A
+delegated session (the auditor or Oracle) only installs the context filter.
 
-| Module | Responsibility |
-|---|---|
-| `goal.ts` | Thin installer: renderers, core, commands, tools (`registerCoreTools`, `registerTaskTools`, `registerDraftingTools`) and events |
-| `goal-state.ts` | `GoalCore` facade and wiring: builds the services below and the `GoalService`/`GoalRuntime`/`GoalAccounting` |
-| `goal-session-state.ts` | `GoalSessionState`: the pool, focus, revision and per-session flags; no I/O |
-| `goal-view.ts` | `GoalView`: dashboard widget, footer status, audit progress and result cards |
-| `goal-focus.ts` | `GoalFocus`: change focus, drop a goal, restore focus when a session starts |
-| `goal-lifecycle.ts` | `GoalLifecycle`: create, stop, pause, archive, auditor toggle, save |
-| `goal-progress.ts` | `GoalProgress`: charge tokens and time, enter `budget_limited` |
-| `goal-watch.ts` | `GoalWatch`: stall and budget warnings |
-| `goal-core-tools.ts` | `create_goal` / `get_goal` / `update_goal` executors plus the blocked flow |
-| `goal-completion.ts` | The completion transaction: `runGoalCompletionFlow` (audit orchestration) + shared `commitGoalCompletion` |
-| `goal-task-tools.ts` | `set_goal_tasks` / `update_goal_task` executors plus flat parent-linked conversion, id-stable merge, `countTasks` |
-| `goal-task-confirmation.ts` | Task-only result boundary (`{decision}`, no auditor toggle) with neutral Confirm task list / Keep current tasks labels |
-| `goal-commands.ts` | The curated fourteen-command palette and its handlers |
-| `goal-events.ts` | Lifecycle and provider event handlers (`context`, `before_provider_request`, `turn_start`, `tool_call`, `tool_execution_end`, `turn_end`, `message_end`, `session_start`, `session_before_compact`, `session_compact`, `session_tree`, `before_agent_start`, `agent_end`, `agent_settled`, `session_shutdown`) |
-| `goal-terminal-input.ts` | Terminal input keybindings: Esc pause / abort-audit, dashboard expand and navigation, auditor toggle, command shortcuts |
-| `goal-format.ts` | Pure formatting/message-introspection helpers and renderers |
-| `goal-service.ts` | `GoalService` — the sole mutation boundary: ordered reconcile → id/focus-revision validation → clone-mutate → write/archive → ledger → memory commit → returned effects |
-| `goal-runtime.ts` | `GoalRuntime` — continuation scheduling, stale checkpoint state, turn-stop guard, one-shot steering reminders |
-| `goal-accounting.ts` | `GoalAccounting` — serialized idempotent token/time accounting, budget helpers |
-| `goal-record.ts` | Goal record types, creation, cloning, usage normalization, persisted-record migration |
-| `goal-pool.ts` | Open-goal pool helpers, focus resolution, list output, selector labels, unfocused summaries |
-| `goal-display.ts` | Compact display formatting, status labels, objective title cleanup |
-| `goal-contract.ts` | Record/input parser: verification-contract extraction and objective prompt-safety |
-| `goal-policy.ts` | Lifecycle policy and validation (completion/blocked/resume/task gates), task-tree helpers, compaction policy, result reports |
-| `goal-auditor.ts` | Independent pi auditor agent prompt/config/decision parsing and completion audit execution |
-| `goal-ledger.ts` | Single-file goal ledger append/read/reconstruction (18 event types incl. `task_reopened`) |
-| `prompts/goal-draft-prompts.ts` | Drafting prompt/confirmation text helpers (goalDraftingPrompt, buildDraftConfirmationText, renderConfirmationTasks, GoalDraftingFocus) |
-| `goal-drafting.ts` | Guided drafting orchestration: durable `pi-goal-draft` session entries (survive compaction/tree navigation), resume/replace/cancel protection, `goal_questionnaire`/`propose_goal_draft` tools, per-draft auditor selection |
-| `goal-questionnaire.ts` | Structured question/answer UI (`runGoalQuestionnaire`, `showProposalDialog`) used by the drafting tools and confirmations |
-| `goal-tool-names.ts` | The five published tool-name constants, lifecycle-dependent profiles, work/progress classification, post-stop allowlist |
-| `goal-detail.ts` | Lossless objective/task/history paging with content-bound cursors |
-| `goal-ledger-index.ts` | Incremental per-goal activity, audit, lifecycle, and Oracle projections |
-| `goal-task-index.ts` | Content-keyed task snapshots shared by prompts, tools, and dashboard models |
-| `prompts/goal-prompts.ts` | Bounded five-tool steering prompts (active-goal, continuation, stale-checkpoint, unfocused, budget-limited) |
-| `storage/goal-files.ts` | Goal path safety, serialization/parsing, active-file scanning, active-file writes, archive writes, prompt-body merge from disk |
-| `storage/file-lock.ts` | The one cross-process file lock (goal records and settings files) |
-| `storage/goal-lock.ts` | Per-goal lock path and fail-fast acquisition bounds |
-| `storage/atomic-rename.ts` | Atomic file replacement: `writeFileAtomicSync`/`writeFileAtomic` and the Windows-tolerant rename they use |
-| `widgets/goal-widget.ts` | Above-editor Goal Beacon component |
-| `widgets/goal-notifications.ts` | Widget-style notification text for goal lifecycle toasts |
+`GoalCore` (`goal-state.ts`) is a facade. The state lives in
+`GoalSessionState`; each group of behavior lives in its own service, and
+`createGoalCore` wires them together.
 
-The runtime is a focused-goal view over a project goal pool:
-
-```ts
-let goalsById: Map<string, GoalRecord>;
-let focusedGoalId: string | null;
+```text
+goal.ts
+ └─ createGoalCore (goal-state.ts)
+     ├─ GoalSessionState   pool, focus, revision, flags (no I/O, no UI)
+     ├─ GoalFocus          change focus, drop a goal, restore focus at session start
+     ├─ GoalLifecycle      create, stop, pause, archive, auditor toggle, save
+     ├─ GoalProgress       charge tokens and time, enter budget_limited
+     ├─ GoalWatch          stall and budget warnings
+     ├─ GoalView           widget, status line, audit progress and result cards
+     ├─ GoalService        the only writer: files, ledger, memory
+     ├─ GoalRuntime        continuation, stale checkpoints, turn-stop guard
+     ├─ GoalScheduler      durable dispatch intent, waits, run allowance
+     ├─ GoalAccounting     idempotent token and time charging
+     ├─ GoalInterruption   a user-stopped turn is not retried
+     └─ GoalAuditMessages  audit transcript output, flushed when idle
 ```
 
-`goalsById` is reconstructed from `.pi/goals/active_goal_*.md` plus compatible
-legacy session entries. `focusedGoalId` is reconstructed from branch-local
-`pi-goal-focus` session entries. The focused id is not serialized into goal
-markdown.
+## Modules
+
+All files are in `extensions/`.
+
+### Wiring and session
+
+| File | Responsibility |
+|---|---|
+| `goal.ts` | Installer: renderers, core, commands, tools, events |
+| `goal-state.ts` | `GoalCore` interface and `createGoalCore` wiring |
+| `goal-session-state.ts` | `GoalSessionState`, `ActiveGoalAudit`, `FocusToken` |
+| `goal-focus.ts` | `GoalFocus` |
+| `goal-lifecycle.ts` | `GoalLifecycle` |
+| `goal-progress.ts` | `GoalProgress` |
+| `goal-watch.ts` | `GoalWatch` |
+| `goal-view.ts` | `GoalView` and the finished-audit card |
+| `goal-session-safety.ts` | Stale-context detection, delegated-session filter, `GoalAuditMessages` |
+| `goal-interruption.ts` | `GoalInterruption` |
+| `goal-context.ts` | Registers the `context_with_system` filter |
+
+### Tools, commands and events
+
+| File | Responsibility |
+|---|---|
+| `goal-core-tools.ts` | `create_goal`, `get_goal`, `update_goal` |
+| `goal-update-flows.ts` | The blocked flow (with Oracle) and the agent-pause flow |
+| `goal-completion.ts` | Completion transaction: audit, then `commitGoalCompletion` |
+| `goal-task-tools.ts` | `set_goal_tasks`, `update_goal_task` |
+| `goal-task-tree.ts` | Flat to tree conversion, id-stable merge, counting, rendering, tool schema |
+| `goal-task-confirmation.ts` | Task list confirmation dialog |
+| `goal-task-index.ts`, `goal-task-count.ts`, `goal-task-derive.ts` | Cached task snapshots, the one subtree walker, tasks derived from an ordered objective |
+| `goal-tool-inputs.ts` | Normalizes `update_goal` and task progress inputs |
+| `goal-tool-names.ts` | Tool names, the fixed tool list, work/progress classification |
+| `goal-drafting.ts` | Guided draft state, stored as `pi-goal-draft` session entries |
+| `goal-drafting-tools.ts` | `goal_questionnaire`, `propose_goal_draft`, goal creation and tweak from a draft |
+| `goal-commands.ts` | Command routing and handlers for the sixteen actions |
+| `goal-controls.ts` | Action ids, key actions, command and key settings |
+| `goal-settings-menu.ts` | The `/goal-settings` editor |
+| `goal-events.ts` | Pi event handlers (see below) |
+| `goal-terminal-input.ts` | Key handling: pause, audit interrupt, dashboard keys, shortcuts |
+
+`goal-events.ts` handles `context_with_system`, `before_provider_request`,
+`agent_start`, `message_start`, `turn_start`, `tool_call`,
+`tool_execution_end`, `turn_end`, `message_end`, `session_start`,
+`session_before_compact`, `session_compact`, `session_compact_failed`,
+`session_tree`, `before_agent_start`, `agent_end`, `agent_settled` and
+`session_shutdown`. Its model-facing goal text comes from
+`goal-context-parts.ts`, which uses `goal-compaction.ts` for the text after a compaction.
+
+### Mutation, runtime and policy
+
+| File | Responsibility |
+|---|---|
+| `goal-service.ts` | `GoalService`, the sole mutation boundary |
+| `goal-runtime.ts` | `GoalRuntime` |
+| `goal-scheduler.ts`, `goal-scheduler-state.ts` | `GoalScheduler`, persisted scheduler state and its summary text |
+| `goal-accounting.ts` | `GoalAccounting`, budget helpers, context usage line |
+| `network-error-backoff.ts` | Retry plan for provider errors |
+| `goal-policy.ts` | Gates for complete, blocked, pause and tasks; reports |
+| `goal-record.ts` | Record types, creation, cloning, migration of saved records |
+| `goal-pool.ts` | Open-goal pool, focus resolution, list and selector text |
+| `goal-contract.ts` | Verification contract extraction, prompt-safe objectives |
+
+### Audit and Oracle
+
+| File | Responsibility |
+|---|---|
+| `goal-auditor.ts` | Runs the independent auditor session and parses its decision |
+| `goal-auditor-prompt.ts` | The auditor prompt |
+| `auditor-selector.ts` | Model and thinking-level choices for the auditor |
+| `goal-oracle.ts` | Opt-in, read-only blocker Oracle |
+
+### Ledger and storage
+
+| File | Responsibility |
+|---|---|
+| `goal-ledger.ts` | Append, read and rebuild state from the JSONL ledger (29 event types) |
+| `goal-ledger-validate.ts` | Per-event field checks |
+| `goal-ledger-checkpoint.ts` | Derived checkpoint file (version 4) and its codec |
+| `goal-ledger-index.ts` | Bounded per-goal working set (recent events, audit, Oracle state) |
+| `goal-activity.ts` | Ledger to readable activity items |
+| `goal-detail.ts` | Lossless paged objective, task and history text |
+| `goal-recovery.ts` | `/goal-recovery` report and guarded repair |
+| `goal-session-health.ts` | Read-only checkpoint health report for session files |
+| `storage/goal-files.ts` | Goal file paths, parse and serialize, active pool scan, archive |
+| `storage/goal-root.ts` | Where the goal pool lives (`goalsRoot`, `PI_GOAL_ROOT`) |
+| `storage/goal-lock.ts`, `storage/file-lock.ts` | Per-goal lock and the shared cross-process file lock |
+| `storage/atomic-rename.ts` | Atomic file replace, tolerant of Windows rename errors |
+
+### Prompts and cache
+
+| File | Responsibility |
+|---|---|
+| `prompts/goal-prompts.ts` | Checkpoint, goal state, stale and unfocused prompts |
+| `prompts/goal-draft-prompts.ts` | Drafting prompt and confirmation text |
+| `goal-prompt-cache.ts` | Moves the explicit cache breakpoint before the request-only tail |
+| `goal-live-retention.ts` | Keeps earlier request-only tails so implicit-cache prefixes stay stable |
+
+### Settings
+
+| File | Responsibility |
+|---|---|
+| `settings/schema.ts` | Setting types, defaults, leaf parsers, key formats |
+| `settings/files.ts` | Global and project settings paths, cached layer reads |
+| `settings/resolve.ts` | Merge layers and environment into `GoalSettings`; effective report |
+| `settings/mutate.ts` | Locked read-modify-write of one layer |
+
+### Questionnaire and dialogs
+
+| File | Responsibility |
+|---|---|
+| `goal-questionnaire.ts` | `runGoalQuestionnaire`, `showProposalDialog` |
+| `questionnaire/state.ts` | Plain state and the functions that change it |
+| `questionnaire/keys.ts` | Key handling over that state |
+| `questionnaire/render.ts`, `context.ts` | Layout and question context text |
+| `questionnaire/basic-dialogs.ts` | One-dialog-per-question fallback |
+| `questionnaire/types.ts` | Shared types |
+| `goal-dialog-fit.ts` | Fit dialog lines to the terminal height |
+| `goal-dialog-controls.ts` | Snapshot of dialog keys |
+
+### Display
+
+| File | Responsibility |
+|---|---|
+| `goal-format.ts` | Entry names, summaries, message renderers, message checks |
+| `goal-display.ts` | Status labels, durations, token text, footer status |
+| `goal-status.ts` | `/goal-status` text |
+| `widgets/goal-dashboard-model.ts` | The one dashboard model; task scrolling math |
+| `widgets/goal-dashboard-renderer.ts` | Compact, expanded, unfocused, audit renderers |
+| `widgets/goal-widget.ts` | The above-editor widget component |
+| `widgets/auditor-dashboard-model.ts` | Audit progress and result models |
+| `widgets/goal-controls-dialog.ts`, `choice-dialog.ts`, `goal-escape-dialog.ts` | Dialogs |
+| `widgets/goal-notifications.ts`, `text-cache.ts` | Toast text, cached ANSI wrapping |
 
 ## Sole mutation boundary
 
-`GoalService` owns the ordered mutation pipeline. Every goal-file write,
-archive, and ledger append routes through it:
+`GoalService` is the only code that writes goal files, archives or ledger
+events. Each mutation runs in this order:
 
 ```text
 reconcile (disk wins over stale memory)
-  → expected-id / focus-revision validation (async operations invalidated on focus change)
-  → mutate a clone (never the live object)
-  → write or archive the active file
-  → append ledger events (best-effort; failure emits a warning diagnostic)
-  → commit to memory + focus
-  → return effects (ok, goal, focusChanged, messages)
+  -> check expected goal id and focus revision
+  -> mutate a clone
+  -> write or archive the file, under the per-goal lock
+  -> append ledger events (best effort)
+  -> commit to memory and focus
+  -> return effects (ok, goal, focusChanged, messages)
 ```
 
-If the write fails, nothing commits and nothing is appended. If the ledger
-append fails after a successful write, the transition still stands and the
-failure is surfaced through the `onDiagnostic` hook (an observable
-`severity: warning, source: ledger` diagnostic) without rolling back the
-authoritative state write. Handlers keep validation and
-runtime/UI effects; they never touch storage directly. `goal.ts` has zero
-direct write or ledger calls.
+If the write fails, nothing is committed or appended. If only the ledger
+append fails, the change stands and a `warning` diagnostic is reported. A stale
+writer gets a typed conflict that carries the current revision, instead of
+overwriting.
 
-## Lifecycle
+## Goal pool and focus
 
-```text
-/user command or explicit create_goal request
-  ├─ /goal [seed] or /sisyphus [seed]
-  │    └─ guided draft: clarify/questionnaire → objective + optional task proposal → explicit confirmation
-  ├─ /goal-direct <objective> or /sisyphus-direct <objective>
-  │    └─ direct creation: objective (1–4000 chars) → active goal file → focused → autoContinue
-  ├─ focused active goal
-  │    ├─ autoContinue queues checkpoint turns
-  │    ├─ update_goal({status:"blocked"}) records a distinct blocked state after the same
-  │    │   blocker recurs on three consecutive turns
-  │    └─ update_goal({status:"complete"}) starts the independent auditor; <approved/> archives
-  ├─ paused/blocked goal
-  │    ├─ /goal-resume restarts autoContinue
-  │    └─ update_goal(complete) can complete from existing evidence
-  ├─ multiple open goals
-  │    ├─ /goal-list shows the project goal pool
-  │    ├─ /goal-focus chooses the session focus
-  │    ├─ /goal-unfocus clears only the session focus and leaves the shared goal open
-  │    └─ unfocused sessions guide the user to choose instead of letting the agent decide
-  └─ /goal-clear archives the focused goal after confirmation (cancel is a durable no-op)
-```
+Open goals are the files `.pi/goals/active_goal_<timestamp>_<id>.md` (or the
+same layout under `goalsRoot`). `readActiveGoalPool` scans them, skips invalid
+files and symlinks, and returns the open records.
 
-## Goal pool and session focus
+Focus belongs to the session. Each change appends a `pi-goal-focus` session
+entry, so focus is branch-local and never sent to the model. On `session_start`
+and `session_tree` focus is resolved in this order:
 
-The disk layout supports multiple active files. The extension treats those
-files as the durable project-level open goal pool:
+1. The latest focus entry, if its goal still exists.
+2. An explicit `null` entry, or a stale id: stay unfocused.
+3. No entry: merge a legacy `pi-goal-state` goal and focus it.
+4. No entry and `autoSelectSingleGoal` on: focus the only open goal.
+5. Otherwise stay unfocused until the user chooses.
 
-```text
-.pi/goals/active_goal_<timestamp>_<id>.md
-```
+No agent tool can change focus.
 
-`readActiveGoalPool(ctx)` scans that directory, ignores invalid files and
-symlinks, parses each safe active file, sanitizes metadata paths, drops
-completed records, and returns a deterministic `Map<goalId, GoalRecord>`.
+## Tools
 
-Session focus is separate. Focus changes append a custom session entry:
+The goal tool list is fixed so the provider's prompt cache is not thrown away:
+`create_goal`, `get_goal`, `update_goal`, `set_goal_tasks`, `update_goal_task`,
+`goal_questionnaire` and `propose_goal_draft`. Only `disableTasks` removes the
+two task tools. Status, focus, drafting and audits never change the list.
+Executors reject calls that do not fit the current state, and the `tool_call`
+handler blocks the goal tools while a draft is open, blocks work tools after a
+stop tool in the same turn, and blocks work tools from a stale checkpoint.
 
-```ts
-{
-  version: 1,
-  focusedGoalId: string | null,
-  reason: "created" | "selected" | "unfocused" | "resumed" | "completed" | "cleared" | "migrated"
-}
-```
+## Runtime, accounting and scheduling
 
-Because this is stored with `pi.appendEntry("pi-goal-focus", ...)`, it is
-session/branch-local and is not sent to the LLM. On `session_start` and
-`session_tree`, `loadState(ctx)` scans `ctx.sessionManager.getBranch()` for the
-latest focus entry, scans active goal files, and resolves focus as follows:
+- `GoalAccounting` charges each token and time interval once.
+- `GoalRuntime` queues continuations, tracks the stale checkpoint and the
+  turn-stop guard, and sends one-shot reminders.
+- `GoalScheduler` persists dispatch intent, waits and the run allowance
+  (`maxAutonomousRuns`). Continuation is immediate by default; with
+  `idleContinuationBackoff` repeated idle runs wait 30 seconds, doubling to
+  five minutes. See [advanced usage](advanced-usage.md).
+- `agent_settled` with `aborted` stops continuation and pauses the goal.
+- A `token_budget` moves the goal to `budget_limited` once, appends
+  `goal_budget_limited`, arms wrap-up steering and cancels continuations. It
+  never means complete.
 
-1. Use a valid focused id from the latest focus entry.
-2. If the latest focus entry explicitly has `focusedGoalId: null`, or points at
-   a missing/stale goal, remain unfocused.
-3. If no focus entry exists, merge a compatible legacy `pi-goal-state { version: 3, goal }`
-   goal and focus it. If disk already has the same id, the disk record wins and
-   the legacy session record only supplies focus.
-4. If no focus entry exists and `autoSelectSingleGoal` is enabled, auto-focus
-   the sole open goal for compatibility. The default is disabled.
-5. Otherwise remain unfocused until the user explicitly selects a goal.
-   `/goal-unfocus` appends a null focus entry so the current session stays
-   detached without modifying the shared goal or appending a project-global
-   focus event.
+## Completion
 
-Focus is human-owned. No agent tool can switch focus. Lifecycle tools operate
-only on the focused goal.
+`update_goal({status: "complete"})` is valid for active and paused goals. The
+runtime starts an independent auditor session that ends with `<approved/>` or
+`<disapproved/>`; anything else rejects. On approval the goal is marked
+complete in memory and archived at `turn_end`, so the agent sees the audit
+result first. `disabled: true` skips the audit and records `audit_skipped`.
+Escape during an audit offers "complete without audit" or "continue working".
 
-## Goal styles
+## Disk format
 
-### Regular goal
-
-Regular goals are open-ended objectives. The agent decides the next concrete
-action each checkpoint turn, then completes only after the objective is
-actually satisfied.
-
-### Sisyphus goal
-
-Sisyphus is a light variant of the same goal lifecycle. It does not have a
-separate execution state machine or step counter. The only differences are
-prompt/criteria level:
-
-- the objective is written as numbered ordered steps with per-step done criteria;
-- continuations remind the agent not to rush, skip, or invent preflight steps;
-- completion still uses `update_goal(status="complete")`, with the stricter
-  expectation that the whole ordered objective is actually satisfied.
-
-## Creation and tweaking
-
-`/goal [seed]` and `/sisyphus [seed]` begin guided drafting. The tool list does
-not change, but the goal tools are blocked until the draft ends. The agent
-clarifies intent, proposes the full objective and an optional task tree, and
-the user explicitly confirms or continues refining. `/goal-direct` and
-`/sisyphus-direct` bypass this only when the objective is already final.
-
-`/goal-tweak <change>` starts the same guided-confirmation process for the
-focused goal. It preserves the task list when no replacement is proposed and
-records `goal_tweaked` (plus `task_list_set` if applicable) only after the
-user confirms.
-
-## Command focus behavior
-
-- `/goal [seed]` starts a regular guided draft; bare `/goal` asks what to accomplish.
-- `/sisyphus [seed]` starts a Sisyphus guided draft.
-- `/goal-direct <objective>` and `/sisyphus-direct <objective>` create directly without drafting.
-- `/goal-list` prints all open goals with id, status, mode, usage, objective title, path, and a focus marker.
-- `/goal-status health` performs a read-only coherence check for focus, lifecycle, goal-file presence, malformed ledger entries, task progress, and token-budget pressure; it never acts as a completion verdict.
-- `/goal-focus` uses `ctx.ui.select` when multiple goals are open and updates only session focus.
-- `/goal-unfocus` writes a null session focus entry, clears continuation/runtime state, aborts in-flight work and audits for that session, and leaves the shared active goal file and project-global focus ledger unchanged. Focus revision tokens prevent pending completion and task-list results from mutating a goal after detachment.
-- `/goal-resume` resumes the focused paused goal; when unfocused with multiple open goals, it asks the user to choose. Choosing an already active goal only focuses it.
-- `/goal-clear` asks for confirmation (with the goal's one-line summary) and archives only the focused/selected goal; cancelling is a byte-for-byte no-op with no file, focus, or ledger change, and headless runs return guidance without mutating anything.
-- `/goal-pause` pauses the focused active goal; it asks the user to choose when unfocused with open goals.
-- `/goal-settings` renders and dispatches every persisted field from one declarative row table: booleans (`disableTasks`, `disableContracts`, `autoSelectSingleGoal`, `disabled`) toggle directly, `provider`/`model` edit and clear, `thinkingLevel` accepts every level and rejects unknown values, and `subtaskDepth` validates the full input string (whole positive safe integers).
-
-## Tool surface
-
-The extension registers five normal-execution tools and three drafting-only tools:
-
-| Tool | Purpose |
-|---|---|
-| `create_goal` | Create and focus a new goal after an explicit user request (objective 1–4000 chars, optional `mode` regular/sisyphus and `token_budget`). |
-| `get_goal` | Compact summary by default; lossless objective/tasks/history pages (up to 4,000 content characters), optional task selection, legacy verbose/history forms. |
-| `update_goal` | Run outcomes: `complete` (audited from actual evidence; optional `completion_summary` is an untrusted claim), `blocked` (after three consecutive identical blockers), or `paused` (immediate agent pause with required `reason`). |
-| `set_goal_tasks` | Create or structurally replace the task tree (flat parent-linked input, confirmation dialog, id-stable merge). |
-| `update_goal_task` | Update one task or an ordered atomic batch: start, complete (evidence for contracted tasks), skipped (reason), pending (reopens skipped). |
-| `goal_questionnaire` | Drafting only. Asks one or more questions in a dialog. |
-| `propose_goal_draft` | Drafting-only objective/task proposal with Confirm or Continue Chatting. |
-
-Outside drafting, creation and inspection are always advertised. Outcomes are
-advertised for active/paused/budget-limited goals; task planning for active or
-paused goals; task progress for active goals with tasks. Disabled tasks hide both
-task tools. A guided draft replaces goal tools with question/questionnaire/proposal
-tools until confirmation or cancellation. Ordinary pi work tools remain available.
-The SDK active profile changes only when membership changes. Executors still
-validate lifecycle state, including stale calls made after a transition.
-
-Normal prompt/dashboard reads use per-goal ledger indexes: 12 recent events,
-64 activity candidates in stable timestamp order, pinned audit/lifecycle state,
-and blocker-fingerprint Oracle state. Appends extend these indexes without
-copying history. Version 3 derived checkpoints use UTF-8 byte offsets and retain
-reconstructed Oracle advice; old or
-corrupt checkpoints rebuild from the authoritative JSONL ledger. Full history
-is loaded for explicit history/diagnostic requests. Saved goal/session formats
-remain compatible. Task presentation caches use content snapshots; usage changes
-do not rebuild task trees. Stable prompt rules precede changing goal data and
-usage counters, with retrieval instructions beside bounded excerpts.
-
-Warm settings resolution is cached by layer identity and applicable environment
-values; public resolved values remain independently editable. Task and prompt
-caches compare content fields without repeatedly serializing long contracts.
-Compiled detail pages reuse their source and cursor hash; history sources are
-invalidated by an opaque ledger generation on append or refresh. Cache size
-limits bound retained data; larger requirements remain available losslessly.
-Pure ANSI text wrapping/truncation is cached by text and layout arguments across
-widgets and dialogs. Live auditor previews scan only the report tail, while the
-complete final report remains available. Measurements and the module audit are
-in `specs/2026-09-07-comprehensive-optimization/`.
-
-The `tool_call` interceptor blocks work tools after a stop tool has fired in
-the same turn, and blocks work tools when the checkpoint that triggered the
-turn is no longer actionable (stale checkpoint).
-
-## Accounting, runtime, and token budgets
-
-`GoalAccounting` (goal-accounting.ts) charges serialized, idempotent
-token/time intervals per turn; a goal never double-charges the same interval.
-`GoalRuntime` (goal-runtime.ts) owns continuation scheduling, the stale
-checkpoint state, the turn-stop guard, and one-shot steering reminders.
-
-`GoalScheduler` persists dispatch intent and allowance consumption. Default
-continuation is immediate. Explicit `idleContinuationBackoff=true` also records a
-bounded idle streak and earliest next attempt: one immediate continuation, then
-30 seconds doubling to five minutes. Work accumulates over the whole logical run;
-content snapshots exclude usage, revisions and scheduler writes. Disabled pacing
-skips those snapshots. Settings are rechecked at scheduling and admission; opting
-out removes saved delay metadata without renewing consumption. Resume and genuine
-host input reset pacing; strict waits and provider recovery remain independent.
-
-Pi 1.4 prepares goal-triggered turns natively. The extension uses
-`context_with_system` to filter its messages and add current goal state after
-Pi has restored the system prompt and tool declarations. System messages stay
-at their original history boundaries, including deltas from other extensions.
-`agent_settled.aborted` stops continuation/recovery and pauses the associated
-goal. Rejected stale checkpoints settle without changing the replacement goal.
-
-Audit display messages flush only at idle settlement and remain scoped to their
-session. If Pi has invalidated a settlement context, the handler skips it before
-consuming continuation intent or changing the replacement session's queue.
-
-An optional `token_budget` may be set at creation. When accounted usage
-reaches the budget, `accountProgress` transitions the goal to the distinct
-`budget_limited` status exactly once (status leaves `active`, so accounting
-stops and the transition cannot re-fire), emits a `goal_budget_limited` ledger
-event, arms the one-time wrap-up steering, and cancels pending continuations.
-`budget_limited` never implies completion.
-
-## Completion output
-
-Completion is explicit and checked by an independent auditor agent.
-`update_goal(status="complete")` is valid for active and paused goals; paused
-goals do not need to be resumed just to record completion when existing
-evidence is sufficient. There is no verification-summary parameter — the
-auditor derives the requirements from the objective and any verification
-contract and inspects the actual workspace.
-
-Before archiving, the tool starts a separate in-memory pi session with a
-focused auditor prompt. The auditor receives the objective, executor
-completion claim, and goal metadata, can inspect the workspace with `read`,
-`grep`, `find`, `ls`, and `bash`, and must end with exactly one marker:
-
-- `<approved/>` allows archiving;
-- `<disapproved/>`, no marker, an error, or abort rejects completion and leaves
-  the goal open.
-
-The auditor uses the current/default model unless
-`.pi/pi-goal-x-settings.json` overrides `provider`, `model`, or `thinkingLevel`.
-The user can Escape an in-flight audit to choose "complete without audit" or
-"continue working". Archival is deferred to `turn_end` so the agent can see the
-auditor result before the goal is archived. The global `disabled` setting is
-an explicit user-owned switch: completion skips the auditor, records
-`audit_skipped`, and proceeds through the normal deferred-completion path.
-
-## Disk format and old-data reads
-
-Active and archived goal files live under `.pi/goals/`. Each file has
-extension-owned metadata and a user-editable `# Goal Prompt` section. Before
-focused commands, tools, and lifecycle hooks act, the runtime re-reads the
-focused active file and reconciles lifecycle state from disk; prompt-body
-edits are picked up from `# Goal Prompt`. Path safety checks reject absolute
-paths, traversal, NUL bytes, symlinks, and paths outside the goal directories.
-
-Old readers remain for backward-compatible reads of existing data:
-`readActiveGoalPool`, `readGoalLedger`, `mergeGoalPromptFromDisk`,
-`latestAuditorResultForGoal`, and `normalizeGoalRecord` are all retained and in
-use. The ledger is append-only JSONL and is never rewritten in place.
+Goal files hold extension metadata and a user-editable `# Goal Prompt`
+section. Before focused commands and hooks act, the runtime re-reads the active
+file and reconciles from disk. Path checks reject absolute paths, traversal,
+NUL bytes and symlinks. The ledger (`goal_events.jsonl`) is append-only and is
+never rewritten. Checkpoints beside it are derived and rebuilt from the ledger
+when old or corrupt. Older goal files, ledgers and session entries stay
+readable.
 
 ## Tests
 
-Local tests live in `tests/` and run with:
-
 ```bash
-npm run test:all
 npm run check
+npm run test:all
 ```
 
-`test:unit`, `test:integration`, and `test:all` automatically discover test
-entries and run them with small test-only adapters for the
-SDK values used by handlers. This avoids loading unrelated model-provider and
-TUI media modules. The fast path requires Node 22.19+; `test:serial` remains
-the slow, real-SDK, process-isolated alternative. The suites cover: surface baselines (lifecycle-dependent goal tool
-profile and fourteen commands), golden file/ledger fixtures, stale-continuation behavior,
-GoalService mutation boundary, runtime/accounting, token-budget transitions,
-task-tool consolidation, verification contracts, the independent auditor,
-compaction recovery, and the bounded steering prompts. The separate
-`tests/e2e/run.ts` real-model path is manual and opt-in. In `experiments/`,
-C20-C26 are the release set and B1-B2/C1-C19 are migrated compatibility cases.
+Unit and integration suites run through `scripts/run-unit-tests.mjs` with
+small test adapters for the Pi SDK. `test:serial` runs the same files with the
+real SDK, one process at a time. `tests/e2e/run.ts` is a manual real-model run.
+Shared helpers live in `tests/support/`.
 
-## Hardening
-
-The 2026-08-04 hardening plan
-([`specs/2026-08-04-goal-simplification-hardening`](../specs/2026-08-04-goal-simplification-hardening/TECH.md))
-is implemented: paused-status normalization (status authoritative, legacy
-`autoContinue: true` records stay paused), disk-fresh task transactions with
-structural-field clearing, token-budget integer validation, `task_reopened`
-ledger semantics with observable diagnostics, the lifecycle-dependent tool
-profile, and the supported integration/experiment coverage described above.
-(the interim drafting-surface removal was later reversed by the product
-correction in the runtime follow-up, which restores guided drafting as a
-first-class workflow; see the follow-up section below.)
-
-The runtime follow-up
-([`specs/2026-08-04-goal-runtime-follow-up`](../specs/2026-08-04-goal-runtime-follow-up/TECH.md))
-then shipped the remaining work: guided drafting is restored as a
-first-class, transient user-invoked workflow (questionnaire, proposal
-confirmation, atomic creation, durable draft sessions, `/goal-cancel`,
-`/goal-status`, per-draft auditor selection); the settings menu is fully
-operable; `/goal-clear` confirms; task confirmation uses neutral labels;
-completion commits are failure-checked; and cross-process mutations are
-serialized with persisted revisions plus per-goal filesystem locks that
-return typed conflicts to stale writers instead of overwriting blindly.
-
-Prompt layout and explicit provider cache handling are documented in [prompt caching](prompt-caching.md). Live goal state is constructed in the context hook; before_agent_start performs lifecycle preflight without modifying the system prompt.
+See also [prompt caching](prompt-caching.md), [controls](controls.md) and the
+[unified dashboard](unified-dashboard.md). Design history is in `specs/`.

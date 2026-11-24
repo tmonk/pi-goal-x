@@ -48,11 +48,11 @@ Compact rows, in order:
    the full counts still fit at 50 columns, and the segment is omitted
    entirely in minimal mode, where the counts and task bar alone use all
    available space). `N` counts top-level tasks complete **or skipped** — a
-   skipped top-level task counts as done (§9.1) — and `M` counts pending
+   skipped top-level task counts as done — and `M` counts pending
    tasks. The subtask segment appears only when the current task has direct
    children. The whole header row is neutral gray (label, counts, bar fill,
    and empty cells) so nothing in the progress info is colourful.
-6. Task list section: the top-level tasks shown by default in **pastel
+5. Task list section: the top-level tasks shown by default in **pastel
    amber** (`mdHeading`) with colour-coded markers and ids (✓ complete muted
    green, ▸ current teal, ~ skipped gray, · pending amber), an aligned id
    column, truncated amber titles, and a `… +N more` overflow line when the
@@ -118,7 +118,7 @@ omitted entirely.
 ╰─ Esc/Ctrl+Shift+T: collapse ────────────────────────────────────────────────╯
 ```
 
-Task markers (§9.2): `✓` complete, `~` skipped, `▸` current, `·` pending.
+Task markers: `✓` complete, `~` skipped, `▸` current, `·` pending.
 A `☑` suffix marks a task that carries its own verification contract; the full
 contract is shown in the current-task block.
 
@@ -200,8 +200,8 @@ audit dashboard with the same visual system:
 ╰─ Esc: stop audit ─────────────────────────────────────────────────────────╯
 ```
 
-Raw auditor tools and output are hidden by default; they appear only in
-expanded/debug audit mode or when the audit failed and diagnostics are needed.
+Raw auditor tools and output are hidden by default; they appear only when
+the audit failed and diagnostics are needed.
 
 After the audit, a result card shows the outcome:
 
@@ -234,7 +234,7 @@ Configure the three task shortcuts with `keybindings.dashboard.toggleExpand`,
 
 ## Width behavior
 
-Layout modes (§5.5):
+Layout modes:
 
 - **Wide (≥100 columns):** full border, multiple fields per line, full task
   titles, wider progress bars, current-task details.
