@@ -1,41 +1,25 @@
 import { goalDialogControls } from "./goal-dialog-controls.ts";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Editor, type EditorTheme, visibleWidth } from "@earendil-works/pi-tui";
-import { truncateToWidth, wrapTextWithAnsi } from "./widgets/text-cache.ts";
-import { computeDialogLineLimit, findProposalPresentationSegments, fitDialogLines } from "./goal-dialog-fit.ts";
-export type GoalDraftingFocus = "goal" | "sisyphus";
+import { Editor, type EditorTheme } from "@earendil-works/pi-tui";
+import { computeDialogLineLimit } from "./goal-dialog-fit.ts";
+import { runQuestionnaireWithBasicDialogs } from "./questionnaire/basic-dialogs.ts";
+import { createQuestionnaireKeys } from "./questionnaire/keys.ts";
+import { createRenderLayout, renderQuestionnaire } from "./questionnaire/render.ts";
+import { createQuestionnaireState, editorTextFor, enterQuestion, orderedAnswers } from "./questionnaire/state.ts";
+import type {
+	GoalDraftingFocus,
+	GoalQuestionnaireQuestion,
+	GoalQuestionnaireResult,
+	ProposalDecision,
+} from "./questionnaire/types.ts";
 
-export interface GoalQuestionnaireQuestion {
-	id: string;
-	question: string;
-	context?: string;
-	options: string[];
-	recommended?: number;
-	allowCustom?: boolean;
-}
-
-interface GoalQuestionnaireAnswer {
-	id: string;
-	question: string;
-	answer: string;
-	wasCustom: boolean;
-}
-
-export interface GoalQuestionnaireResult {
-	questions: GoalQuestionnaireQuestion[];
-	answers: GoalQuestionnaireAnswer[];
-	cancelled: boolean;
-	auditorEnabled?: boolean;
-	/**
-	 * The host could not present the dialog at all, so `cancelled` reflects an
-	 * absent UI rather than a decision the user made. Hosts that expose a
-	 * non-terminal UI keep `ctx.hasUI` true while `ctx.ui.custom` stays the
-	 * SDK's headless default, which resolves to `undefined`.
-	 */
-	unavailable?: boolean;
-}
-
-export type ProposalDecision = "confirm" | "continue" | "cancel";
+export type {
+	GoalDraftingFocus,
+	GoalQuestionnaireAnswer,
+	GoalQuestionnaireQuestion,
+	GoalQuestionnaireResult,
+	ProposalDecision,
+} from "./questionnaire/types.ts";
 
 export function normalizeQuestionnaireQuestions(rawQuestions: GoalQuestionnaireQuestion[]): GoalQuestionnaireQuestion[] {
 	const seenIds = new Set<string>();
@@ -74,58 +58,6 @@ export function proposalDecisionFromQuestionnaireResult(args: { cancelled: boole
 	return "continue";
 }
 
-const CUSTOM_ANSWER_LABEL = "Write your own answer...";
-
-/** Sequential native dialogs for hosts that cannot render terminal components. */
-async function runQuestionnaireWithBasicDialogs(
-	ctx: ExtensionContext,
-	questions: GoalQuestionnaireQuestion[],
-	auditorToggleInit?: { defaultEnabled: boolean },
-): Promise<GoalQuestionnaireResult> {
-	const unavailable = (): GoalQuestionnaireResult => ({ questions: [], answers: [], cancelled: true, unavailable: true, ...(auditorToggleInit ? { auditorEnabled: auditorToggleInit.defaultEnabled } : {}) });
-	// Require only the primitives this questionnaire can actually use.
-	if ((auditorToggleInit || questions.some(q => q.options.length > 0)) && typeof ctx.ui.select !== "function") return unavailable();
-	if (questions.some(q => q.options.length === 0 || q.allowCustom !== false) && typeof ctx.ui.input !== "function") return unavailable();
-	let auditorEnabled = auditorToggleInit?.defaultEnabled;
-	const cancelled = (): GoalQuestionnaireResult => ({ questions, answers: [], cancelled: true, auditorEnabled });
-	if (auditorToggleInit) {
-		const enabled = "Enabled — require independent approval";
-		const disabled = "Disabled — skip the completion audit";
-		const choices = auditorEnabled ? [enabled, disabled] : [disabled, enabled];
-		const picked = await ctx.ui.select(`Completion auditor (currently ${auditorEnabled ? "enabled" : "disabled"})`, choices);
-		if (picked === undefined) return cancelled();
-		if (!choices.includes(picked)) throw new Error("The host returned an unknown auditor choice");
-		auditorEnabled = picked === enabled;
-	}
-	const answers: GoalQuestionnaireAnswer[] = [];
-	for (const question of questions) {
-		let prompt = question.context ? `${question.question}\n\n${question.context}` : question.question;
-		if (auditorToggleInit) prompt += `\n\nAuditor for this goal: ${auditorEnabled ? "enabled (independent approval required)" : "disabled (completion skips the audit)"}.`;
-		let answer: string | undefined;
-		let wasCustom = question.options.length === 0;
-		if (!wasCustom) {
-			// Numbered labels keep duplicate/reserved option text unambiguous.
-			const labels = question.options.map((option, i) => `${i + 1}. ${option}${question.recommended === i ? " (Recommended)" : ""}`);
-			const customLabel = `${labels.length + 1}. ${CUSTOM_ANSWER_LABEL}`;
-			const options = question.allowCustom === false ? labels : [...labels, customLabel];
-			const picked = await ctx.ui.select(prompt, options);
-			if (picked === undefined) return cancelled();
-			if (!options.includes(picked)) throw new Error("The host returned an unknown questionnaire choice");
-			wasCustom = picked === customLabel && question.allowCustom !== false;
-			if (!wasCustom) answer = question.options[labels.indexOf(picked)];
-		}
-		if (wasCustom) {
-			// Match the terminal editor: whitespace alone is not a submitted answer.
-			do {
-				answer = (await ctx.ui.input(prompt, "Write your answer"))?.trim();
-			} while (answer === "");
-		}
-		if (answer === undefined) return cancelled();
-		answers.push({ id: question.id, question: question.question, answer, wasCustom });
-	}
-	return { questions, answers, cancelled: false, auditorEnabled };
-}
-
 export const DIALOG_UNAVAILABLE_HINT = "This host cannot display the required goal-drafting dialogs. Use a host with select/input support or the pi TUI, or explicitly restart with PI_GOAL_AUTO_CONFIRM=1 to confirm proposals without a dialog.";
 
 export function proposalDialogFailureMessage(error: unknown): string {
@@ -153,8 +85,6 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 	if (typeof ctx.ui.custom !== "function") {
 		return runQuestionnaireWithBasicDialogs(ctx, questions, auditorToggleInit);
 	}
-	const isMulti = questions.length > 1;
-	const totalTabs = questions.length + 1;
 
 	const controls = goalDialogControls(typeof ctx.cwd === "string" ? ctx.cwd : process.cwd());
 	const showRichDialog = async () => await ctx.ui.custom<GoalQuestionnaireResult | undefined>((tui, theme, _kb, done) => {
@@ -183,28 +113,16 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 		// fitDialogLines); content that fits renders exactly as the
 		// pre-regression (383ae52) UI. Only applies with real TUI dimensions.
 		const tuiInfo = tui as unknown as { terminal?: { rows?: number }; previousLines?: string[] };
-		const terminalRows = tuiInfo.terminal?.rows;
-		const baseFrame = tuiInfo.previousLines?.length;
-		const maxDialogLines = computeDialogLineLimit({ terminalRows, baseFrameLines: baseFrame });
-		let currentTab = 0;
-		let optionIndex = 0;
-		let inputMode = false;
-		let inputQuestionId: string | null = null;
+		const maxDialogLines = computeDialogLineLimit({ terminalRows: tuiInfo.terminal?.rows, baseFrameLines: tuiInfo.previousLines?.length });
+
+		const state = createQuestionnaireState(questions, auditorToggleInit);
+		const layout = createRenderLayout();
+		let cachedLines: string[] | undefined;
 		// Focusable container state: the TUI sets `focused` when the dialog has
 		// focus; we propagate it to the embedded Editor while in input mode so
 		// the editor emits CURSOR_MARKER and the hardware cursor is positioned
 		// for IME input (pi docs/tui.md — Focusable Interface).
 		let dialogFocused = false;
-		let cachedLines: string[] | undefined;
-		let optionsStartIndex = -1;
-		// §options-scroll viewport state (select-mode + submit tabs only).
-		let scrollTop = 0;
-		let needsFollow = false;
-		let optionRanges: Array<[number, number]> = [];
-		let questionBlockEnd = -1;
-		let auditorEnabled = auditorToggleInit?.defaultEnabled ?? true;
-		const answers = new Map<string, GoalQuestionnaireAnswer>();
-		const drafts = new Map<string, string>();
 
 		const editorTheme: EditorTheme = {
 			borderColor: (s) => theme.fg("accent", s),
@@ -228,567 +146,58 @@ export async function runGoalQuestionnaire(ctx: ExtensionContext, rawQuestions: 
 			tui.setShowHardwareCursor(wasHardwareCursorShown);
 			// Resume pi's working spinner (the agent run is still active until agent_end).
 			ctx.ui.setWorkingVisible(true);
-			const ordered = questions.map((q) => answers.get(q.id)).filter((a): a is GoalQuestionnaireAnswer => !!a);
-			done({ questions, answers: ordered, cancelled, auditorEnabled: auditorToggleInit ? auditorEnabled : undefined });
+			done({ questions, answers: orderedAnswers(state), cancelled, auditorEnabled: auditorToggleInit ? state.auditorEnabled : undefined });
 		}
 
-		function currentQuestion(): GoalQuestionnaireQuestion | undefined {
-			return questions[currentTab];
-		}
+		const keys = createQuestionnaireKeys({
+			state,
+			controls,
+			maxDialogLines,
+			submit,
+			refresh,
+			editor: {
+				// Anchor the editor while the dialog has focus.
+				open(text) {
+					editor.setText(text);
+					editor.focused = dialogFocused;
+					tui.setShowHardwareCursor(dialogFocused);
+				},
+				// Release the cursor and clear the editor.
+				close() {
+					editor.focused = false;
+					tui.setShowHardwareCursor(false);
+					editor.setText("");
+				},
+				getText: () => editor.getText(),
+				handleInput: (data) => editor.handleInput(data),
+			},
+		});
+		editor.onSubmit = keys.submitEditor;
 
-		function displayOptions(): Array<{ label: string; isCustom?: boolean }> {
-			const q = currentQuestion();
-			if (!q) return [];
-			const opts: Array<{ label: string; isCustom?: boolean }> = q.options.map((label) => ({ label }));
-			if (q.allowCustom !== false) opts.push({ label: "Write your own answer...", isCustom: true });
-			return opts;
-		}
-
-		function allAnswered(): boolean {
-			return questions.every((q) => answers.has(q.id));
-		}
-
-		function enterQuestion(q: GoalQuestionnaireQuestion) {
-			const existing = answers.get(q.id);
-			const draft = drafts.get(q.id);
-			// §options-scroll: start each question tab from the top.
-			scrollTop = 0;
-			needsFollow = false;
-			if (q.options.length === 0) {
-				inputMode = true;
-				inputQuestionId = q.id;
-				editor.setText(draft ?? (existing?.wasCustom ? existing.answer : ""));
-				// Anchor the editor while the dialog has focus (see enterInputMode).
-				editor.focused = dialogFocused;
-				tui.setShowHardwareCursor(dialogFocused);
-			} else if (existing?.wasCustom) {
-				optionIndex = q.options.length;
-			} else if (existing && !existing.wasCustom) {
-				const idx = q.options.indexOf(existing.answer);
-				optionIndex = idx >= 0 ? idx : 0;
-			} else {
-				optionIndex = q.recommended ?? 0;
-			}
-		}
-
-		function enterSubmitTab() {
-	// §options-scroll: the submit summary also opens from the top.
-	optionIndex = 0;
-	scrollTop = 0;
-	needsFollow = false;
-}
-
-function advanceAfterAnswer() {
-			if (!isMulti) {
-				submit(false);
-				return;
-			}
-			if (currentTab < questions.length - 1) currentTab++;
-			else currentTab = questions.length;
-			const nextQ = currentQuestion();
-			if (nextQ) enterQuestion(nextQ);
-			else enterSubmitTab();
-			refresh();
-		}
-
-		function saveAnswer(qId: string, value: string, wasCustom: boolean) {
-			const q = questions.find((qq) => qq.id === qId);
-			answers.set(qId, { id: qId, question: q?.question ?? qId, answer: value, wasCustom });
-		}
-
-		/**
-		 * Activate the answer editor for a question: position the hardware
-		 * cursor and mark the Editor focused (emits CURSOR_MARKER for IME).
-		 */
-		/**
-		 * §options-first fit: every option line always stays in frame. When the
-		 * question + context + options exceed the bound, the question/context
-		 * section yields first (it remains in the agent transcript): middle lines
-		 * (blanks, auditor, "Current:", context) drop before the question block
-		 * and the footer hint, and the tail slack (blank/footer) gives way before
-		 * the question. Returns null when even the option block + borders cannot
-		 * fit (pathological) so the caller falls back to the scroll viewport.
-		 */
-	function fitOptionsInFrame(
-		lines: string[],
-		maxDialogLines: number,
-		questionBlockEnd: number,
-		optionsStart: number,
-		lastOptionLine: number,
-	): string[] | null {
-		if (maxDialogLines <= 0 || lines.length <= maxDialogLines) return lines;
-		if (optionsStart < 0 || lastOptionLine < optionsStart) return null;
-		const head = lines.slice(0, Math.max(questionBlockEnd, 1));
-		const middle = lines.slice(Math.max(questionBlockEnd, 1), optionsStart);
-		const tail = lines.slice(optionsStart);
-		const optionsBlockLen = lastOptionLine - optionsStart + 1;
-		// The option block + bottom border must fit on their own; otherwise the
-		// scroll viewport is the last resort (nothing is ever hidden).
-		if (optionsBlockLen + 1 > maxDialogLines) return null;
-		// Shrink the middle from its end: blanks first, then auditor/Current/
-		// context lines — the question block is untouched.
-		const mid = middle.slice();
-		while (head.length + mid.length + tail.length > maxDialogLines && mid.length > 0) {
-			let blankIdx = -1;
-			for (let i = mid.length - 1; i >= 0; i--) {
-				if (mid[i]!.trim() === "") { blankIdx = i; break; }
-			}
-			if (blankIdx >= 0) mid.splice(blankIdx, 1);
-			else mid.pop();
-		}
-		// Still over: the tail gives its slack (blank between options and
-		// footer, then the footer hint) before the question block does. Never
-		// drop the option block or the bottom border.
-		const tailKept = tail.slice();
-		while (head.length + mid.length + tailKept.length > maxDialogLines && tailKept.length > optionsBlockLen + 1) {
-			// Prefer removing a blank line (never the options or the border),
-			// then the line just above the bottom border (the footer hint).
-			let tailBlank = -1;
-			for (let i = tailKept.length - 2; i >= 1; i--) {
-				if (tailKept[i]!.trim() === "") { tailBlank = i; break; }
-			}
-			if (tailBlank >= 1) tailKept.splice(tailBlank, 1);
-			else tailKept.splice(tailKept.length - 2, 1);
-		}
-		// Still over: give the question block's trailing wrap lines (then the
-		// question itself) before giving up — options + borders always stay.
-		const headKept = head.slice();
-		while (head.length + mid.length + tailKept.length > maxDialogLines && headKept.length > 1) {
-			headKept.pop();
-		}
-		if (headKept.length + mid.length + tailKept.length > maxDialogLines) return null;
-		return [...headKept, ...mid, ...tailKept];
-	}
-
-	function enterInputMode(qId: string) {
-			inputMode = true;
-			inputQuestionId = qId;
-			const draft = drafts.get(qId);
-			const existing = answers.get(qId);
-			editor.setText(draft ?? (existing?.wasCustom ? existing.answer : ""));
+		if (enterQuestion(state, questions[0]!)) {
+			editor.setText(editorTextFor(state, questions[0]!.id));
 			editor.focused = dialogFocused;
 			tui.setShowHardwareCursor(dialogFocused);
 		}
 
-		/** Deactivate the answer editor: release the cursor and clear the editor. */
-		function leaveInputMode() {
-			inputMode = false;
-			inputQuestionId = null;
-			editor.focused = false;
-			tui.setShowHardwareCursor(false);
-			editor.setText("");
-		}
-
-		editor.onSubmit = (value) => {
-			if (!inputQuestionId) return;
-			const trimmed = value.trim();
-			if (!trimmed) {
-				refresh();
-				return;
-			}
-			drafts.delete(inputQuestionId);
-			saveAnswer(inputQuestionId, trimmed, true);
-			leaveInputMode();
-			advanceAfterAnswer();
-		};
-
-		function exitEditor() {
-			if (inputQuestionId) {
-				const text = editor.getText();
-				if (text.trim()) drafts.set(inputQuestionId, text);
-				else drafts.delete(inputQuestionId);
-			}
-			leaveInputMode();
-		}
-
-		enterQuestion(questions[0]!);
-
-		function handleInput(data: string) {
-			if (inputMode) {
-				if (controls.cancelEditing(data)) {
-					const q = currentQuestion();
-					if (q && q.options.length === 0 && !isMulti) submit(true);
-					else {
-						exitEditor();
-						refresh();
-					}
-					return;
-				}
-				if (isMulti && (controls.matches(data, "next", true) || controls.matches(data, "previous", true))) {
-					exitEditor();
-					currentTab = controls.matches(data, "next", true) ? (currentTab + 1) % totalTabs : (currentTab - 1 + totalTabs) % totalTabs;
-					const nextQ = currentQuestion();
-					if (nextQ) enterQuestion(nextQ);
-					else enterSubmitTab();
-					refresh();
-					return;
-				}
-				editor.handleInput(data);
-				refresh();
-				return;
-			}
-
-			const q = currentQuestion();
-			const opts = displayOptions();
-
-			if (isMulti) {
-				if (controls.matches(data, "next")) {
-					currentTab = (currentTab + 1) % totalTabs;
-					const nextQ = currentQuestion();
-					if (nextQ) enterQuestion(nextQ);
-					else enterSubmitTab();
-					refresh();
-					return;
-				}
-				if (controls.matches(data, "previous")) {
-					currentTab = (currentTab - 1 + totalTabs) % totalTabs;
-					const nextQ = currentQuestion();
-					if (nextQ) enterQuestion(nextQ);
-					else enterSubmitTab();
-					refresh();
-					return;
-				}
-			}
-
-			// §options-scroll viewport keys (select-mode question tabs AND the
-			// submit summary): page and line scroll without moving the selection.
-			// Handled before the submit-tab early return so the summary scrolls
-			// too. ↑/↓ still select and auto-follow into view on the next render.
-			if (controls.matches(data, "pageUp")) {
-				scrollTop -= Math.max(1, (maxDialogLines ?? 10) - 1);
-				needsFollow = false;
-				refresh();
-				return;
-			}
-			if (controls.matches(data, "pageDown")) {
-				scrollTop += Math.max(1, (maxDialogLines ?? 10) - 1);
-				needsFollow = false;
-				refresh();
-				return;
-			}
-			if (controls.matches(data, "scrollUp")) {
-				scrollTop -= 1;
-				needsFollow = false;
-				refresh();
-				return;
-			}
-			if (controls.matches(data, "scrollDown")) {
-				scrollTop += 1;
-				needsFollow = false;
-				refresh();
-				return;
-			}
-
-			if (currentTab === questions.length) {
-				if (controls.matches(data, "confirm") && allAnswered()) submit(false);
-				else if (controls.matches(data, "cancel")) submit(true);
-				return;
-			}
-
-			if (controls.matches(data, "up")) {
-				optionIndex = Math.max(0, optionIndex - 1);
-				needsFollow = true; // §options-scroll: keep the selection visible
-				refresh();
-				return;
-			}
-			if (controls.matches(data, "down")) {
-				optionIndex = Math.min(opts.length - 1, optionIndex + 1);
-				needsFollow = true;
-				refresh();
-				return;
-			}
-
-			// Auditor toggle hotkey
-			if (controls.matches(data, "toggleAuditor") && auditorToggleInit) {
-				auditorEnabled = !auditorEnabled;
-				refresh();
-				return;
-			}
-
-			if (controls.matches(data, "confirm") && q) {
-				if (q.options.length === 0 || opts[optionIndex]?.isCustom) {
-					enterInputMode(q.id);
-					refresh();
-					return;
-				}
-				const opt = opts[optionIndex];
-				if (opt) {
-					saveAnswer(q.id, opt.label, false);
-					advanceAfterAnswer();
-				}
-				return;
-			}
-
-			if (controls.matches(data, "cancel")) submit(true);
-		}
-
-			function render(width: number): string[] {
+		function render(width: number): string[] {
 			if (cachedLines) return cachedLines;
-			const safeWidth = Math.max(20, width);
-			let lines: string[] = [];
-			const q = currentQuestion();
-			const opts = displayOptions();
-			const add = (s: string) => lines.push(truncateToWidth(s, safeWidth, "…", true));
-			const addWrapped = (s: string) => lines.push(...wrapTextWithAnsi(s, safeWidth));
-			/**
-			 * Wraps a pipe-prefixed line and prepends "│   " to continuation lines
-			 * so wrapped content stays within the ASCII box.
-			 */
-			const PIPE_PREFIX = "│   ";
-			const PIPE_WIDTH = visibleWidth(PIPE_PREFIX);
-			const addWrappedPipe = (styledLine: string) => {
-				const wrapWidth = Math.max(1, safeWidth - PIPE_WIDTH);
-				const wrapped = wrapTextWithAnsi(styledLine, wrapWidth);
-				for (let i = 0; i < wrapped.length; i++) {
-					lines.push(i === 0 ? wrapped[i]! : PIPE_PREFIX + wrapped[i]!);
-				}
-			};
-
-			/** Render context lines with per-line styling. No truncation. */
-			const renderContextLines = (context: string): void => {
-				const rawLines = context.split("\n");
-				for (const rawLine of rawLines) {
-					const trimmed = rawLine.trim();
-					// Empty line — preserve as spacing
-					if (!trimmed) {
-						lines.push("");
-						continue;
-					}
-
-					// 1. Announcement header — "● Goal draft/tweak ready for confirmation."
-					if (/^● Goal (draft|tweak) ready for confirmation\.$/.test(trimmed)) {
-						addWrapped(theme.fg("accent", rawLine));
-						continue;
-					}
-
-					// 2. Section marker — "─── Name ───" → full-width box-drawing header
-					const sectionMatch = trimmed.match(/^───\s+(.+?)\s+───$/);
-					if (sectionMatch) {
-						const sectionName = sectionMatch[1];
-						const namePart = ` ${sectionName} `;
-						const left = "┌─";
-						const right = "─┐";
-						const fill = Math.max(0, safeWidth - 2 - visibleWidth(left + namePart + right));
-						add(theme.fg("accent", left + namePart + "─".repeat(fill) + right));
-						continue;
-					}
-
-					// 3. Lines with │ prefix come from buildDraftConfirmationText / buildTweakConfirmationText.
-					if (trimmed.startsWith("│")) {
-						const afterPipe = trimmed.slice(1).trim();
-						// 3a. Task checkbox under │ prefix — detect before key-value to avoid
-						// "[x] t1: ..." being misinterpreted as a key-value pair.
-						const pipeTaskMatch = afterPipe.match(/^(\[.\])(\s+)(.+)$/);
-						if (pipeTaskMatch) {
-							const bracket = pipeTaskMatch[1]!;
-							const sep = pipeTaskMatch[2]!;
-							const rest = pipeTaskMatch[3]!;
-							// Preserve inner whitespace between │ and the task marker (e.g. "   " in "│   [x]...")
-							const pipeContent = trimmed.slice(1);
-							const innerWs = pipeContent.slice(0, pipeContent.length - pipeContent.trimStart().length);
-							const linePrefix = "│" + innerWs;
-							const color = bracket === "[x]" ? "success" : "warning";
-							addWrappedPipe(linePrefix + theme.fg(color, bracket) + sep + theme.fg("muted", rest));
-							continue;
-						}
-						// 3b. Key-value content (e.g. "│   Mode: Normal goal", "│   Auto-continue: yes")
-						if (afterPipe.includes(": ")) {
-							const colonIdx = afterPipe.indexOf(": ");
-							const val = afterPipe.slice(colonIdx + 2).trim();
-							const keyPart = rawLine.slice(0, rawLine.indexOf(afterPipe) + colonIdx + 2);
-							if (val === "yes" || val === "no") {
-								addWrappedPipe(theme.fg("muted", keyPart) + theme.fg(val === "yes" ? "success" : "warning", val));
-								continue;
-							}
-							addWrappedPipe(theme.fg("muted", rawLine));
-							continue;
-						}
-						// 3c. Generic content under │ prefix (topic, goal text, etc.)
-						addWrappedPipe(theme.fg("muted", rawLine));
-						continue;
-					}
-
-					// 4. Goal objective structure lines — detected before task checkboxes
-					// because === Goal could overlap with ─── markers but we already checked those.
-					const GOAL_SECTION_RE = /^(=== (Goal|Sisyphus Goal) ===|Objective:|Success criteria:|Boundaries:|Constraints:|Verification contract:|If blocked:)/;
-					if (GOAL_SECTION_RE.test(trimmed)) {
-						addWrapped(theme.fg("accent", rawLine));
-						continue;
-					}
-
-					// 5. Actual box-drawing borders (┌ └ ├ └ ┐ ┤ ┘ ─) — NOT │ which is handled above
-					if (/^[┌├└┐┤┘─]/.test(trimmed)) {
-						addWrapped(theme.fg("dim", rawLine));
-						continue;
-					}
-
-					// 6. Task checkbox item — "[ ] ...", "[x] ...", or "[~] ..." (with optional indent)
-					const checkMatch = trimmed.match(/^(\[.\])(\s+)(.+)$/);
-					if (checkMatch) {
-						const bracket = checkMatch[1]!;
-						const sep = checkMatch[2]!;
-						const rest = checkMatch[3]!;
-						const indent = rawLine.slice(0, rawLine.length - trimmed.length);
-						const color = bracket === "[x]" ? "success" : "warning";
-						addWrapped(indent + theme.fg(color, bracket) + sep + theme.fg("muted", rest));
-						continue;
-					}
-
-					// 7. Default: any remaining content (fallback)
-					addWrapped(theme.fg("muted", rawLine));
-				}
-			};
-
-			add(theme.fg("accent", "─".repeat(safeWidth)));
-			// Lines up to the question line (top border, tabs, question incl.
-			// wraps) are the protected head — the slice below must never hide them.
-			let protectedCount = lines.length;
-			if (isMulti) {
-				const tabs: string[] = ["← "];
-				for (let i = 0; i < questions.length; i++) {
-					const isActive = i === currentTab;
-					const isAnswered = answers.has(questions[i]!.id);
-					const label = ` ${isAnswered ? "■" : "□"} ${questions[i]!.id} `;
-					tabs.push(isActive ? theme.bg("selectedBg", theme.fg("text", label)) : theme.fg(isAnswered ? "success" : "muted", label));
-					tabs.push(" ");
-				}
-				const submitText = " ✓ Submit ";
-				tabs.push(currentTab === questions.length ? theme.bg("selectedBg", theme.fg("text", submitText)) : theme.fg(allAnswered() ? "success" : "dim", submitText));
-				tabs.push(" →");
-				add(` ${tabs.join("")}`);
-				lines.push("");
-				protectedCount = lines.length;
-			}
-
-			function renderOptions() {
-				optionsStartIndex = lines.length;
-				for (let i = 0; i < opts.length; i++) {
-					const start = lines.length;
-					const opt = opts[i]!;
-					const selected = i === optionIndex;
-					const prefix = selected ? theme.fg("accent", "> ") : "  ";
-					const recTag = !opt.isCustom && q?.recommended === i ? theme.fg("success", " ★") : "";
-					addWrapped(prefix + theme.fg(selected ? "accent" : "text", `${i + 1}. ${opt.label}`) + recTag);
-					optionRanges[i] = [start, lines.length - 1];
-				}
-			}
-
-			if (inputMode && q) {
-				addWrapped(theme.fg("text", ` ${q.question}`));
-				protectedCount = lines.length;
-				if (q.context) renderContextLines(q.context);
-				lines.push("");
-				if (q.options.length > 0) {
-					renderOptions();
-					lines.push("");
-				}
-				add(theme.fg("muted", " Your answer:"));
-				for (const line of editor.render(safeWidth - 2)) add(` ${line}`);
-				lines.push("");
-				add(theme.fg("dim", ` Enter to submit • ${controls.editorCancelHint()} to cancel`));
-			} else if (currentTab === questions.length) {
-				add(theme.fg("accent", theme.bold(" Ready to submit")));
-				protectedCount = lines.length;
-				lines.push("");
-				for (const question of questions) {
-					const answer = answers.get(question.id);
-					add(`${theme.fg("muted", ` ${question.id}: `)}${answer ? theme.fg("text", `${answer.wasCustom ? "(wrote) " : ""}${answer.answer}`) : theme.fg("warning", "(unanswered)")}`);
-				}
-				lines.push("");
-				add(allAnswered() ? theme.fg("success", ` Press ${controls.hint("confirm")} to submit`) : theme.fg("warning", ` Unanswered: ${questions.filter((qq) => !answers.has(qq.id)).map((qq) => qq.id).join(", ")}`));
-			} else if (q) {
-				addWrapped(theme.fg("text", ` ${q.question}`));
-				questionBlockEnd = lines.length;
-				protectedCount = lines.length;
-				if (q.context) renderContextLines(q.context);
-				// Auditor toggle line between context and options
-				if (auditorToggleInit) {
-					const circle = auditorEnabled ? "●" : "○";
-					const label = auditorEnabled ? "Auditor enabled" : "Auditor disabled";
-					const color = auditorEnabled ? "success" : "warning";
-					add(theme.fg(color, ` ${circle} ${label}`) + theme.fg("dim", `  (press '${controls.hint("toggleAuditor")}' to toggle)`));
-					lines.push("");
-				}
-				const existing = answers.get(q.id);
-				if (existing) add(theme.fg("dim", ` Current: ${existing.wasCustom ? "(wrote) " : ""}${existing.answer}`));
-				lines.push("");
-				if (opts.length > 0) renderOptions();
-				else add(theme.fg("muted", ` Press ${controls.hint("confirm")} to write your answer`));
-			}
-
-			lines.push("");
-			if (!inputMode) {
-				const auditorHint = auditorToggleInit ? ` • ${controls.hint("toggleAuditor")} toggle auditor` : "";
-				add(theme.fg("dim", isMulti ? ` ${controls.hint("next")}/${controls.hint("previous")} navigate • ${controls.navigationHint()} select • ${controls.hint("confirm")} confirm • ${controls.hint("cancel")} cancel` + auditorHint : ` ${controls.navigationHint()} navigate • ${controls.hint("confirm")} select • ${controls.hint("cancel")} cancel` + auditorHint));
-			}
-			add(theme.fg("accent", "─".repeat(safeWidth)));
-			// Safety net: ensure no returned line exceeds the terminal width
-			for (let i = 0; i < lines.length; i++) {
-				const line = lines[i];
-				if (line && visibleWidth(line) > safeWidth) {
-					lines[i] = truncateToWidth(line, safeWidth);
-				}
-			}
-			// Churn guard: bound to the terminal height (see factory top) so the
-			// opened frame never exceeds the screen. Never slice the question:
-			// keep the protected head, then spend the rest of the budget on the
-			// tail (options/footer/bottom border) — or, for plain select-mode
-			// questions where the options start right after the head, keep the
-			// top options so the recommended one stays visible. Proposal
-			// confirmations additionally keep the tasks section in frame; the
-			// objective-box middle is sacrificed there because the full objective
-			// is always in the scrollable transcript presentation (renderCall).
-			if (maxDialogLines !== undefined && lines.length > maxDialogLines) {
-				const proposalSegments = !inputMode && currentTab !== questions.length && !!q && q.context
-					? findProposalPresentationSegments(lines, optionsStartIndex)
-					: null;
-				if (proposalSegments) {
-					// Proposal confirmations keep their segment protection (tasks +
-					// auditor + options within the bound; the objective-box middle
-					// stays in the scrollback presentation).
-					lines = fitDialogLines(lines, maxDialogLines, protectedCount, proposalSegments);
-				} else if (!inputMode && currentTab !== questions.length && questionBlockEnd >= 0) {
-					// Plain select-mode question tab: all options in frame;
-					// question/context yields first (it stays in the transcript).
-					const fitted = fitOptionsInFrame(lines, maxDialogLines, questionBlockEnd, optionsStartIndex, optionRanges[optionRanges.length - 1]?.[1] ?? -1);
-					if (fitted) {
-						lines = fitted;
-						scrollTop = 0;
-						needsFollow = false;
-					} else {
-						// Pathological: options alone overflow the bound — scroll
-						// viewport is the last resort (nothing ever hidden).
-						const scrollState = { scrollTop, needsFollow, optionRanges, followIndex: optionIndex };
-						lines = fitDialogLines(lines, maxDialogLines, protectedCount, null, scrollState, (s) => theme.fg("dim", s), controls.pagingHint());
-						scrollTop = scrollState.scrollTop;
-						needsFollow = scrollState.needsFollow;
-					}
-				} else {
-					// Input mode, submit tab: legacy tail-keep / viewport behavior.
-					const scrollState = !inputMode ? { scrollTop, needsFollow, optionRanges, followIndex: optionIndex } : null;
-					lines = fitDialogLines(lines, maxDialogLines, protectedCount, null, scrollState, (s) => theme.fg("dim", s), controls.pagingHint());
-					if (scrollState) {
-						scrollTop = scrollState.scrollTop;
-						needsFollow = scrollState.needsFollow;
-					}
-				}
-			}
-			cachedLines = lines;
-			return lines;
+			cachedLines = renderQuestionnaire({ state, layout, theme, controls, editor, width, maxDialogLines });
+			return cachedLines;
 		}
 
 		return {
 			render,
 			invalidate: () => { cachedLines = undefined; },
-			handleInput,
+			handleInput: keys.handleInput,
 			// Focusable (pi docs/tui.md): propagate focus to the embedded Editor
 			// so it emits CURSOR_MARKER and the hardware cursor is positioned
 			// correctly for IME input while the answer editor is active.
 			get focused(): boolean { return dialogFocused; },
 			set focused(v: boolean) {
 				dialogFocused = v;
-				editor.focused = v && inputMode;
-				tui.setShowHardwareCursor(v && inputMode);
+				editor.focused = v && state.inputMode;
+				tui.setShowHardwareCursor(v && state.inputMode);
 			},
 		};
 	});
