@@ -36,18 +36,25 @@ const testFiles = suite === "integration"
 			? [...e2eFiles, ...integrationFiles, ...unitFiles]
 			: unitFiles;
 
-// `--shard=1/4` runs a share of the files. The slowest files go first and are dealt out in turn, so
-// no shard is left holding all of them. The shards together cover every file exactly once.
+// `--shard=1/4` runs a share of the files. Each file gets a rough cost (the two slowest files, then
+// end-to-end, integration and unit files) and goes to the shard with the least work so far, so no
+// shard is left holding all the slow ones. The shards together cover every file exactly once.
 const SLOWEST = ["tests/e2e/goal-session-safety.test.ts", "tests/goal-cache-simulation.test.ts"];
 function shardFiles(files, shardSpec) {
 	if (!shardSpec) return files;
 	const [index, count] = shardSpec.split("/").map(Number);
-	const rank = (file) => {
+	const cost = (file) => {
 		const name = rel(file).slice(2);
-		return SLOWEST.includes(name) ? 0 : name.startsWith("tests/e2e/") ? 1 : name.startsWith("tests/integration/") ? 2 : 3;
+		return SLOWEST.includes(name) ? 8 : name.startsWith("tests/e2e/") ? 3 : name.startsWith("tests/integration/") ? 2 : 1;
 	};
-	const ordered = [...files].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
-	return ordered.filter((_, position) => position % count === index - 1);
+	const load = new Array(count).fill(0);
+	const mine = [];
+	for (const file of [...files].sort((a, b) => cost(b) - cost(a) || a.localeCompare(b))) {
+		const target = load.indexOf(Math.min(...load));
+		load[target] += cost(file);
+		if (target === index - 1) mine.push(file);
+	}
+	return mine.sort();
 }
 const shardedFiles = shardFiles(testFiles, shard);
 

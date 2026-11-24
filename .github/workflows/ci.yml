@@ -123,6 +123,14 @@ jobs:
         uses: ./.github/actions/setup
         with:
           need: bench
+      # Every push to main saves its benchmark result. A pull request on that commit reuses it
+      # instead of measuring the base again. If the gate fails against it, the base is measured
+      # again on this machine before the check can fail.
+      - if: steps.setup.outputs.run == 'true' && github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: .bench-saved
+          key: bench-${{ env.CI_BASE_SHA }}
       - if: steps.setup.outputs.run == 'true'
         uses: actions/checkout@v5
         with:
@@ -134,12 +142,27 @@ jobs:
           ln -s "$GITHUB_WORKSPACE/node_modules" .benchmark-base/node_modules
           # Main preserves compact historical checkpoints; use the corrected fixture for both runs.
           cp experiments/bench/b10-checkpoint-growth.mjs .benchmark-base/experiments/bench/b10-checkpoint-growth.mjs
-          # Both runs use their own directory, and the runner has cores to spare.
-          npm --prefix .benchmark-base run bench:naf -- after naf &
-          base=$!
-          npm run bench:naf -- after naf
-          wait "$base"
+          measure_base() { npm --prefix .benchmark-base run bench:naf -- after naf; }
+          saved="$GITHUB_WORKSPACE/.bench-saved/baseline-naf-after.json"
+          if [ -f "$saved" ]; then
+            npm run bench:naf -- after naf
+            if PI_GOAL_BENCH_REFERENCE="$saved" npm run bench:gate:naf; then exit 0; fi
+            echo "The gate failed against the saved base result. Measuring the base again on this machine."
+            measure_base
+          else
+            # Both runs use their own directory, and the runner has cores to spare.
+            measure_base &
+            base=$!
+            npm run bench:naf -- after naf
+            wait "$base"
+          fi
           PI_GOAL_BENCH_REFERENCE="$GITHUB_WORKSPACE/.benchmark-base/experiments/bench/baseline-naf-after.json" npm run bench:gate:naf
+          mkdir -p .bench-saved && cp experiments/bench/baseline-naf-after.json .bench-saved/
+      - if: steps.setup.outputs.run == 'true' && github.event_name == 'push'
+        uses: actions/cache/save@v4
+        with:
+          path: .bench-saved
+          key: bench-${{ github.sha }}
 
   # The one check branch protection needs. It starts with the others and watches them, so it
   # finishes a moment after the last one instead of waiting for a new runner to start.
