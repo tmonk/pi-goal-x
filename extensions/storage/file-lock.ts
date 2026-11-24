@@ -52,11 +52,17 @@ function lockHolderPid(lockPath: string): number | undefined {
 
 /** Acquire the lock or throw `timeoutError()`. Callers MUST release() in a finally block. */
 export function acquireFileLock(lockPath: string, options: FileLockOptions): FileLock {
-	fs.mkdirSync(path.dirname(lockPath), { recursive: true });
 	const payload = JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() });
 	for (let attempt = 0; attempt < options.attempts; attempt++) {
 		try {
-			fs.writeFileSync(lockPath, payload, { flag: "wx" });
+			try {
+				fs.writeFileSync(lockPath, payload, { flag: "wx" });
+			} catch (err) {
+				// The lock folder is made on first use, not checked on every call.
+				if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+				fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+				fs.writeFileSync(lockPath, payload, { flag: "wx" });
+			}
 			let released = false;
 			return {
 				release(): void {

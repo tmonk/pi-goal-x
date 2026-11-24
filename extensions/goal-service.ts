@@ -68,6 +68,17 @@ function ledgerEventsFor(spec: GoalMutationSpec, written: GoalRecord): GoalLedge
  * (goal-turn-buffer.ts), the reconcile decision (goal-reconcile.ts), task
  * updates (goal-task-update.ts) and usage merging (goal-usage-baseline.ts).
  */
+/** Everything a goal file saves, in a fixed key order, except the two fields every write changes. */
+function savedContent(goal: GoalRecord): string {
+	const sorted = (value: unknown): unknown => {
+		if (Array.isArray(value)) return value.map(sorted);
+		if (value === null || typeof value !== "object") return value;
+		return Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, item]) => [key, sorted(item)]));
+	};
+	const { updatedAt: _updatedAt, revision: _revision, ...rest } = goal;
+	return JSON.stringify(sorted(rest));
+}
+
 export class GoalService {
 	private readonly ref: GoalServiceRef;
 	private readonly usage = new UsageBaseline();
@@ -497,6 +508,10 @@ export class GoalService {
 				});
 				return this.writeFocused(ctx, merged);
 			}
+			// The turn-end flush already saved this goal. When the file holds exactly
+			// what memory holds, a write would only bump the revision and the time,
+			// so skip it: the second goal write and pool snapshot rewrite of every turn.
+			if (savedContent(freshDisk) === savedContent(current)) return current;
 			return this.writeFocused(ctx, mergeGoalPromptFromDisk(ctx, { ...current, updatedAt: nowIso(), revision: capturedRevision + 1 }));
 		} finally {
 			lock.release();

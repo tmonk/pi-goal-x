@@ -1,7 +1,5 @@
 import { t } from "./i18n/index.ts";
 import { GOAL_COMMANDS, uiCommandHint, commandPaths, commandProblems, commandRoutes, matchCommandRoute, type GoalCommandId } from "./goal-controls.ts";
-import { showGoalControls } from "./widgets/goal-controls-dialog.ts";
-import { handleSettingsMenu } from "./goal-settings-menu.ts";
 import { goalStoragePath, goalStorageRoot } from "./storage/goal-root.ts";
 import { existsSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -15,13 +13,11 @@ import {
 } from "./goal-pool.ts";
 import { clearGoalCommandMessage } from "./goal-policy.ts";
 import { invalidateGoalLedgerCache, readGoalLedger } from "./goal-ledger.ts";
-import { buildGoalStatusText } from "./goal-status.ts";
 import { invalidateGoalSettingsCache, loadGoalSettingsFileConfig } from "./settings/files.ts";
 import { loadGoalSettings, effectiveSettingsReport } from "./settings/resolve.ts";
 import { invalidateGoalPoolCache, readActiveGoalPool } from "./storage/goal-files.ts";
 import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
 import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "./goal-drafting.ts";
-import { formatRecoveryReport, runRecoveryReport, runRecoveryRepair } from "./goal-recovery.ts";
 import { formatCheckpointHealthReport, readSessionCheckpointHealth } from "./goal-session-health.ts";
 import type {
 	GoalCommandInvoker,
@@ -235,6 +231,7 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 	}
 
 	async function runGoalRecovery(rawArgs: string, ctx: ExtensionContext): Promise<void> {
+		const { formatRecoveryReport, runRecoveryReport, runRecoveryRepair } = await import("./goal-recovery.ts");
 		const report = runRecoveryReport(ctx);
 		if (/^repair$/i.test(rawArgs)) {
 			const result = await runRecoveryRepair(ctx, report, async () => {
@@ -316,6 +313,7 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 		const verbose = /^\s*verbose\b/i.test(rawArgs);
 		const health = /^\s*health\b/i.test(rawArgs);
 		const ledger = readGoalLedger(ctx);
+		const { buildGoalStatusText } = await import("./goal-status.ts");
 		const text = buildGoalStatusText({
 			commands: core.loadedCommands,
 			keybindings: loadGoalSettings(ctx.cwd).keybindings,
@@ -527,8 +525,8 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 	define("goal-settings", {
 		description: t("Goal settings and controls; accepts controls for commands, keys and pause order."),
 		handler: async (rawArgs, ctx) => {
-			if (rawArgs.trim() === "controls") await showGoalControls(core, ctx);
-			else await handleSettingsMenu(core, ctx);
+			if (rawArgs.trim() === "controls") await (await import("./widgets/goal-controls-dialog.ts")).showGoalControls(core, ctx);
+			else await (await import("./goal-settings-menu.ts")).handleSettingsMenu(core, ctx);
 		},
 	});
 	define("goal-tweak", {

@@ -1,7 +1,7 @@
 /**
  * Benchmark orchestrator (B9 emitter + B8 assertion).
  *
- * Runs B1, B3, B2, B4, B5, B7 over the real extension functions with the
+ * Runs B1, B3, B2, B4, B5, B7, B10, B11 over the real extension functions with the
  * agent-free guard active, then writes (per campaign, see campaigns.mjs):
  *   experiments/bench/<prefix><phase>.json           (raw rows)
  *   specs/<campaign-spec-dir>/BENCH-<PHASE>.md       (human table)
@@ -37,6 +37,7 @@ import { run as runB5 } from "./b5-startup-contention-auditor.mjs";
 import { run as runB5b } from "./b5b-cold-start.mjs";
 import { run as runB7 } from "./b7-feature-matrix.mjs";
 import { run as runB10 } from "./b10-checkpoint-growth.mjs";
+import { run as runB11 } from "./b11-session-turns.mjs";
 
 const benchDir = fileURLToPath(new URL(".", import.meta.url));
 const phase = process.argv[2] ?? "before";
@@ -70,6 +71,8 @@ await runB7(baseline);
 console.log(`[bench] B7 feature matrix done (${baseline.rows.length} rows)`);
 await runB10(baseline);
 console.log(`[bench] B10 checkpoint growth done (${baseline.rows.length} rows)`);
+await runB11(baseline);
+console.log(`[bench] B11 session turns done (${baseline.rows.length} rows)`);
 
 assertNoViolations();
 console.log(`[bench] B8 ok: 0 agent/network/spawn violations, ${state.fsOpCount} fs ops counted in total`);

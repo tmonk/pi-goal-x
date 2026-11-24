@@ -114,6 +114,20 @@ if (afterMap.has("B10.checkpoint.persisted.1000")) {
 	}
 }
 
+// 3.6 B11 whole-session invariants (whenever the after run has the rows).
+// Filesystem ops per turn are exact. The growth ratio is a timing check, so its
+// bound is loose: it only has to catch a hook that scales with the history.
+if (afterMap.has("B11.session.turn.late")) {
+	const late = afterMap.get("B11.session.turn.late");
+	const early = afterMap.get("B11.session.turn.early");
+	if (typeof late.ops === "number" && late.ops > 26) {
+		failures.push(`B11 fs ops per goal turn ${late.ops} > 26`);
+	}
+	if (typeof late.p50 === "number" && typeof early?.p50 === "number" && late.p50 > Math.max(early.p50 * 3.5, early.p50 + 5)) {
+		failures.push(`B11 turn time grew with the history: ${early.p50}ms early -> ${late.p50}ms late`);
+	}
+}
+
 // 4. naf campaign: the ≥10x headroom invariant (per classify.mjs) and an
 // ops/token no-regression watch for exempt rows (their metric is still
 // monitored even though they carry no 10x target).

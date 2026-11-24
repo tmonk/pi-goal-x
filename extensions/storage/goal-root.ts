@@ -80,6 +80,14 @@ export function ensureGoalStorageDirectory(ctx: GoalStorageContext, logical: str
 	const root = goalStorageRoot(ctx);
 	const target = goalStoragePath(ctx, logical);
 	if (root === path.resolve(ctx.cwd, ".pi/goals")) {
+		// Usually the folder is already there: one lstat answers both questions.
+		try {
+			const stat = fs.lstatSync(target);
+			if (stat.isDirectory()) return;
+			if (stat.isSymbolicLink() && verifyDefault) throw new Error(`Goal directory is a symlink: ${target}`);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		}
 		fs.mkdirSync(target, { recursive: true });
 		if (verifyDefault && fs.lstatSync(target).isSymbolicLink()) throw new Error(`Goal directory is a symlink: ${target}`);
 		return;

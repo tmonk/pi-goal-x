@@ -44,6 +44,8 @@ Measured with `experiments/prompt-cache/simulate.ts` (request construction only,
 
 Big prefix breaks in these sessions went from one or two to none. The floor with no goal text at all is within about 10% of the new numbers, so little is left to gain from the goal text.
 
+Pi hands the extension a fresh copy of the history on every request. To tell whether anything earlier changed, the extension compares each request with a snapshot of the last one (text up to 4,096 characters as it is, longer text as a SHA-256). Only new messages are copied, so the check stays cheap as a session grows: about 7 ms of a goal turn at 2.8 MiB of history, where hashing every message took 27 ms.
+
 Explicit-marker relocation skips all retained live text and tolerates Pi's trailing effort-only messages. Another extension's content-bearing suffix is left alone. Changing models/providers starts a separate retention identity. Unknown session identities do not retain history between requests.
 
 Validation now includes advancing SDK request chains, combined effort-marker/retention regressions, 1,000-turn growth bounds and a 64 KiB–4 MiB history-cost gate. These are request-construction and CPU measurements, not live provider hit-rate claims.

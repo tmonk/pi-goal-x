@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import { acquireFileLock, type FileLock } from "./file-lock.ts";
-import { goalStoragePath, ensureGoalStorageDirectory, type GoalStorageContext } from "./goal-root.ts";
+import { goalStoragePath, ensureGoalStorageDirectory, isExternalGoalStorage, type GoalStorageContext } from "./goal-root.ts";
 
 /**
  * Short per-goal lock at `.pi/goals/.locks/<goalId>.lock`. It serializes
@@ -25,7 +25,9 @@ export function acquireGoalLock(
 	opts: { attempts?: number; retryMs?: number; staleTtlMs?: number } = {},
 ): GoalLock {
 	const attempts = opts.attempts ?? 8;
-	ensureGoalStorageDirectory(ctx, GOAL_LOCK_DIR, false);
+	// An external pool is checked on every lock. The default pool only needs its
+	// lock folder made once, which acquireFileLock does when the folder is missing.
+	if (isExternalGoalStorage(ctx)) ensureGoalStorageDirectory(ctx, GOAL_LOCK_DIR, false);
 	return acquireFileLock(path.join(goalStoragePath(ctx, GOAL_LOCK_DIR), `${safeLockName(goalId)}.lock`), {
 		attempts,
 		retryMs: opts.retryMs ?? 1,
