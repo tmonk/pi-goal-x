@@ -528,14 +528,14 @@ function advanceAfterAnswer() {
 		 * cursor and mark the Editor focused (emits CURSOR_MARKER for IME).
 		 */
 		/**
-	 * §options-first fit: every option line always stays in frame. When the
-	 * question + context + options exceed the bound, the question/context
-	 * section yields first (it remains in the agent transcript): middle lines
-	 * (blanks, auditor, "Current:", context) drop before the question block
-	 * and the footer hint, and the tail slack (blank/footer) gives way before
-	 * the question. Returns null when even the option block + borders cannot
-	 * fit (pathological) so the caller falls back to the scroll viewport.
-	 */
+		 * §options-first fit: every option line always stays in frame. When the
+		 * question + context + options exceed the bound, the question/context
+		 * section yields first (it remains in the agent transcript): middle lines
+		 * (blanks, auditor, "Current:", context) drop before the question block
+		 * and the footer hint, and the tail slack (blank/footer) gives way before
+		 * the question. Returns null when even the option block + borders cannot
+		 * fit (pathological) so the caller falls back to the scroll viewport.
+		 */
 	function fitOptionsInFrame(
 		lines: string[],
 		maxDialogLines: number,

@@ -224,126 +224,126 @@ test("e2e: currentTaskId survives while its task stays pending and clears when r
 });
 
 for(const answer of ["Cancel", "Continue chatting"]){
- test(`unconfirmed budget proposal (${answer}) preserves disk state`,async t=>{
-  const cwd=newTmpDir("tweak-budget-cancel-");const h=createHarness(cwd);
-  t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
-  await createGoalWithTasks(h,"Objective",[{id:"one",title:"One"}]);
-  await h.commands.get("goal-tweak")!.handler("Set budget to 100",h.ctx);
-  const before=diskGoal(cwd);
-  const pending=runProposal(h,proposalParams(before.objective,{token_budget:100}));
-  assert.ok(h.hasDialog());
-  h.dialogResult({questions:[],answers:[{id:"confirm",question:"Confirm Goal Draft",answer,wasCustom:false}],cancelled:answer==="Cancel"});
-  await pending;
-  assert.deepEqual(diskGoal(cwd),before);
- });
+	test(`unconfirmed budget proposal (${answer}) preserves disk state`,async t=>{
+		const cwd=newTmpDir("tweak-budget-cancel-");const h=createHarness(cwd);
+		t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
+		await createGoalWithTasks(h,"Objective",[{id:"one",title:"One"}]);
+		await h.commands.get("goal-tweak")!.handler("Set budget to 100",h.ctx);
+		const before=diskGoal(cwd);
+		const pending=runProposal(h,proposalParams(before.objective,{token_budget:100}));
+		assert.ok(h.hasDialog());
+		h.dialogResult({questions:[],answers:[{id:"confirm",question:"Confirm Goal Draft",answer,wasCustom:false}],cancelled:answer==="Cancel"});
+		await pending;
+		assert.deepEqual(diskGoal(cwd),before);
+	});
 }
 
 test("budget-only confirmation displays current and proposed limits",async()=>{
- const {proposalText}=await import("../extensions/goal-drafting.ts");
- const {createGoal}=await import("../extensions/goal-record.ts");
- const goal=createGoal({objective:"Keep objective",autoContinue:true,sisyphus:false});goal.tokenBudget=10;
- const text=proposalText({mode:"tweak",originalTopic:"Remove the budget",startedAt:"now",auditorEnabled:true},goal.objective,true,undefined,goal,null);
- assert.match(text,/Current Budget: 10 tokens/);assert.match(text,/Proposed Budget: none/);
+	const {proposalText}=await import("../extensions/goal-drafting.ts");
+	const {createGoal}=await import("../extensions/goal-record.ts");
+	const goal=createGoal({objective:"Keep objective",autoContinue:true,sisyphus:false});goal.tokenBudget=10;
+	const text=proposalText({mode:"tweak",originalTopic:"Remove the budget",startedAt:"now",auditorEnabled:true},goal.objective,true,undefined,goal,null);
+	assert.match(text,/Current Budget: 10 tokens/);assert.match(text,/Proposed Budget: none/);
 });
 
 for (const budget of [undefined, null, 1, 50000]) {
- test(`guided creation reports and persists budget ${budget}`, async t => {
-  const cwd = newTmpDir("create-budget-"); const h = createHarness(cwd);
-  t.after(() => {h.core.scheduler.shutdown(); h.core.clearContinuationState(); rmSync(cwd, {recursive:true,force:true});});
-  await h.commands.get("goal")!.handler("Keep objective", h.ctx);
-  const pending = runProposal(h, proposalParams("Keep objective", budget === undefined ? {} : {token_budget: budget}));
-  await confirmDialog(h, pending);
-  assert.equal(diskGoal(cwd).tokenBudget, budget ?? undefined);
-  assert.match(JSON.stringify((await pending).content), new RegExp(`Budget: ${budget == null ? "none" : budget + " tokens"}`));
- });
+	test(`guided creation reports and persists budget ${budget}`, async t => {
+		const cwd = newTmpDir("create-budget-"); const h = createHarness(cwd);
+		t.after(() => {h.core.scheduler.shutdown(); h.core.clearContinuationState(); rmSync(cwd, {recursive:true,force:true});});
+		await h.commands.get("goal")!.handler("Keep objective", h.ctx);
+		const pending = runProposal(h, proposalParams("Keep objective", budget === undefined ? {} : {token_budget: budget}));
+		await confirmDialog(h, pending);
+		assert.equal(diskGoal(cwd).tokenBudget, budget ?? undefined);
+		assert.match(JSON.stringify((await pending).content), new RegExp(`Budget: ${budget == null ? "none" : budget + " tokens"}`));
+	});
 }
 
 for (const budget of [undefined, null, 5, 50000]) {
- test(`budget-only tweak ${budget} preserves progress and recovers only with remaining budget`, async t => {
-  const cwd = newTmpDir("tweak-budget-"); const h = createHarness(cwd);
-  t.after(() => {h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
-  await createGoalWithTasks(h,"Keep objective",[{id:"done",title:"Finished work"}]);
-  await callTaskTool(h,"update_goal_task",{task_id:"done",status:"complete",evidence:"verified"});
-  const original = diskGoal(cwd);
-  original.tokenBudget=10; original.usage.tokensUsed=20; original.status="budget_limited";
-  original.scheduler={...newGoalScheduler("tweak-status-session"),used:3};
-  writeActiveGoalFile(h.ctx,original); h.core.reconcileFocusedGoalFromDisk(h.ctx);
-  h.core.runtime.armPostBudgetReminder();
-  await h.commands.get("goal-tweak")!.handler("Change only the budget",h.ctx);
-  const pending=runProposal(h,proposalParams(original.objective,budget === undefined ? {} : {token_budget:budget}));
-  await confirmDialog(h,pending);
-  const saved=diskGoal(cwd);
-  assert.equal(saved.id,original.id);assert.equal(saved.objective,original.objective);
-  assert.deepEqual(saved.taskList,original.taskList);assert.equal(saved.skipAuditor,original.skipAuditor);
-  assert.equal(saved.tokenBudget,budget === undefined ? 10 : budget ?? undefined);
-  assert.equal(saved.usage.tokensUsed,20);assert.equal(saved.scheduler?.used,3);
-  const exhausted=budget === undefined || budget === 5;
-  assert.equal(saved.status,exhausted ? "budget_limited":"active");
-  assert.equal(h.core.runtime.consumePostBudgetReminder(),exhausted);
-  assert.match(JSON.stringify((await pending).content),exhausted ? /remains budget-limited/ : /Budget: (none|50000 tokens)/);
-  assert.equal(readGoalLedger(h.ctx).events.filter(e=>e.type==="goal_budget_changed").length,budget === undefined ? 0 : 1);
- });
+	test(`budget-only tweak ${budget} preserves progress and recovers only with remaining budget`, async t => {
+		const cwd = newTmpDir("tweak-budget-"); const h = createHarness(cwd);
+		t.after(() => {h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
+		await createGoalWithTasks(h,"Keep objective",[{id:"done",title:"Finished work"}]);
+		await callTaskTool(h,"update_goal_task",{task_id:"done",status:"complete",evidence:"verified"});
+		const original = diskGoal(cwd);
+		original.tokenBudget=10; original.usage.tokensUsed=20; original.status="budget_limited";
+		original.scheduler={...newGoalScheduler("tweak-status-session"),used:3};
+		writeActiveGoalFile(h.ctx,original); h.core.reconcileFocusedGoalFromDisk(h.ctx);
+		h.core.runtime.armPostBudgetReminder();
+		await h.commands.get("goal-tweak")!.handler("Change only the budget",h.ctx);
+		const pending=runProposal(h,proposalParams(original.objective,budget === undefined ? {} : {token_budget:budget}));
+		await confirmDialog(h,pending);
+		const saved=diskGoal(cwd);
+		assert.equal(saved.id,original.id);assert.equal(saved.objective,original.objective);
+		assert.deepEqual(saved.taskList,original.taskList);assert.equal(saved.skipAuditor,original.skipAuditor);
+		assert.equal(saved.tokenBudget,budget === undefined ? 10 : budget ?? undefined);
+		assert.equal(saved.usage.tokensUsed,20);assert.equal(saved.scheduler?.used,3);
+		const exhausted=budget === undefined || budget === 5;
+		assert.equal(saved.status,exhausted ? "budget_limited":"active");
+		assert.equal(h.core.runtime.consumePostBudgetReminder(),exhausted);
+		assert.match(JSON.stringify((await pending).content),exhausted ? /remains budget-limited/ : /Budget: (none|50000 tokens)/);
+		assert.equal(readGoalLedger(h.ctx).events.filter(e=>e.type==="goal_budget_changed").length,budget === undefined ? 0 : 1);
+	});
 }
 
 for (const barrier of ["foreign", "interrupted", "claimed", "allowance"]) {
- test(`budget recovery respects ${barrier} scheduling barrier`,async t=>{
-  const cwd=newTmpDir("tweak-budget-barrier-");const h=createHarness(cwd);
-  t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
-  await createGoalWithTasks(h,"Objective",[{id:"one",title:"One"}]);
-  const goal=diskGoal(cwd);goal.tokenBudget=1;goal.usage.tokensUsed=2;goal.status="budget_limited";
-  goal.scheduler={...newGoalScheduler(barrier === "foreign" ? "other" : "tweak-status-session"),used:3};
-  if(barrier === "interrupted")goal.scheduler.phase="interrupted";
-  if(barrier === "claimed"){goal.scheduler.phase="claimed";goal.scheduler.dispatch={id:"old",kind:"ready",claimedAt:Date.now()};}
-  if(barrier === "allowance") { const {saveGoalSettingsFileConfig}=await import("../extensions/goal-settings.ts");saveGoalSettingsFileConfig(cwd,{maxAutonomousRuns:3}); }
-  writeActiveGoalFile(h.ctx,goal);h.core.reconcileFocusedGoalFromDisk(h.ctx);
-  await h.commands.get("goal-tweak")!.handler("Remove budget",h.ctx);
-  await confirmDialog(h,runProposal(h,proposalParams(goal.objective,{token_budget:null})));
-  const saved=diskGoal(cwd);assert.equal(saved.status,"paused");assert.equal(saved.tokenBudget,undefined);assert.equal(saved.scheduler?.used,3);
- });
+	test(`budget recovery respects ${barrier} scheduling barrier`,async t=>{
+		const cwd=newTmpDir("tweak-budget-barrier-");const h=createHarness(cwd);
+		t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
+		await createGoalWithTasks(h,"Objective",[{id:"one",title:"One"}]);
+		const goal=diskGoal(cwd);goal.tokenBudget=1;goal.usage.tokensUsed=2;goal.status="budget_limited";
+		goal.scheduler={...newGoalScheduler(barrier === "foreign" ? "other" : "tweak-status-session"),used:3};
+		if(barrier === "interrupted")goal.scheduler.phase="interrupted";
+		if(barrier === "claimed"){goal.scheduler.phase="claimed";goal.scheduler.dispatch={id:"old",kind:"ready",claimedAt:Date.now()};}
+		if(barrier === "allowance") { const {saveGoalSettingsFileConfig}=await import("../extensions/goal-settings.ts");saveGoalSettingsFileConfig(cwd,{maxAutonomousRuns:3}); }
+		writeActiveGoalFile(h.ctx,goal);h.core.reconcileFocusedGoalFromDisk(h.ctx);
+		await h.commands.get("goal-tweak")!.handler("Remove budget",h.ctx);
+		await confirmDialog(h,runProposal(h,proposalParams(goal.objective,{token_budget:null})));
+		const saved=diskGoal(cwd);assert.equal(saved.status,"paused");assert.equal(saved.tokenBudget,undefined);assert.equal(saved.scheduler?.used,3);
+	});
 }
 
 test("lowering active budget stops immediately and invalidates queued dispatch",async t=>{
- const cwd=newTmpDir("tweak-budget-lower-");const h=createHarness(cwd);
- t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
- await createGoalWithTasks(h,"Objective",[{id:"one",title:"One"}]);
- const goal=diskGoal(cwd);goal.usage.tokensUsed=20;
- // A goal saved before next actions were removed still carries decision.nextAction
- // on disk. Seeding it here shows that such a goal loads and tweaks normally.
- goal.scheduler={...newGoalScheduler("tweak-status-session"),phase:"ready",decision:{kind:"ready",purpose:"ready",nextAction:"Old action"} as unknown as {kind:"ready";purpose:"ready"},used:2};
- writeActiveGoalFile(h.ctx,goal);h.core.reconcileFocusedGoalFromDisk(h.ctx);
- await h.commands.get("goal-tweak")!.handler("Set budget to 1",h.ctx);
- await confirmDialog(h,runProposal(h,proposalParams(goal.objective,{token_budget:1})));
- const saved=diskGoal(cwd);assert.equal(saved.status,"budget_limited");assert.equal(saved.scheduler?.decision,undefined);assert.notEqual(saved.scheduler?.generation,goal.scheduler?.generation);assert.equal(saved.scheduler?.used,2);
+	const cwd=newTmpDir("tweak-budget-lower-");const h=createHarness(cwd);
+	t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
+	await createGoalWithTasks(h,"Objective",[{id:"one",title:"One"}]);
+	const goal=diskGoal(cwd);goal.usage.tokensUsed=20;
+	// A goal saved before next actions were removed still carries decision.nextAction
+	// on disk. Seeding it here shows that such a goal loads and tweaks normally.
+	goal.scheduler={...newGoalScheduler("tweak-status-session"),phase:"ready",decision:{kind:"ready",purpose:"ready",nextAction:"Old action"} as unknown as {kind:"ready";purpose:"ready"},used:2};
+	writeActiveGoalFile(h.ctx,goal);h.core.reconcileFocusedGoalFromDisk(h.ctx);
+	await h.commands.get("goal-tweak")!.handler("Set budget to 1",h.ctx);
+	await confirmDialog(h,runProposal(h,proposalParams(goal.objective,{token_budget:1})));
+	const saved=diskGoal(cwd);assert.equal(saved.status,"budget_limited");assert.equal(saved.scheduler?.decision,undefined);assert.notEqual(saved.scheduler?.generation,goal.scheduler?.generation);assert.equal(saved.scheduler?.used,2);
 });
 
 test("budget confirmation rejects a changed revision",async t=>{
- const cwd=newTmpDir("tweak-budget-stale-");const h=createHarness(cwd);
- t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
- await createGoalWithTasks(h,"Objective",[{id:"one",title:"One"}]);
- await h.commands.get("goal-tweak")!.handler("Remove budget",h.ctx);
- const goal=diskGoal(cwd);const pending=runProposal(h,proposalParams(goal.objective,{token_budget:null}));
- writeActiveGoalFile(h.ctx,{...goal,tokenBudget:123,revision:(goal.revision??0)+1});
- await confirmDialog(h,pending);
- assert.match(JSON.stringify((await pending).content),/changed during confirmation/);assert.equal(diskGoal(cwd).tokenBudget,123);
+	const cwd=newTmpDir("tweak-budget-stale-");const h=createHarness(cwd);
+	t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
+	await createGoalWithTasks(h,"Objective",[{id:"one",title:"One"}]);
+	await h.commands.get("goal-tweak")!.handler("Remove budget",h.ctx);
+	const goal=diskGoal(cwd);const pending=runProposal(h,proposalParams(goal.objective,{token_budget:null}));
+	writeActiveGoalFile(h.ctx,{...goal,tokenBudget:123,revision:(goal.revision??0)+1});
+	await confirmDialog(h,pending);
+	assert.match(JSON.stringify((await pending).content),/changed during confirmation/);assert.equal(diskGoal(cwd).tokenBudget,123);
 });
 
 for(const value of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1,"50"]){
- test(`invalid draft budget ${value} is rejected before confirmation`,async t=>{
-  const cwd=newTmpDir("tweak-budget-invalid-");const h=createHarness(cwd);t.after(()=>rmSync(cwd,{recursive:true,force:true}));
-  await h.commands.get("goal")!.handler("Objective",h.ctx);
-  const result=await runProposal(h,proposalParams("Objective",{token_budget:value}));
-  assert.equal(h.hasDialog(),false);assert.match(JSON.stringify(result.content),/token_budget/);assert.equal(activeGoalFiles(cwd).length,0);
- });
+	test(`invalid draft budget ${value} is rejected before confirmation`,async t=>{
+		const cwd=newTmpDir("tweak-budget-invalid-");const h=createHarness(cwd);t.after(()=>rmSync(cwd,{recursive:true,force:true}));
+		await h.commands.get("goal")!.handler("Objective",h.ctx);
+		const result=await runProposal(h,proposalParams("Objective",{token_budget:value}));
+		assert.equal(h.hasDialog(),false);assert.match(JSON.stringify(result.content),/token_budget/);assert.equal(activeGoalFiles(cwd).length,0);
+	});
 }
 
 test("failed budget mutation never reports success or changes the saved goal",async t=>{
- const cwd=newTmpDir("tweak-budget-fail-");const h=createHarness(cwd);
- t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
- await createGoalWithTasks(h,"Objective",[{id:"one",title:"One"}]);
- await h.commands.get("goal-tweak")!.handler("Set budget",h.ctx);
- const before=diskGoal(cwd);const pending=runProposal(h,proposalParams(before.objective,{token_budget:123}));
- t.mock.method(h.core.goalService,"apply",()=>({ok:false,message:"injected storage failure"}));
- await confirmDialog(h,pending);
- assert.match(JSON.stringify((await pending).content),/not applied: injected storage failure/);
- assert.deepEqual(diskGoal(cwd),before);
+	const cwd=newTmpDir("tweak-budget-fail-");const h=createHarness(cwd);
+	t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(cwd,{recursive:true,force:true});});
+	await createGoalWithTasks(h,"Objective",[{id:"one",title:"One"}]);
+	await h.commands.get("goal-tweak")!.handler("Set budget",h.ctx);
+	const before=diskGoal(cwd);const pending=runProposal(h,proposalParams(before.objective,{token_budget:123}));
+	t.mock.method(h.core.goalService,"apply",()=>({ok:false,message:"injected storage failure"}));
+	await confirmDialog(h,pending);
+	assert.match(JSON.stringify((await pending).content),/not applied: injected storage failure/);
+	assert.deepEqual(diskGoal(cwd),before);
 });

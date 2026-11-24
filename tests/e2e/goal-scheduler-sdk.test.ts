@@ -28,10 +28,10 @@ test("real SDK: native retry and compaction preserve consumed autonomous allowan
 	assert.ok(result.retries > 0);
 });
 
- test("real SDK: opted-in idle runs are paced and producer/resume work starts promptly", { timeout: 30000 }, async () => {
- const { stdout } = await promisify(execFile)(process.execPath, ["--experimental-strip-types", fileURLToPath(new URL("../scheduler-sdk-worker.mjs", import.meta.url)), "--implicit"], { timeout: 25000 });
- const result = JSON.parse(stdout.trim().split("\n").at(-1)!);
- assert.equal(result.passed, true);
- assert.equal(result.requests, 6);
- assert.equal(result.used, 2);
+test("real SDK: opted-in idle runs are paced and producer/resume work starts promptly", { timeout: 30000 }, async () => {
+	const { stdout } = await promisify(execFile)(process.execPath, ["--experimental-strip-types", fileURLToPath(new URL("../scheduler-sdk-worker.mjs", import.meta.url)), "--implicit"], { timeout: 25000 });
+	const result = JSON.parse(stdout.trim().split("\n").at(-1)!);
+	assert.equal(result.passed, true);
+	assert.equal(result.requests, 6);
+	assert.equal(result.used, 2);
 });

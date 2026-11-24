@@ -61,8 +61,8 @@ function runCli(args: string[], options?: { expectFailure?: boolean }): string {
 		return execFileSync(process.execPath, [CLI, ...args], { encoding: "utf8" });
 	} catch (error) {
 		if (options?.expectFailure) {
-		 const err = error as { stdout?: string; stderr?: string; status?: number };
-		 return `__exit_${err.status}__\n${err.stdout ?? ""}${err.stderr ?? ""}`;
+			const err = error as { stdout?: string; stderr?: string; status?: number };
+			return `__exit_${err.status}__\n${err.stdout ?? ""}${err.stderr ?? ""}`;
 		}
 		throw error;
 	}

@@ -67,10 +67,10 @@ export const POST_STOP_ALLOWED_TOOLS = ["get_goal"] as const;
 
 /** Advertise valid operations, leaving executor guards authoritative. */
 export function applicableGoalTools(goal: GoalRecord | null, tasksEnabled: boolean): string[] {
- const names: string[] = [CREATE_GOAL_TOOL_NAME, GET_GOAL_TOOL_NAME];
- if (!goal) return names;
- if (["active", "paused", "budget_limited"].includes(goal.status)) names.push(UPDATE_GOAL_TOOL_NAME);
- if (tasksEnabled && ["active", "paused"].includes(goal.status)) names.push(SET_GOAL_TASKS_TOOL_NAME);
- if (tasksEnabled && goal.status === "active" && goal.taskList?.tasks.length) names.push(UPDATE_GOAL_TASK_TOOL_NAME);
- return names;
+	const names: string[] = [CREATE_GOAL_TOOL_NAME, GET_GOAL_TOOL_NAME];
+	if (!goal) return names;
+	if (["active", "paused", "budget_limited"].includes(goal.status)) names.push(UPDATE_GOAL_TOOL_NAME);
+	if (tasksEnabled && ["active", "paused"].includes(goal.status)) names.push(SET_GOAL_TASKS_TOOL_NAME);
+	if (tasksEnabled && goal.status === "active" && goal.taskList?.tasks.length) names.push(UPDATE_GOAL_TASK_TOOL_NAME);
+	return names;
 }

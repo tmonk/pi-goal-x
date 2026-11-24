@@ -128,19 +128,19 @@ test("goal without a budget never transitions", async () => {
 	}
 });
 
- test("one accounting update coalesces crossed thresholds and changed budgets warn afresh", async t => {
- const f=fixture();const h=createHarness(f.cwd,f.sessionEntries);
- const notices:string[]=[];h.ctx.ui.notify=(text:string)=>{notices.push(text);};
- t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(f.cwd,{recursive:true,force:true});});
- await h.handlers.get("session_start")?.({reason:"start"},h.ctx);
- h.core.accountProgress(h.ctx,{completedTurnTokens:15}); // 80 -> 95 crosses all three
- assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,1);
- assert.equal(notices.filter(n=>n.startsWith("Token budget")).length,1);
- h.core.accountProgress(h.ctx,{completedTurnTokens:1});
- assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,1);
- h.core.goalService.apply(h.ctx,{mutate:(g:any)=>({...g,tokenBudget:120})});
- h.core.accountProgress(h.ctx,{completedTurnTokens:1});
- assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,2);
- h.core.accountProgress(h.ctx,{completedTurnTokens:12});
- assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,3);
- });
+test("one accounting update coalesces crossed thresholds and changed budgets warn afresh", async t => {
+	const f=fixture();const h=createHarness(f.cwd,f.sessionEntries);
+	const notices:string[]=[];h.ctx.ui.notify=(text:string)=>{notices.push(text);};
+	t.after(()=>{h.core.scheduler.shutdown();h.core.clearContinuationState();rmSync(f.cwd,{recursive:true,force:true});});
+	await h.handlers.get("session_start")?.({reason:"start"},h.ctx);
+	h.core.accountProgress(h.ctx,{completedTurnTokens:15}); // 80 -> 95 crosses all three
+	assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,1);
+	assert.equal(notices.filter(n=>n.startsWith("Token budget")).length,1);
+	h.core.accountProgress(h.ctx,{completedTurnTokens:1});
+	assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,1);
+	h.core.goalService.apply(h.ctx,{mutate:(g:any)=>({...g,tokenBudget:120})});
+	h.core.accountProgress(h.ctx,{completedTurnTokens:1});
+	assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,2);
+	h.core.accountProgress(h.ctx,{completedTurnTokens:12});
+	assert.equal(ledgerEvents(f.cwd).filter(e=>e.type==="goal_budget_warning").length,3);
+});

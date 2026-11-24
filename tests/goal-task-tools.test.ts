@@ -469,50 +469,50 @@ test("update_goal_task(pending) writes a task_reopened ledger event", async () =
 	}
 });
 
- test("task approval supports RPC, absent custom UI, and explicit headless approval", async () => {
- const old = process.env.PI_GOAL_AUTO_CONFIRM;
- delete process.env.PI_GOAL_AUTO_CONFIRM;
- try {
- for (const mode of ["rpc", "interactive"] as const) {
- for (const answer of ["Confirm task list", "Keep current tasks", undefined]) {
- let shown = false;
- const ctx = { hasUI: true, mode, ui: {
- custom: async () => { assert.notEqual(mode, "rpc"); return undefined; },
- select: async (title: string) => { shown = true; assert.ok(title.includes("probe: Inspect sample")); return answer; }
- } } as unknown as ExtensionContext;
- assert.deepEqual(await showTaskConfirmation(ctx, "probe: Inspect sample"), { decision: answer === "Confirm task list" ? "confirm" : "cancel" });
- assert.equal(shown, true);
- }
- }
- const headless = { hasUI: false } as ExtensionContext;
- assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "confirm" });
- process.env.PI_GOAL_AUTO_CONFIRM = "0";
- assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "cancel" });
- process.env.PI_GOAL_AUTO_CONFIRM = "1";
- assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "confirm" });
- } finally {
- if (old === undefined) delete process.env.PI_GOAL_AUTO_CONFIRM; else process.env.PI_GOAL_AUTO_CONFIRM = old;
- }
- });
+test("task approval supports RPC, absent custom UI, and explicit headless approval", async () => {
+	const old = process.env.PI_GOAL_AUTO_CONFIRM;
+	delete process.env.PI_GOAL_AUTO_CONFIRM;
+	try {
+		for (const mode of ["rpc", "interactive"] as const) {
+			for (const answer of ["Confirm task list", "Keep current tasks", undefined]) {
+				let shown = false;
+				const ctx = { hasUI: true, mode, ui: {
+					custom: async () => { assert.notEqual(mode, "rpc"); return undefined; },
+					select: async (title: string) => { shown = true; assert.ok(title.includes("probe: Inspect sample")); return answer; }
+					} } as unknown as ExtensionContext;
+				assert.deepEqual(await showTaskConfirmation(ctx, "probe: Inspect sample"), { decision: answer === "Confirm task list" ? "confirm" : "cancel" });
+				assert.equal(shown, true);
+			}
+		}
+		const headless = { hasUI: false } as ExtensionContext;
+		assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "confirm" });
+		process.env.PI_GOAL_AUTO_CONFIRM = "0";
+		assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "cancel" });
+		process.env.PI_GOAL_AUTO_CONFIRM = "1";
+		assert.deepEqual(await showTaskConfirmation(headless, "proposal"), { decision: "confirm" });
+	} finally {
+		if (old === undefined) delete process.env.PI_GOAL_AUTO_CONFIRM; else process.env.PI_GOAL_AUTO_CONFIRM = old;
+	}
+});
 
 test("RPC cancellation preserves the persisted task list", async () => {
- const f = fixtureWithTasks([{ id: "original", title: "Original task", status: "pending" }]);
- const old = process.env.PI_GOAL_AUTO_CONFIRM;
- delete process.env.PI_GOAL_AUTO_CONFIRM;
- try {
- const h = createHarness(f.cwd, f.sessionEntries);
- await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
- await h.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, h.ctx);
- const ctx = { ...h.ctx, hasUI: true, mode: "rpc", ui: { ...h.ctx.ui,
- custom: async () => { throw new Error("RPC must not open terminal UI"); },
- select: async (title: string) => { assert.ok(title.includes("Replacement task")); return undefined; }
- } } as unknown as ExtensionContext;
- const result = await (h.tools.get("set_goal_tasks")!.execute as any)("rpc-cancel", { tasks: [{ id: "replacement", title: "Replacement task" }] }, undefined, undefined, ctx);
- assert.notEqual(result.isError, true);
- assert.equal(activeGoal(f.cwd)?.taskList?.tasks[0]?.id, "original");
- assert.equal(ledgerEvents(f.cwd).some(e => e.type === "task_list_set"), false);
- } finally {
- if (old === undefined) delete process.env.PI_GOAL_AUTO_CONFIRM; else process.env.PI_GOAL_AUTO_CONFIRM = old;
- f.cleanup();
- }
+	const f = fixtureWithTasks([{ id: "original", title: "Original task", status: "pending" }]);
+	const old = process.env.PI_GOAL_AUTO_CONFIRM;
+	delete process.env.PI_GOAL_AUTO_CONFIRM;
+	try {
+		const h = createHarness(f.cwd, f.sessionEntries);
+		await h.handlers.get("session_start")?.({ reason: "start" }, h.ctx);
+		await h.handlers.get("before_agent_start")?.({ systemPrompt: "base", prompt: "go", systemPromptOptions: {} }, h.ctx);
+		const ctx = { ...h.ctx, hasUI: true, mode: "rpc", ui: { ...h.ctx.ui,
+			custom: async () => { throw new Error("RPC must not open terminal UI"); },
+			select: async (title: string) => { assert.ok(title.includes("Replacement task")); return undefined; }
+			} } as unknown as ExtensionContext;
+		const result = await (h.tools.get("set_goal_tasks")!.execute as any)("rpc-cancel", { tasks: [{ id: "replacement", title: "Replacement task" }] }, undefined, undefined, ctx);
+		assert.notEqual(result.isError, true);
+		assert.equal(activeGoal(f.cwd)?.taskList?.tasks[0]?.id, "original");
+		assert.equal(ledgerEvents(f.cwd).some(e => e.type === "task_list_set"), false);
+	} finally {
+		if (old === undefined) delete process.env.PI_GOAL_AUTO_CONFIRM; else process.env.PI_GOAL_AUTO_CONFIRM = old;
+		f.cleanup();
+	}
 });

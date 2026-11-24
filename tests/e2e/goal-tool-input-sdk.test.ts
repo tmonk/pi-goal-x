@@ -13,7 +13,7 @@ test("real SDK: optional and redundant tool fields normalize without weakening b
 });
 
 test("real Responses tool call: recorded filler completion audits and archives", {timeout: 15000}, async () => {
- const {NODE_TEST_CONTEXT: _dropped, ...env} = process.env;
- const {stdout} = await promisify(execFile)(process.execPath, ["--experimental-strip-types", fileURLToPath(new URL("../update-goal-sdk-worker.mjs", import.meta.url))], {env, timeout: 12000});
- assert.deepEqual(JSON.parse(stdout.trim().split("\n").at(-1)!), {passed: true, requests: 2, archived: true});
+	const {NODE_TEST_CONTEXT: _dropped, ...env} = process.env;
+	const {stdout} = await promisify(execFile)(process.execPath, ["--experimental-strip-types", fileURLToPath(new URL("../update-goal-sdk-worker.mjs", import.meta.url))], {env, timeout: 12000});
+	assert.deepEqual(JSON.parse(stdout.trim().split("\n").at(-1)!), {passed: true, requests: 2, archived: true});
 });

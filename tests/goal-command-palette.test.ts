@@ -306,23 +306,23 @@ function readFileSyncSafe(p: string): string | null {
 }
 
 for (const [key, label] of [["strictExecutionContract", "explicit execution contracts (opt-in)"], ["idleContinuationBackoff", "slow repeated idle replies (opt-in)"]] as const) test(`goal-settings: ${key} can be set and removed through the menu`, async () => {
- const cwd = mkdtempSync(path.join(tmpdir(), "goal-settings-contract-"));
- mkdirSync(path.join(cwd, ".pi"), {recursive: true});
- const h = createHarness(cwd);
- try {
-  (h.ctx as {hasUI: boolean}).hasUI = true;
-  const ui = h.ctx.ui as unknown as {select: (title: string, options: string[]) => Promise<string | undefined>};
-  for (const action of ["Set project override to true", "Set project override to false", "Use inherited value"]) {
-   let step = 0;
-   ui.select = async (_title, options) => {
-    step++;
-    if (step === 1) return options.find(option => option.includes(`${label}:`));
-    if (step === 2) { assert.ok(options.includes(action)); return action; }
-    return "Done";
-   };
-   await h.commands.get("goal-settings")!.handler("", h.ctx);
-   const saved = JSON.parse(readFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), "utf8"));
-   assert.equal(saved[key], action === "Use inherited value" ? undefined : action.endsWith("true"));
-  }
- } finally { rmSync(cwd, {recursive: true, force: true}); }
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-settings-contract-"));
+	mkdirSync(path.join(cwd, ".pi"), {recursive: true});
+	const h = createHarness(cwd);
+	try {
+		(h.ctx as {hasUI: boolean}).hasUI = true;
+		const ui = h.ctx.ui as unknown as {select: (title: string, options: string[]) => Promise<string | undefined>};
+		for (const action of ["Set project override to true", "Set project override to false", "Use inherited value"]) {
+			let step = 0;
+			ui.select = async (_title, options) => {
+				step++;
+				if (step === 1) return options.find(option => option.includes(`${label}:`));
+				if (step === 2) { assert.ok(options.includes(action)); return action; }
+				return "Done";
+			};
+			await h.commands.get("goal-settings")!.handler("", h.ctx);
+			const saved = JSON.parse(readFileSync(path.join(cwd, ".pi", "pi-goal-x-settings.json"), "utf8"));
+			assert.equal(saved[key], action === "Use inherited value" ? undefined : action.endsWith("true"));
+		}
+	} finally { rmSync(cwd, {recursive: true, force: true}); }
 });

@@ -199,13 +199,13 @@ function percentageOf(done: number, total: number): number {
  * so the tree and the current-task block always agree.
  */
 export function flattenTaskTree(tasks: readonly GoalTask[] | undefined, currentTaskId?: string): DashboardTaskNode[] {
- const index = taskIndex(tasks);
- return index.ordered.map(({task: t, depth}) => ({
-  id: t.id, title: t.title, status: t.status, depth, isCurrent: t.id === currentTaskId,
-  verificationContract: t.verificationContract, evidence: t.evidence, completedAt: t.completedAt,
-  totalSubtasks: t.subtasks?.length ?? 0,
-  completedSubtasks: t.subtasks?.filter(c => c.status === "complete" || c.status === "skipped").length ?? 0,
- }));
+	const index = taskIndex(tasks);
+	return index.ordered.map(({task: t, depth}) => ({
+		id: t.id, title: t.title, status: t.status, depth, isCurrent: t.id === currentTaskId,
+		verificationContract: t.verificationContract, evidence: t.evidence, completedAt: t.completedAt,
+		totalSubtasks: t.subtasks?.length ?? 0,
+		completedSubtasks: t.subtasks?.filter(c => c.status === "complete" || c.status === "skipped").length ?? 0,
+		}));
 }
 
 // ---------------------------------------------------------------------------
@@ -450,20 +450,20 @@ export function formatBudget(used: number, total: number): string {
 
 const presentationCache = new WeakMap<object, Map<string, {taskProgress: TaskProgress | undefined; taskTree: DashboardTaskNode[]; currentTask: DashboardCurrentTask | undefined; taskTitles: Map<string, string>}>>();
 function taskPresentation(goal: GoalRecord, disabled: boolean) {
- const index = taskIndex(disabled ? [] : goal.taskList?.tasks);
- let entries = presentationCache.get(index);
- if (!entries) { entries = new Map(); presentationCache.set(index, entries); }
- const key = `${disabled}:${goal.currentTaskId ?? ""}`;
- const hit = entries.get(key);
- if (hit) return hit;
- const taskProgress = disabled ? undefined : deriveTopLevelTaskProgress(goal);
- const tree = disabled ? [] : flattenTaskTree(index.tasks);
- const currentTask = disabled ? undefined : deriveCurrentTask(goal, tree);
- const taskTree = tree.map(n => n.id === currentTask?.id ? {...n, isCurrent: true} : n);
- const value = {taskProgress, taskTree, currentTask, taskTitles: new Map(taskTree.map(n => [n.id, n.title]))};
- if (entries.size >= 64) entries.delete(entries.keys().next().value!);
- entries.set(key, value);
- return value;
+	const index = taskIndex(disabled ? [] : goal.taskList?.tasks);
+	let entries = presentationCache.get(index);
+	if (!entries) { entries = new Map(); presentationCache.set(index, entries); }
+	const key = `${disabled}:${goal.currentTaskId ?? ""}`;
+	const hit = entries.get(key);
+	if (hit) return hit;
+	const taskProgress = disabled ? undefined : deriveTopLevelTaskProgress(goal);
+	const tree = disabled ? [] : flattenTaskTree(index.tasks);
+	const currentTask = disabled ? undefined : deriveCurrentTask(goal, tree);
+	const taskTree = tree.map(n => n.id === currentTask?.id ? {...n, isCurrent: true} : n);
+	const value = {taskProgress, taskTree, currentTask, taskTitles: new Map(taskTree.map(n => [n.id, n.title]))};
+	if (entries.size >= 64) entries.delete(entries.keys().next().value!);
+	entries.set(key, value);
+	return value;
 }
 
 /**
@@ -483,7 +483,7 @@ export function deriveGoalDashboardModel(
 	if (goal.status === "active" && goal.scheduler?.phase === "waiting") { status.code = "idle"; status.label = "Waiting"; status.footerLabel = "waiting"; }
 	// §9.5: with tasks disabled, omit task sections entirely (status,
 	// verification, usage, path, and focus remain).
- const {taskProgress, taskTree, currentTask, taskTitles} = taskPresentation(goal, tasksDisabled);
+	const {taskProgress, taskTree, currentTask, taskTitles} = taskPresentation(goal, tasksDisabled);
 
 	const budget =
 		goal.tokenBudget !== undefined

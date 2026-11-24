@@ -182,34 +182,34 @@ test("a thousand changing requests bound retained counter bytes", () => {
 
 
 test("a delayed result resets earlier policy as well as the unsafe counter anchor", () => {
- const retention = new LiveTailRetention();
- const base: any[] = [msg("user", "inspect", 1)];
- retention.apply("s", base, {state: "S", counters: "V1"});
- base.push({role: "assistant", content: [{type: "toolCall", id: "a", name: "read", arguments: {}}]});
- retention.apply("s", base, {state: "S", counters: "V2"});
- base.push({role: "toolResult", toolCallId: "a", content: [{type: "text", text: "failed"}], isError: true});
- const out = retention.apply("s", base, {state: "S", counters: "V3"});
- assert.deepEqual(out.messages.slice(0, base.length), base);
- assert.deepEqual(contents(out.messages.slice(base.length)), ["S", "V3"]);
- assert.deepEqual(retention.contents("s"), ["S", "V3"]);
+	const retention = new LiveTailRetention();
+	const base: any[] = [msg("user", "inspect", 1)];
+	retention.apply("s", base, {state: "S", counters: "V1"});
+	base.push({role: "assistant", content: [{type: "toolCall", id: "a", name: "read", arguments: {}}]});
+	retention.apply("s", base, {state: "S", counters: "V2"});
+	base.push({role: "toolResult", toolCallId: "a", content: [{type: "text", text: "failed"}], isError: true});
+	const out = retention.apply("s", base, {state: "S", counters: "V3"});
+	assert.deepEqual(out.messages.slice(0, base.length), base);
+	assert.deepEqual(contents(out.messages.slice(base.length)), ["S", "V3"]);
+	assert.deepEqual(retention.contents("s"), ["S", "V3"]);
 });
 
 test("removing optional observations does not replay their old values", () => {
- const retention = new LiveTailRetention();
- const base = [msg("user", "inspect", 1)];
- retention.apply("s", base, {state: "S", counters: "obsolete occupancy"});
- const out = retention.apply("s", base, {state: "S"});
- assert.deepEqual(contents(out.messages), ["inspect", "S"]);
+	const retention = new LiveTailRetention();
+	const base = [msg("user", "inspect", 1)];
+	retention.apply("s", base, {state: "S", counters: "obsolete occupancy"});
+	const out = retention.apply("s", base, {state: "S"});
+	assert.deepEqual(contents(out.messages), ["inspect", "S"]);
 });
 
 test("image and large tool-output edits invalidate hashes without changing stored history", () => {
- const retention = new LiveTailRetention();
- const image = {type: "image", data: "A".repeat(1024 * 1024), mimeType: "image/png"};
- const base: any[] = [{role: "user", content: [image]}, {role: "toolResult", toolCallId: "a", content: [{type: "text", text: "x".repeat(1024 * 1024)}]}];
- retention.apply("s", base, {state: "S", counters: "old"});
- image.data = "B" + image.data.slice(1);
- const out = retention.apply("s", base, {state: "S", counters: "new"});
- assert.deepEqual(out.messages.slice(0, base.length), base);
- assert.deepEqual(contents(out.messages.slice(base.length)), ["S", "new"]);
- assert.equal(base.length, 2);
+	const retention = new LiveTailRetention();
+	const image = {type: "image", data: "A".repeat(1024 * 1024), mimeType: "image/png"};
+	const base: any[] = [{role: "user", content: [image]}, {role: "toolResult", toolCallId: "a", content: [{type: "text", text: "x".repeat(1024 * 1024)}]}];
+	retention.apply("s", base, {state: "S", counters: "old"});
+	image.data = "B" + image.data.slice(1);
+	const out = retention.apply("s", base, {state: "S", counters: "new"});
+	assert.deepEqual(out.messages.slice(0, base.length), base);
+	assert.deepEqual(contents(out.messages.slice(base.length)), ["S", "new"]);
+	assert.equal(base.length, 2);
 });

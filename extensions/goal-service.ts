@@ -165,7 +165,7 @@ export class GoalService {
 	 */
 	private flushError: string | null = null;
 	private turnBase: GoalRecord | null = null;
- private turnContext: GoalServiceContext | null = null;
+	private turnContext: GoalServiceContext | null = null;
 
 	private turn: { active: boolean; goalId: string | null; goal: GoalRecord | null; archive: boolean; ledger: GoalLedgerEvent[] } = {
 		active: false,
@@ -184,7 +184,7 @@ export class GoalService {
 			if (this.turn.active) return;
 		}
 		this.turn = { active: true, goalId, goal: null, archive: false, ledger: [] };
-  this.turnContext = goalStorageContext(ctx);
+		this.turnContext = goalStorageContext(ctx);
 		const focused = this.ref.getFocused();
 		this.turnBase = focused ? {...focused, usage: {...focused.usage}} : null;
 		this.flushError = null;
@@ -197,7 +197,7 @@ export class GoalService {
 	 */
 	flushTurn(ctx: GoalServiceContext): GoalRecord | null {
 		if (!this.turn.active) return null;
-  ctx = this.turnContext ?? ctx;
+		ctx = this.turnContext ?? ctx;
 		this.flushError = null;
 		const goal = this.turn.goal;
 		if (!goal) {
@@ -214,30 +214,30 @@ export class GoalService {
 			return null;
 		}
 		try {
-   const freshDisk = this.readFreshDiskGoal(ctx, goal);
-   const expected = this.turnBase ?? goal;
-   if (!freshDisk || (freshDisk.revision ?? 0) !== (expected.revision ?? 0)) {
-    this.flushError = `Goal ${goal.id} changed in another process; buffered changes were rejected. Refresh and retry.`;
-    // Reject the speculative transaction, never overwrite another writer.
-    this.turn.active = false;
-    this.turn.goal = null;
-    this.turn.ledger = [];
-    if (freshDisk && this.ref.getFocusedGoalId() === goal.id) {
-     const tokens = Math.max(0, goal.usage.tokensUsed - expected.usage.tokensUsed);
-     const seconds = Math.max(0, goal.usage.activeSeconds - expected.usage.activeSeconds);
-     this.ref.setFocused({ ...freshDisk, usage: {tokensUsed: freshDisk.usage.tokensUsed + tokens, activeSeconds: freshDisk.usage.activeSeconds + seconds} });
-     this.trackBaseline(freshDisk.id, freshDisk.usage);
-    } else if (!freshDisk) {
-     this.ref.getPool().delete(goal.id);
-     if (this.ref.getFocusedGoalId() === goal.id) {
-      this.ref.assignFocusedGoalId(null);
-      this.ref.onFocusedGoalLost(goal.id, ctx);
-     }
-    }
-    this.ref.onDiagnostic({ severity: "warning", source: "storage", goalId: goal.id, message: this.flushError });
-    return null;
-   }
-   const base = freshDisk;
+			const freshDisk = this.readFreshDiskGoal(ctx, goal);
+			const expected = this.turnBase ?? goal;
+			if (!freshDisk || (freshDisk.revision ?? 0) !== (expected.revision ?? 0)) {
+				this.flushError = `Goal ${goal.id} changed in another process; buffered changes were rejected. Refresh and retry.`;
+				// Reject the speculative transaction, never overwrite another writer.
+				this.turn.active = false;
+				this.turn.goal = null;
+				this.turn.ledger = [];
+				if (freshDisk && this.ref.getFocusedGoalId() === goal.id) {
+					const tokens = Math.max(0, goal.usage.tokensUsed - expected.usage.tokensUsed);
+					const seconds = Math.max(0, goal.usage.activeSeconds - expected.usage.activeSeconds);
+					this.ref.setFocused({ ...freshDisk, usage: {tokensUsed: freshDisk.usage.tokensUsed + tokens, activeSeconds: freshDisk.usage.activeSeconds + seconds} });
+					this.trackBaseline(freshDisk.id, freshDisk.usage);
+				} else if (!freshDisk) {
+					this.ref.getPool().delete(goal.id);
+					if (this.ref.getFocusedGoalId() === goal.id) {
+						this.ref.assignFocusedGoalId(null);
+						this.ref.onFocusedGoalLost(goal.id, ctx);
+					}
+				}
+				this.ref.onDiagnostic({ severity: "warning", source: "storage", goalId: goal.id, message: this.flushError });
+				return null;
+			}
+			const base = freshDisk;
 			const next = { ...goal, revision: (base.revision ?? 0) + 1 };
 			const written = this.turn.archive || next.status === "complete"
 				? archiveGoalFile(ctx, next)
@@ -254,10 +254,10 @@ export class GoalService {
 	}
 
 	/** Completion must never audit state that failed to flush. */
- flushForAudit(ctx: GoalServiceContext): string | null {
-  this.flushTurn(ctx);
-  return this.flushError;
- }
+	flushForAudit(ctx: GoalServiceContext): string | null {
+		this.flushTurn(ctx);
+		return this.flushError;
+	}
 
 	/** End the turn: flush any pending transaction (safe to call always). */
 	endTurn(ctx: GoalServiceContext): void {
@@ -301,11 +301,11 @@ export class GoalService {
 	private appendLedgerEventsBestEffort(ctx: GoalServiceContext, events: GoalLedgerEvent[]): boolean {
 		if (events.length === 0) return true;
 		if (events.length > 1 && appendGoalEvents(ctx, events).ok) return true;
-  let success = true;
+		let success = true;
 		for (const event of events) {
 			const append = appendGoalEvent(ctx, event);
 			if (!append.ok) {
-    success = false;
+				success = false;
 				this.ref.onDiagnostic({
 					severity: "warning",
 					source: "ledger",
@@ -315,26 +315,26 @@ export class GoalService {
 				});
 			}
 		}
-  return success;
+		return success;
 	}
 
 	/** Safe focused record reconciliation from disk. */
 	reconcileFocused(ctx: GoalServiceContext, opts: { preserveMemoryUsage?: boolean } = {}): boolean {
 		const current = this.ref.getFocused();
-  const source = readActiveGoalPoolView(ctx);
-  const focused = this.ref.getFocusedGoalId();
-  const view = this.ref.getPool();
-  const buffered = this.turn.active ? this.turn.goal : null;
-  let unchanged = source.size === view.size && (!focused || source.has(focused));
-  if (unchanged) for (const [id, goal] of source) {
-   if (view.get(id) !== (buffered?.id === id ? buffered : goal)) { unchanged = false; break; }
-  }
-  if (unchanged) {
-   const same = focused ? view.get(focused) : undefined;
-   if (same) this.ref.onReconciled(same);
-   return true;
-  }
-  const fresh = new Map(source);
+		const source = readActiveGoalPoolView(ctx);
+		const focused = this.ref.getFocusedGoalId();
+		const view = this.ref.getPool();
+		const buffered = this.turn.active ? this.turn.goal : null;
+		let unchanged = source.size === view.size && (!focused || source.has(focused));
+		if (unchanged) for (const [id, goal] of source) {
+			if (view.get(id) !== (buffered?.id === id ? buffered : goal)) { unchanged = false; break; }
+		}
+		if (unchanged) {
+			const same = focused ? view.get(focused) : undefined;
+			if (same) this.ref.onReconciled(same);
+			return true;
+		}
+		const fresh = new Map(source);
 		// P1-3: overlay the buffered goal so in-turn mutations are visible to
 		// every read (reconcile, get_goal, prompts) without a disk round trip.
 		if (this.turn.active && this.turn.goal) fresh.set(this.turn.goal.id, this.turn.goal);
@@ -585,59 +585,59 @@ export class GoalService {
 		return this.updateTaskAttempt(ctx, spec, 1);
 	}
 
- /** Ordered all-or-nothing batch. Each validator sees earlier changes in the clone. */
- updateTasks(ctx: GoalServiceContext, specs: GoalTaskUpdateSpec[]): GoalMutationOutcome {
-  if (!this.reconcileFocused(ctx)) return {ok: false, message: "No focused goal to mutate."};
- const current = this.ref.getFocused();
-  if (!current?.taskList) return {ok: false, message: "The goal has no task list."};
-  let lock: GoalLock | undefined;
-  try {
-  let base = current;
-  if (!this.turn.active) {
-   lock = acquireGoalLock(ctx, current.id);
-   const fresh = this.readFreshDiskGoal(ctx, current);
-   if (!fresh || (fresh.revision ?? 0) !== (current.revision ?? 0)) return {ok: false, message: "The goal changed in another process; no updates applied. Refresh and retry."};
-   if (fresh.status !== "active" || !fresh.taskList) return {ok: false, message: "The persisted goal is no longer active with tasks; no updates applied."};
-   base = {...fresh, usage: current.usage};
-  }
-  const next = cloneGoal(base);
-  const locations = new Map<string, {tasks: GoalTask[]; index: number}>();
-  const indexTasks = (tasks: GoalTask[]): void => {
-   for (let i = 0; i < tasks.length; i++) { const task = tasks[i]!; locations.set(task.id, {tasks, index: i}); if (task.subtasks) indexTasks(task.subtasks); }
-  };
-  const removeTasks = (tasks: GoalTask[]): void => {
-   for (const task of tasks) { locations.delete(task.id); if (task.subtasks) removeTasks(task.subtasks); }
-  };
-  indexTasks(next.taskList!.tasks);
-  const events: GoalLedgerEvent[] = [];
-  for (const spec of specs) {
-   if (spec.focusToken && !this.ref.isTokenCurrent(spec.focusToken)) return {ok: false, message: "The focused goal changed; no updates applied."};
-   const location = locations.get(spec.taskId);
-   const task = location?.tasks[location.index];
-   if (!task) return {ok: false, message: `Task "${spec.taskId}" not found.`};
-   const valid = spec.validate?.(task);
-   if (valid && !valid.ok) return valid;
-   const updated = spec.update(task);
-   if ("ok" in updated && !updated.ok) return updated;
-   const updatedTask = updated as GoalTask;
-   location!.tasks[location!.index] = updatedTask;
-   if (updatedTask.id !== task.id) { locations.delete(task.id); locations.set(updatedTask.id, location!); }
-   if (updatedTask.subtasks !== task.subtasks) {
-    if (task.subtasks) removeTasks(task.subtasks);
-    if (updatedTask.subtasks) indexTasks(updatedTask.subtasks);
-   }
-   next.currentTaskId = resolveUpdatedCurrentTaskId(spec, next.currentTaskId, updatedTask);
-   next.updatedAt = nowIso();
-   if (spec.ledger) events.push(...spec.ledger(next, updatedTask));
-  }
-  if (this.turn.active) return this.apply(ctx, {reconcile: false, expectedGoalId: current.id, focusToken: specs[0]?.focusToken, mutate: () => next, ledger: events});
-  const written = writeActiveGoalFile(ctx, {...next, revision: (base.revision ?? 0) + 1});
-  this.appendLedgerEventsBestEffort(ctx, events);
-  this.trackBaseline(written.id, written.usage);
-  this.ref.setFocused(written);
-  return {ok: true, goal: written, previousGoalId: current.id, goalId: written.id, focusChanged: false};
-  } finally { lock?.release(); }
- }
+	/** Ordered all-or-nothing batch. Each validator sees earlier changes in the clone. */
+	updateTasks(ctx: GoalServiceContext, specs: GoalTaskUpdateSpec[]): GoalMutationOutcome {
+		if (!this.reconcileFocused(ctx)) return {ok: false, message: "No focused goal to mutate."};
+		const current = this.ref.getFocused();
+		if (!current?.taskList) return {ok: false, message: "The goal has no task list."};
+		let lock: GoalLock | undefined;
+		try {
+			let base = current;
+			if (!this.turn.active) {
+				lock = acquireGoalLock(ctx, current.id);
+				const fresh = this.readFreshDiskGoal(ctx, current);
+				if (!fresh || (fresh.revision ?? 0) !== (current.revision ?? 0)) return {ok: false, message: "The goal changed in another process; no updates applied. Refresh and retry."};
+				if (fresh.status !== "active" || !fresh.taskList) return {ok: false, message: "The persisted goal is no longer active with tasks; no updates applied."};
+				base = {...fresh, usage: current.usage};
+			}
+			const next = cloneGoal(base);
+			const locations = new Map<string, {tasks: GoalTask[]; index: number}>();
+			const indexTasks = (tasks: GoalTask[]): void => {
+				for (let i = 0; i < tasks.length; i++) { const task = tasks[i]!; locations.set(task.id, {tasks, index: i}); if (task.subtasks) indexTasks(task.subtasks); }
+			};
+			const removeTasks = (tasks: GoalTask[]): void => {
+				for (const task of tasks) { locations.delete(task.id); if (task.subtasks) removeTasks(task.subtasks); }
+			};
+			indexTasks(next.taskList!.tasks);
+			const events: GoalLedgerEvent[] = [];
+			for (const spec of specs) {
+				if (spec.focusToken && !this.ref.isTokenCurrent(spec.focusToken)) return {ok: false, message: "The focused goal changed; no updates applied."};
+				const location = locations.get(spec.taskId);
+				const task = location?.tasks[location.index];
+				if (!task) return {ok: false, message: `Task "${spec.taskId}" not found.`};
+				const valid = spec.validate?.(task);
+				if (valid && !valid.ok) return valid;
+				const updated = spec.update(task);
+				if ("ok" in updated && !updated.ok) return updated;
+				const updatedTask = updated as GoalTask;
+				location!.tasks[location!.index] = updatedTask;
+				if (updatedTask.id !== task.id) { locations.delete(task.id); locations.set(updatedTask.id, location!); }
+				if (updatedTask.subtasks !== task.subtasks) {
+					if (task.subtasks) removeTasks(task.subtasks);
+					if (updatedTask.subtasks) indexTasks(updatedTask.subtasks);
+				}
+				next.currentTaskId = resolveUpdatedCurrentTaskId(spec, next.currentTaskId, updatedTask);
+				next.updatedAt = nowIso();
+				if (spec.ledger) events.push(...spec.ledger(next, updatedTask));
+			}
+			if (this.turn.active) return this.apply(ctx, {reconcile: false, expectedGoalId: current.id, focusToken: specs[0]?.focusToken, mutate: () => next, ledger: events});
+			const written = writeActiveGoalFile(ctx, {...next, revision: (base.revision ?? 0) + 1});
+			this.appendLedgerEventsBestEffort(ctx, events);
+			this.trackBaseline(written.id, written.usage);
+			this.ref.setFocused(written);
+			return {ok: true, goal: written, previousGoalId: current.id, goalId: written.id, focusChanged: false};
+		} finally { lock?.release(); }
+	}
 
 	/**
 	 * Disk-fresh single-task transaction (follow-up Stage 4 adds the per-goal
@@ -799,25 +799,25 @@ export class GoalService {
 	}
 
 	/** Audit outcomes can bypass the current turn without flushing unrelated work. */
- appendEvents(ctx: GoalServiceContext, events: GoalLedgerEvent[], opts: {immediate?: boolean} = {}): boolean {
-  if (this.turn.active && !opts.immediate && this.turnContext && goalStorageRoot(this.turnContext) === goalStorageRoot(ctx)) {
-   this.turn.ledger.push(...events);
-   return true;
-  }
-  return this.appendLedgerEventsBestEffort(ctx, events);
- }
+	appendEvents(ctx: GoalServiceContext, events: GoalLedgerEvent[], opts: {immediate?: boolean} = {}): boolean {
+		if (this.turn.active && !opts.immediate && this.turnContext && goalStorageRoot(this.turnContext) === goalStorageRoot(ctx)) {
+			this.turn.ledger.push(...events);
+			return true;
+		}
+		return this.appendLedgerEventsBestEffort(ctx, events);
+	}
 
- /** Detach an outgoing session's buffer after its final persistence attempt. */
- endSession(ctx?: GoalServiceContext): void {
-  try {
-   const storage = this.turnContext ?? ctx;
-   if (storage) this.flushTurn(storage);
-  } finally {
-   if (this.turn.active) this.ref.onDiagnostic({severity: "warning", source: "storage", message: this.flushError ?? "Outgoing goal changes could not be persisted before session replacement."});
-   this.turn = {active: false, goalId: null, goal: null, archive: false, ledger: []};
-   this.turnContext = null;
-   this.turnBase = null;
-   this.lastPersistedUsage = null;
-  }
- }
+	/** Detach an outgoing session's buffer after its final persistence attempt. */
+	endSession(ctx?: GoalServiceContext): void {
+		try {
+			const storage = this.turnContext ?? ctx;
+			if (storage) this.flushTurn(storage);
+		} finally {
+			if (this.turn.active) this.ref.onDiagnostic({severity: "warning", source: "storage", message: this.flushError ?? "Outgoing goal changes could not be persisted before session replacement."});
+			this.turn = {active: false, goalId: null, goal: null, archive: false, ledger: []};
+			this.turnContext = null;
+			this.turnBase = null;
+			this.lastPersistedUsage = null;
+		}
+	}
 }

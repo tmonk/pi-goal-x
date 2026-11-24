@@ -422,7 +422,7 @@ export async function runGoalCompletionAuditor(args: {
 			progress.percentage = 100;
 			emitProgress();
 			unsubscribe();
-   session.dispose?.();
+			session.dispose?.();
 		}
 		// session.abort() does NOT throw — the agent loop returns normally with
 		// whatever output was captured before the abort. Check the signal after

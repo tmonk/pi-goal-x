@@ -518,12 +518,12 @@ function scanActiveGoalFiles(ctx: GoalFileContext, root: string): GoalRecord[] {
 }
 
 export function readActiveGoalPoolView(ctx: GoalFileContext): ReadonlyMap<string, GoalRecord> {
- const root = goalStoragePath(ctx, GOALS_DIR);
- const cached = goalPoolCache.get(root);
- if (cached) return cached;
- const pool = readPoolWithSnapshotSync(ctx, root);
- goalPoolCache.set(root, pool);
- return pool;
+	const root = goalStoragePath(ctx, GOALS_DIR);
+	const cached = goalPoolCache.get(root);
+	if (cached) return cached;
+	const pool = readPoolWithSnapshotSync(ctx, root);
+	goalPoolCache.set(root, pool);
+	return pool;
 }
 
 export function readActiveGoalPool(ctx: GoalFileContext): Map<string, GoalRecord> {
