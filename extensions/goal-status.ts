@@ -170,7 +170,7 @@ function buildHealthStatus(options: GoalStatusTextOptions, width: number): strin
 		const percentage = Math.round((goal.usage.tokensUsed / goal.tokenBudget) * 100);
 		checks.push({
 			label: "Budget",
-			value: `${formatCompactTokensForHealth(goal.usage.tokensUsed)} / ${formatCompactTokensForHealth(goal.tokenBudget)} (${Math.max(0, percentage)}%)`,
+			value: `${formatCompactTokens(goal.usage.tokensUsed)} / ${formatCompactTokens(goal.tokenBudget)} (${Math.max(0, percentage)}%)`,
 			severity: goal.status === "budget_limited" || percentage >= 100 ? "warn" : percentage >= 90 ? "warn" : "ok",
 		});
 	}
@@ -197,12 +197,6 @@ function flattenHealthTasks(tasks: GoalTask[]): GoalTask[] {
 
 function statusLabelForHealth(goal: GoalRecord): string {
 	return goal.status === "budget_limited" ? "budget limited" : goal.status;
-}
-
-function formatCompactTokensForHealth(value: number): string {
-	if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-	if (value >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
-	return String(Math.max(0, Math.floor(value)));
 }
 
 function lastAuditBlock(

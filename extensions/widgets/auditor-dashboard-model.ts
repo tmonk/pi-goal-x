@@ -8,7 +8,6 @@
  */
 
 import type { AuditorProgress } from "../goal-auditor.ts";
-import { formatDashboardDuration } from "./goal-dashboard-model.ts";
 
 type AuditCheckState = "pending" | "running" | "passed" | "failed";
 
@@ -116,11 +115,6 @@ function checkStateActive(id: AuditCheckId, pct: number): AuditCheckState {
 function clampPercentage(value: number | undefined): number {
 	if (value === undefined) return 0;
 	return Math.min(100, Math.max(0, Math.round(value)));
-}
-
-/** Human duration label for the audit header (reused formatter). */
-export function formatAuditElapsed(elapsedMs: number): string {
-	return formatDashboardDuration(Math.floor(elapsedMs / 1000));
 }
 
 /**
