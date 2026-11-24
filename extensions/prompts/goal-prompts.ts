@@ -4,7 +4,7 @@ import { taskIndex } from "../goal-task-index.ts";
 import { statusLabel, truncateText } from "../goal-display.ts";
 import { promptSafeObjective } from "../goal-contract.ts";
 import type { GoalRecord, GoalTask } from "../goal-record.ts";
-import type { GoalSettings } from "../goal-settings.ts";
+import type { GoalSettings } from "../settings/schema.ts";
 import { contextUsageLine, type GoalContextUsage } from "../goal-accounting.ts";
 
 /**

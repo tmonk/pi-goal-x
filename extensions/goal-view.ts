@@ -5,7 +5,7 @@ import { goalActivityEvents } from "./goal-ledger.ts";
 import { otherOpenGoalCount } from "./goal-pool.ts";
 import { nowIso } from "./goal-record.ts";
 import type { GoalSessionState } from "./goal-session-state.ts";
-import { loadGoalSettings } from "./goal-settings.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 import { goalStorageContext } from "./storage/goal-root.ts";
 import type { AuditVerdict } from "./widgets/auditor-dashboard-model.ts";
 import {

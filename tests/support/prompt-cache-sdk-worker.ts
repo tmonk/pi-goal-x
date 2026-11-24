@@ -9,7 +9,7 @@ import { GOAL_AUDIT_ENTRY } from "../../extensions/goal-format.ts";
 import { filterGoalSessionContext } from "../../extensions/goal-session-safety.ts";
 import { LiveTailRetention } from "../../extensions/goal-live-retention.ts";
 import {stabilizationHarness} from "./stabilization-utils.ts";
-import {mutateSettingsLayer} from "../../extensions/goal-settings.ts";
+import { mutateSettingsLayer } from "../../extensions/settings/mutate.ts";
 
 const live = "[PI GOAL ACTIVE goalId=fixture]\nUsage: 123 tokens";
 

@@ -14,7 +14,7 @@ import { Text } from "@earendil-works/pi-tui";
 import type { GoalTaskUpdateSpec } from "./goal-service.ts";
 import { goalDetails, renderGoalResult } from "./goal-format.ts";
 import { statusLabel, truncateText } from "./goal-display.ts";
-import { loadGoalSettings } from "./goal-settings.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 import { buildTaskSummary, checkSubtasksComplete, findSubtaskDepthViolation, findTaskInTree, skipAllSubtasks } from "./goal-policy.ts";
 import { showTaskConfirmation, type TaskConfirmationResult } from "./goal-task-confirmation.ts";
 import { dropBlankStatus, normalizeTaskProgress, type TaskProgressInput } from "./goal-tool-inputs.ts";

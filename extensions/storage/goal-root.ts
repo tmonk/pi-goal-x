@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { loadSettingsSnapshot } from "../goal-settings.ts";
+import { loadSettingsSnapshot } from "../settings/resolve.ts";
 
 export interface GoalStorageContext {
 	cwd: string;

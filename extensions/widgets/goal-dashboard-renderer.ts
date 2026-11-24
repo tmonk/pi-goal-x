@@ -29,7 +29,7 @@ import {
 } from "./goal-dashboard-model.ts";
 import type { GoalActivityItem } from "../goal-activity.ts";
 import { truncateText } from "../goal-display.ts";
-import { DEFAULT_GOAL_KEYBINDINGS, formatGoalKeybinding, type GoalDashboardKeybindings } from "../goal-settings.ts";
+import { DEFAULT_GOAL_KEYBINDINGS, formatGoalKeybinding, type GoalDashboardKeybindings } from "../settings/schema.ts";
 
 // mdLink is deliberately excluded: the chrome must stay neutral gray, not
 // blue-tinged ("more grey than blue").

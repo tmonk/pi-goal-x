@@ -1,6 +1,7 @@
 import { getKeybindings, isKittyProtocolActive, matchesKey } from "@earendil-works/pi-tui";
 import { GOAL_DIALOG_KEYS, bindingKeys, sameGoalKey, type GoalDialogAction, type GoalKeybinding } from "./goal-controls.ts";
-import { loadGoalSettings, formatGoalKeybinding } from "./goal-settings.ts";
+import { formatGoalKeybinding } from "./settings/schema.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 
 /** Snapshot the dialog's controls once; the modal owns input until it closes. */
 export function goalDialogControls(cwd: string) {

@@ -4,7 +4,8 @@ import type { ExtensionContext, AgentToolResult } from "@earendil-works/pi-codin
 import type { GoalCore } from "./goal-state.ts";
 import { asRecord, type GoalRecord } from "./goal-record.ts";
 import { budgetReached } from "./goal-accounting.ts";
-import { loadGoalSettings, invalidateGoalSettingsCache } from "./goal-settings.ts";
+import { invalidateGoalSettingsCache } from "./settings/files.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 import { hasActiveDraft } from "./goal-drafting.ts";
 import { newGoalScheduler, schedulerSummary, type GoalContinuation, type GoalSchedulerState } from "./goal-scheduler-state.ts";
 

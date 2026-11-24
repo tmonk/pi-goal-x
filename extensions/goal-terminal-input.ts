@@ -1,7 +1,7 @@
 import { GOAL_KEY_ACTIONS, GOAL_COMMAND_INPUTS, bindingKeys, keyActionBinding, type GoalCommandId } from "./goal-controls.ts";
 import { matchesKey, getKeybindings } from "@earendil-works/pi-tui";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadGoalSettings } from "./goal-settings.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 import type { GoalCore } from "./goal-state.ts";
 
 const KEY_ACTION_BY_PATH = new Map(GOAL_KEY_ACTIONS.map(action => [action.path.slice(1).join("."), action]));

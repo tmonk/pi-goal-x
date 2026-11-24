@@ -9,7 +9,7 @@ import test from "node:test";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createGoal, goalFocusDetails, type GoalRecord } from "../extensions/goal-record.ts";
 import { writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
-import { invalidateGoalSettingsCache } from "../extensions/goal-settings.ts";
+import { invalidateGoalSettingsCache } from "../extensions/settings/files.ts";
 
 interface HarnessOptions {
 	cwd: string;

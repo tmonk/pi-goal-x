@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {stabilizationHarness} from "./support/stabilization-utils.ts";
 import {planUpdateGoal} from "../extensions/goal-tool-inputs.ts";
-import {mutateSettingsLayer} from "../extensions/goal-settings.ts";
+import { mutateSettingsLayer } from "../extensions/settings/mutate.ts";
 
 export const recordedCompletion = {status: "complete", continuation: {kind: "ready"}, reason: "", suggested_action: "", attempted_actions: [], completion_summary: "…"};
 

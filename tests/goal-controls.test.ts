@@ -11,7 +11,9 @@ import {
 	GOAL_COMMANDS, GOAL_KEY_ACTIONS, commandProblems, commandRoutes, matchCommandRoute,
 	normalizeGoalKey, sameGoalKey, parseCommandPaths, parseGoalKeybinding, keybindingProblems, commandHint,
 } from "../extensions/goal-controls.ts";
-import { loadSettingsSnapshot, mutateSettingsLayer, SettingsMutationError, invalidateGoalSettingsCache } from "../extensions/goal-settings.ts";
+import { invalidateGoalSettingsCache } from "../extensions/settings/files.ts";
+import { loadSettingsSnapshot } from "../extensions/settings/resolve.ts";
+import { mutateSettingsLayer, SettingsMutationError } from "../extensions/settings/mutate.ts";
 import { syncTerminalInputPause } from "../extensions/goal-terminal-input.ts";
 import { GoalControlsDialog, commandControlsFingerprint } from "../extensions/widgets/goal-controls-dialog.ts";
 import { createMockTheme, createMockTUI } from "./support/tui-test-utils.ts";

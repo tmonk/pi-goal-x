@@ -17,7 +17,7 @@ import {
 	endFsCount,
 	cleanupFixture,
 } from "./bench-common.mjs";
-import { loadGoalSettings } from "../../extensions/goal-settings.ts";
+import { loadGoalSettings } from "../../extensions/settings/resolve.ts";
 import { readActiveGoalPool } from "../../extensions/storage/goal-files.ts";
 import { readGoalLedger, appendGoalEvent, appendGoalEvents } from "../../extensions/goal-ledger.ts";
 import { acquireGoalLock } from "../../extensions/storage/goal-lock.ts";

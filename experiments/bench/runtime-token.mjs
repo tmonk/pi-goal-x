@@ -9,7 +9,7 @@ import { deriveGoalActivity } from '../../extensions/goal-activity.ts';
 import { deriveGoalDashboardModel } from '../../extensions/widgets/goal-dashboard-model.ts';
 import { createHarness, startHarness, focusedFixture, makeGoalFiles, beginFsCount, endFsCount } from './bench-common.mjs';
 import { invalidateGoalPoolCache, writeActiveGoalFile } from '../../extensions/storage/goal-files.ts';
-import { invalidateGoalSettingsCache } from '../../extensions/goal-settings.ts';
+import { invalidateGoalSettingsCache } from '../../extensions/settings/files.ts';
 const rows=[];
 const growth=[];
 async function allocationSample(fn, n=10) {

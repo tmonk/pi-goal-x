@@ -10,7 +10,7 @@ import { deriveTasksFromObjective } from "./goal-task-derive.ts";
 import { goalDetails, renderGoalResult } from "./goal-format.ts";
 import { budgetReached } from "./goal-accounting.ts";
 import { buildGoalCreatedReport, formatGoalBudget } from "./goal-policy.ts";
-import { loadGoalSettings } from "./goal-settings.ts";
+import { loadGoalSettings } from "./settings/resolve.ts";
 import { DIALOG_UNAVAILABLE_HINT, proposalDialogFailureMessage, formatQuestionnaireAnswers, runGoalQuestionnaire, shouldAutoConfirmProposal, showProposalDialog, type GoalQuestionnaireQuestion, type ProposalDecision } from "./goal-questionnaire.ts";
 import { currentTaskIdIsPending, nowIso, validateTokenBudgetInput, type GoalRecord, type GoalTaskList } from "./goal-record.ts";
 import type { GoalCore } from "./goal-state.ts";
