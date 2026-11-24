@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { hash } from "node:crypto";
 import { asRecord } from "./goal-record.ts";
 
 /**
@@ -89,7 +89,8 @@ export interface FreshLiveTails {
 
 interface RetainedTail {
 	anchorIndex: number;
-	anchorFingerprint: string | null;
+	/** The message the tail follows, as it was when the tail was added. */
+	anchorSnapshot: Snapshot | null;
 	content: string;
 	kind: LiveTailKind;
 }
@@ -99,20 +100,80 @@ interface SessionRetention {
 	lastFresh: { state: string; counters: string | undefined; countersState: string | undefined; scope: string | undefined } | undefined;
 	/** The request-only text sent last, so the explicit-cache marker can skip it. */
 	lastEphemeral: string | undefined;
-	/** Digest of every base message at the last apply; any earlier rewrite resets. */
-	baseFingerprints: Array<string | null>;
+	/** Every base message as it was at the last apply; any earlier rewrite resets. */
+	baseSnapshots: Array<Snapshot | null>;
 }
 
 
-/** Full-message digest, or null (never a match) when serialization fails. */
-function fingerprintMessage(message: unknown): string | null {
+/**
+ * A message as it looked at the last request, kept to compare against the next
+ * one. Short strings are kept as they are; long ones as a length and a hash, so
+ * the copy stays small and big tool results are not held twice. Null means the
+ * message could not be copied, and a null never matches anything.
+ */
+type Snapshot = unknown;
+
+/** Strings up to this long are kept as they are. Longer ones are hashed. */
+const RAW_STRING_MAX = 4096;
+/** Deeper than any real message. Guards against cycles. */
+const MAX_DEPTH = 64;
+
+class LongString {
+	readonly length: number;
+	readonly hash: string;
+	constructor(length: number, hash: string) {
+		this.length = length;
+		this.hash = hash;
+	}
+}
+
+const hashText = (text: string): string => hash("sha256", text, "base64");
+
+function isPlainObject(value: object): boolean {
+	const proto = Object.getPrototypeOf(value);
+	return proto === Object.prototype || proto === null;
+}
+
+function copyForComparison(value: unknown, depth: number): Snapshot {
+	if (typeof value === "string") return value.length > RAW_STRING_MAX ? new LongString(value.length, hashText(value)) : value;
+	if (value === null || value === undefined || typeof value === "number" || typeof value === "boolean") return value;
+	if (depth >= MAX_DEPTH || typeof value !== "object") throw new Error("not copyable");
+	if (Array.isArray(value)) return value.map(item => copyForComparison(item, depth + 1));
+	if (!isPlainObject(value)) throw new Error("not copyable");
+	const copy: Record<string, Snapshot> = {};
+	for (const key of Object.keys(value)) copy[key] = copyForComparison((value as Record<string, unknown>)[key], depth + 1);
+	return copy;
+}
+
+function snapshotMessage(message: unknown): Snapshot | null {
 	try {
-		const serialized = JSON.stringify(message) ?? "undefined";
-		return createHash("sha256").update(serialized).digest("base64");
+		return copyForComparison(message, 0);
 	} catch {
 		return null;
 	}
 }
+
+function sameAsSnapshot(snapshot: Snapshot, value: unknown, depth = 0): boolean {
+	if (typeof snapshot === "string") return snapshot === value;
+	if (snapshot instanceof LongString) return typeof value === "string" && value.length === snapshot.length && hashText(value) === snapshot.hash;
+	if (snapshot === null || typeof snapshot !== "object") return Object.is(snapshot, value);
+	if (depth >= MAX_DEPTH || typeof value !== "object" || value === null) return false;
+	if (Array.isArray(snapshot)) {
+		if (!Array.isArray(value) || value.length !== snapshot.length) return false;
+		for (let i = 0; i < snapshot.length; i++) if (!sameAsSnapshot(snapshot[i], value[i], depth + 1)) return false;
+		return true;
+	}
+	if (Array.isArray(value) || !isPlainObject(value)) return false;
+	const keys = Object.keys(snapshot);
+	if (Object.keys(value).length !== keys.length) return false;
+	for (const key of keys) {
+		if (!Object.hasOwn(value, key) || !sameAsSnapshot((snapshot as Record<string, Snapshot>)[key], (value as Record<string, unknown>)[key], depth + 1)) return false;
+	}
+	return true;
+}
+
+/** True when the message is unchanged since the snapshot was taken. */
+const unchanged = (snapshot: Snapshot | null, message: unknown): boolean => snapshot !== null && sameAsSnapshot(snapshot, message);
 
 /**
  * Tool results must stay adjacent to the call they answer, so a retained tail
@@ -157,12 +218,9 @@ export class LiveTailRetention {
 			this.sessions.delete(sessionKey);
 			return { messages: [...base], transientContents: [], stableLength: base.length };
 		}
-		// Hash each message once per request. Extensions may reuse and mutate
-		// message objects, so object identity cannot cache a digest across requests.
-		const fingerprints = base.map(fingerprintMessage);
 		let session = this.sessions.get(sessionKey);
 		if (!session) {
-			session = { tails: [], lastFresh: undefined, lastEphemeral: undefined, baseFingerprints: [] };
+			session = { tails: [], lastFresh: undefined, lastEphemeral: undefined, baseSnapshots: [] };
 			if (this.sessions.size >= MAX_TRACKED_SESSIONS) {
 				const oldest = this.sessions.keys().next();
 				if (!oldest.done) this.sessions.delete(oldest.value);
@@ -172,7 +230,7 @@ export class LiveTailRetention {
 		const reset = () => {
 			session!.tails = [];
 			session!.lastFresh = undefined;
-			session!.baseFingerprints = [];
+			session!.baseSnapshots = [];
 		};
 		// A different goal (or a stale-checkpoint or unfocused state) shares
 		// nothing with the earlier blocks, so start over.
@@ -183,20 +241,25 @@ export class LiveTailRetention {
 		if (session.lastFresh?.counters !== undefined && fresh.counters === undefined && session.lastFresh.countersState === fresh.state) reset();
 		// Tails anchored while history was empty would linger at the head once
 		// real history arrives. Reset once so fresh tails anchor at the tail.
-		if (session.tails.length > 0 && session.baseFingerprints.length === 0 && base.length > 0) reset();
+		if (session.tails.length > 0 && session.baseSnapshots.length === 0 && base.length > 0) reset();
 		// Any rewrite earlier than the anchors — middle-message edits, filter
 		// changes, checkpoint normalization — breaks the prefix even when the
 		// trailing message is identical, so verify the whole preceding history.
-		if (session.baseFingerprints.length > base.length) reset();
+		// Pi hands every request a fresh copy of the messages, and extensions may
+		// edit them, so the check compares content with what was seen last time.
+		// Comparing is much cheaper than hashing every message on every request.
+		if (session.baseSnapshots.length > base.length) reset();
 		else {
-			for (let i = 0; i < session.baseFingerprints.length; i++) {
-				const current = fingerprints[i];
-				if (current === null || current !== session.baseFingerprints[i]) {
+			for (let i = 0; i < session.baseSnapshots.length; i++) {
+				if (!unchanged(session.baseSnapshots[i] ?? null, base[i])) {
 					reset();
 					break;
 				}
 			}
 		}
+		// The verified history keeps its snapshots; only new messages are copied.
+		const snapshots = session.baseSnapshots;
+		for (let i = snapshots.length; i < base.length; i++) snapshots.push(snapshotMessage(base[i]));
 		// An unsafe anchor invalidates the whole replay. Keeping an earlier
 		// policy while re-appending fresh blocks would duplicate that policy.
 		let valid = 0;
@@ -204,8 +267,7 @@ export class LiveTailRetention {
 			const tail = session.tails[valid]!;
 			if (tail.anchorIndex > base.length) break;
 			if (tail.anchorIndex > 0) {
-				const current = fingerprints[tail.anchorIndex - 1];
-				if (current === null || current !== tail.anchorFingerprint) break;
+				if (!unchanged(tail.anchorSnapshot, base[tail.anchorIndex - 1])) break;
 			}
 			if (splitsToolBatch(base[tail.anchorIndex])) break;
 			valid++;
@@ -237,10 +299,10 @@ export class LiveTailRetention {
 			const tail = session.tails[i]!;
 			messages.splice(tail.anchorIndex, 0, makeLiveMessage(tail.content));
 		}
-		const anchorFingerprint = fingerprints.at(-1) ?? null;
+		const anchorSnapshot = snapshots.at(-1) ?? null;
 		const append = (content: string, kind: LiveTailKind) => {
 			messages.push(makeLiveMessage(content));
-			session!.tails.push({ anchorIndex: base.length, anchorFingerprint, content, kind });
+			session!.tails.push({ anchorIndex: base.length, anchorSnapshot, content, kind });
 		};
 		if (changed.policy) append(session.tails.some(tail => tail.kind === "goal-state") ? `${POLICY_SUPERSEDED_NOTE}\n${fresh.state}` : fresh.state, "goal-state");
 		if (changed.counters) append(fresh.counters!, "goal-counters");
@@ -250,7 +312,7 @@ export class LiveTailRetention {
 		const ephemeral = [superseded ? POLICY_RECENCY_NOTE : "", fresh.ephemeral ?? ""].filter(Boolean).join("\n");
 		const stableLength = messages.length;
 		if (ephemeral) messages.push(makeLiveMessage(ephemeral));
-		session.baseFingerprints = fingerprints;
+		session.baseSnapshots = snapshots;
 		const previous = session.lastFresh;
 		session.lastFresh = fresh.counters === undefined
 			? { state: fresh.state, counters: previous?.counters, countersState: previous?.countersState, scope: fresh.scope }

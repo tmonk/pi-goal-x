@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Goal turns are faster and gentler on slow disks, with no change to prompts or behavior. Checking the history on every request no longer gets slower as a session grows (a goal turn at 2.8 MiB of history went from 32 ms to 7 ms). A turn saves the goal file once instead of twice, so file operations per turn fall from 44 to 22. Locks and goal writes skip needless folder checks. `/goal-settings`, `/goal-status` and `/goal-recovery` load when first used. Prompt-cache results are identical.
+
 ## [0.35.1] — 2026-11-24
 
 Includes #161.

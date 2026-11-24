@@ -9,6 +9,8 @@
  *                                       baseline-before.json / baseline-after.json
  *   campaign "naf"                    → specs/2026-08-06-non-agent-flow-optimization/
  *                                       baseline-naf-before.json / baseline-naf-after.json
+ *   campaign "speed"                  → specs/2026-11-24-runtime-speed/
+ *                                       baseline-speed-before.json / baseline-speed-after.json
  *
  * Unknown campaign names fall back to a spec dir named after the campaign and
  * a matching JSON prefix.
@@ -22,6 +24,10 @@ export const CAMPAIGNS = {
 	naf: {
 		specDir: "2026-08-06-non-agent-flow-optimization",
 		jsonPrefix: "baseline-naf-",
+	},
+	speed: {
+		specDir: "2026-11-24-runtime-speed",
+		jsonPrefix: "baseline-speed-",
 	},
 };
 
