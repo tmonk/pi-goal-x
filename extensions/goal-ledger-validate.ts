@@ -47,16 +47,22 @@ const EVENT_FIELDS: Record<GoalLedgerEvent["type"], Record<string, Check>> = {
 	oracle_followup_attempted: { goalId: str, fingerprint: str, adviceId: str, firstToolName: str },
 };
 
+/** The field checks of each event type as arrays, so validating an event allocates nothing. */
+const EVENT_CHECKS = new Map(Object.entries(EVENT_FIELDS).map(([type, fields]) => [type, Object.entries(fields)]));
+
 const AUDIT_TYPES = new Set(["audit_started", "audit_result", "audit_skipped"]);
 
 export function isValidLedgerEvent(value: unknown): value is GoalLedgerEvent {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
 	const obj = value as Record<string, unknown>;
 	if (typeof obj.type !== "string" || typeof obj.at !== "string") return false;
-	if (!Object.hasOwn(EVENT_FIELDS, obj.type)) return false;
+	const checks = EVENT_CHECKS.get(obj.type);
+	if (!checks) return false;
 	if (AUDIT_TYPES.has(obj.type) && obj.auditId !== undefined && (typeof obj.auditId !== "string" || !obj.auditId)) return false;
-	const fields = EVENT_FIELDS[obj.type as GoalLedgerEvent["type"]];
-	return Object.entries(fields).every(([field, check]) => check(obj[field]));
+	for (const [field, check] of checks) {
+		if (!check(obj[field])) return false;
+	}
+	return true;
 }
 
 /** Normalize the goal id of an event; events without a goal id pass through unchanged. */

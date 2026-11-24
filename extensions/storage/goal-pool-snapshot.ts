@@ -107,13 +107,22 @@ function prepareSnapshotDirectory(ctx: GoalFileContext): void {
 	if (isExternalGoalStorage(ctx)) ensureGoalStorageDirectory(ctx, ".pi/goals/.metadata");
 }
 
-/** Best-effort removal of the legacy in-dir snapshot after the first write to the new location. */
+/** Goals dirs whose legacy snapshot this process has already removed (or found absent). */
+const legacyRemoved = new Set<string>();
+
+/**
+ * Best-effort removal of the legacy in-dir snapshot after a write to the new
+ * location. Once per goals dir per process: every later write would only
+ * repeat a failing unlink.
+ */
 function removeLegacySnapshot(root: string): void {
+	if (legacyRemoved.has(root)) return;
 	try {
 		fs.unlinkSync(legacyPath(root));
-	} catch {
-		// already absent
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") return; // try again on the next write
 	}
+	legacyRemoved.add(root);
 }
 
 function writeSnapshotSync(ctx: GoalFileContext, root: string, snapshot: PoolSnapshot): void {

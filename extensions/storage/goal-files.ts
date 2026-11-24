@@ -95,8 +95,8 @@ function statIfPresent(filePath: string): fs.Stats | undefined {
 export function atomicWriteGoalFile(ctx: GoalFileContext, rootRel: string, relPath: string, content: string): void {
 	ensureDirectory(ctx, rootRel);
 	const filePath = resolveGoalPath(ctx, rootRel, relPath);
-	if (statIfPresent(filePath)?.isSymbolicLink()) throw new Error(`Refusing to write symlinked goal file: ${relPath}`);
-	writeFileAtomicSync(filePath, content);
+	// The atomic writer already lstats the target, so it does the symlink check.
+	writeFileAtomicSync(filePath, content, { symlinkMessage: `Refusing to write symlinked goal file: ${relPath}` });
 	invalidateGoalPathCaches(filePath);
 	invalidateGoalDirCache(goalStoragePath(ctx, rootRel));
 }
