@@ -257,9 +257,8 @@ export function registerGoalEvents(core: GoalCore): void {
 				core.goalsById.delete(completedGoal.id);
 				core.assignFocusedGoalId(null);
 				core.appendFocusEntry(null, "completed");
-				// §16.6: append the dedicated goal_archived event (the completion
-				// transaction keeps goal_completed for compatibility) and emit the
-				// real archive path.
+				// Log goal_archived with the real archive path; the completion
+				// transaction still writes goal_completed.
 				try {
 					core.goalService.appendEvents(ctx, [{
 						type: "goal_archived",
@@ -273,9 +272,8 @@ export function registerGoalEvents(core: GoalCore): void {
 				const path = archiveResult.goal?.archivedPath ?? "";
 				ctx.ui.notify(path ? `Goal archived.\nFile: ${path}` : "Goal archived.", "info");
 			} else {
-				// §16.6 failure behavior: never claim success, keep the complete
-				// record recoverable at its active path, and write a diagnostic
-				// ledger event when possible.
+				// Never claim success: the complete record stays at its active path,
+				// and we log a diagnostic event when we can.
 				const remainingPath = completedGoal.activePath ?? "(unknown)";
 				ctx.ui.notify(`Failed to archive completed goal: ${archiveResult.message}. The complete record remains at ${remainingPath}.`, "warning");
 				try {
@@ -560,10 +558,9 @@ export function registerGoalEvents(core: GoalCore): void {
 		}
 		if (core.runtime.isPostCompactReminderPending() && shouldInjectPostCompactReminder({ pending: true, goal: activeGoal })) {
 			core.runtime.clearPostCompactReminder();
-			// PR E §62: post-compaction DELTA — the current goal block already
-			// carries objective/policy/task gate/contract; inject only what
-			// compaction may have lost. Falls back to a generic note on ledger
-			// read failure.
+			// After compaction the goal block already carries the objective, policy
+			// and task contract, so inject only what compaction may have lost.
+			// Falls back to a generic note if the ledger can't be read.
 			try {
 				const ledger = getPromptLedger();
 				const otherOpenCount = core.openGoals().filter((g) => g.id !== activeGoal.id).length;

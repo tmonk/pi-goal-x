@@ -6,10 +6,6 @@ import { buildDraftConfirmationText } from "../extensions/prompts/goal-draft-pro
 import type { GoalTask } from "../extensions/goal-record.ts";
 import { renderConfirmationTasks } from "../extensions/goal-task-confirmation.ts";
 import {
-	computeDialogLineLimit,
-	type DialogScrollState,
-	findProposalPresentationSegments,
-	fitDialogLines,
 	formatQuestionnaireAnswers,
 	normalizeQuestionnaireQuestions,
 	proposalDialogFailureMessage,
@@ -20,6 +16,7 @@ import {
 	DIALOG_UNAVAILABLE_HINT,
 	type GoalQuestionnaireResult,
 } from "../extensions/goal-questionnaire.ts";
+import { computeDialogLineLimit, type DialogScrollState, findProposalPresentationSegments, fitDialogLines } from "../extensions/goal-dialog-fit.ts";
 
 test("normalizeQuestionnaireQuestions trims ids, de-duplicates, filters options, and validates recommended", () => {
 	assert.deepEqual(

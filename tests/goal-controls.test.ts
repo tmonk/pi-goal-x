@@ -20,7 +20,8 @@ import { createMockTheme, createMockTUI } from "./support/tui-test-utils.ts";
 import { goalPrompt } from "../extensions/prompts/goal-prompts.ts";
 import { goalDialogControls } from "../extensions/goal-dialog-controls.ts";
 import { showEscapeDialog } from "../extensions/widgets/goal-escape-dialog.ts";
-import { runGoalQuestionnaire, fitDialogLines } from "../extensions/goal-questionnaire.ts";
+import { runGoalQuestionnaire } from "../extensions/goal-questionnaire.ts";
+import { fitDialogLines } from "../extensions/goal-dialog-fit.ts";
 import { detailedSummary } from "../extensions/goal-format.ts";
 import { formatRecoveryReport, runRecoveryReport } from "../extensions/goal-recovery.ts";
 

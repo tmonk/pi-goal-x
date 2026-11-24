@@ -26,3 +26,11 @@
 - Three source-reading tests (mutation boundary, status timer, session state
   growth) now read the module that holds the code they check.
 - 1,258 tests, 0 failures.
+
+## Module cleanup
+
+- `goal-questionnaire.ts` went from 1,066 to 839 lines. The dialog line-fitting helpers (`computeDialogLineLimit`, `fitDialogLines`, proposal segment scan) moved to the new `goal-dialog-fit.ts` (226 lines); two test files import them from there.
+- Removed spec-section references (`§8.1`, `§16.6`, ...) from comments in service, events, commands and task-tools, and dropped a doc comment that sat above the wrong function.
+- Removed an unused `ctx` parameter in `goal-ledger.ts` and one repeated session-file cast in `goal-commands.ts`.
+- No exports were unused in the seven modules. `runGoalQuestionnaire` is still one long UI closure; splitting it is not clearly safer, so it was left.
+- Validation: check, lint and all unit tests pass (1,253 tests, 5 skipped in this run).
