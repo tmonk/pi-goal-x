@@ -10,7 +10,7 @@ import {
 	readActiveGoalPool,
 	writeActiveGoalFile,
 } from "../extensions/storage/goal-files.ts";
-import { tempDir } from "./support/fs.ts";
+import { removeDir, tempDir } from "./support/fs.ts";
 
 const SNAPSHOT_NAME = ".goals-pool-snapshot.json";
 
@@ -48,7 +48,7 @@ test("pool snapshot lives outside the watched goals dir and records its mtime", 
 		assert.equal(snapshot.version, 1);
 		assert.equal(snapshot.goals.length, 1);
 	} finally {
-		try { fs.rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -71,7 +71,7 @@ test("pool snapshot: a subsequent goal write keeps the fast-path key valid", () 
 		const pool = readActiveGoalPool({ cwd });
 		assert.equal(pool.size, 2);
 	} finally {
-		try { fs.rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -99,7 +99,7 @@ test("pool snapshot: legacy in-dir snapshot is served as a one-time fallback", (
 		const served = [...pool.values()][0]!;
 		assert.equal((served as GoalRecord & { snapshotMarker?: boolean }).snapshotMarker, true, "served from the legacy snapshot, not a rescan");
 	} finally {
-		try { fs.rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -113,6 +113,6 @@ test("pool snapshot: writing removes the legacy in-dir file", () => {
 		assert.ok(!fs.existsSync(snapshotPaths(cwd).legacyPath), "legacy file cleaned up after the new write");
 		assert.ok(fs.existsSync(snapshotPaths(cwd).newPath));
 	} finally {
-		try { fs.rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });

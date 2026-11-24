@@ -18,7 +18,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,7 +40,7 @@ import {
 	serializeGoalFile,
 	writeActiveGoalFile,
 } from "../extensions/storage/goal-files.ts";
-import { tempDir } from "./support/fs.ts";
+import { removeDir, tempDir } from "./support/fs.ts";
 
 const FIXTURE_GOAL_RELPATH = `${GOALS_DIR}/active_goal_fixture.md`;
 
@@ -263,7 +263,7 @@ test("golden: legacy paused+autoContinue:true record stays paused through markdo
 		assert.equal(parsed.status, "paused", "parsed legacy record must stay paused");
 		assert.equal(parsed.autoContinue, true, "autoContinue flag survives as data");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 

@@ -10,7 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { parseGoalFile } from "../extensions/storage/goal-files.ts";
-import { activeGoalFiles, tempDir } from "./support/fs.ts";
+import { activeGoalFiles, removeDir, tempDir } from "./support/fs.ts";
 
 const CURATED_COMMANDS = [
 	"goal", "sisyphus", "goal-direct", "sisyphus-direct", "goal-tweak", "goal-pause", "goal-resume",
@@ -36,7 +36,7 @@ test("exactly the fourteen curated commands are registered; legacy commands are 
 		}
 		assert.equal(h.commands.size, CURATED_COMMANDS.length, "no aliases or extras");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -52,7 +52,7 @@ test("/goal <objective> starts guided drafting without creating a goal", async (
 		assert.ok(h.messages.some((message) => message.includes("GOAL CONFIRMATION")), "drafting prompt sent to agent");
 		assert.deepEqual(h.getActiveTools().filter((name) => name.startsWith("goal_") || name === "propose_goal_draft"), ["goal_questionnaire", "propose_goal_draft"]);
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -65,7 +65,7 @@ test("bare /goal begins a guided draft and asks for an objective", async () => {
 		assert.equal(activeGoalFiles(cwd).length, 0, "no goal created");
 		assert.ok(h.messages.some((message) => message.includes("ask the user what they want")), "draft prompt requests an objective");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -91,7 +91,7 @@ test("confirmed draft creates the proposed goal and agent-selected task plan tog
 		assert.equal(goal?.taskList?.blockCompletion, true);
 		assert.ok(h.getActiveTools().includes("update_goal"), "execution profile restored after confirmation");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -109,7 +109,7 @@ test("/goal-direct and /sisyphus-direct create goals immediately", async () => {
 		assert.ok(parsed.some((goal) => goal?.sisyphus === true), "sisyphus direct mode");
 		assert.ok(parsed.some((goal) => goal?.sisyphus === false), "regular direct mode");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 

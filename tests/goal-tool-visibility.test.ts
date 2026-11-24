@@ -1,6 +1,6 @@
 /** The goal tool list is fixed: only disableTasks changes it, and host tools are never touched. */
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -13,7 +13,7 @@ import {
 import { writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { createExtensionHarness } from "./support/extension-harness.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { tempDir } from "./support/fs.ts";
+import { removeDir, tempDir } from "./support/fs.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -47,7 +47,7 @@ function testFixture() {
 	];
 
 	const mockCtx = host.createContext({ cwd, sessionEntries });
-	const cleanup = () => { try { rmSync(cwd, { recursive: true, force: true }); } catch {} };
+	const cleanup = () => { removeDir(cwd); };
 
 	return { cwd, goal: written, mockCtx, cleanup };
 }
@@ -121,7 +121,7 @@ describe("Fixed goal tool list", () => {
 			expectGoalProfile(WITH_TASKS);
 			expectHostUntouched(HOST_SEED_A);
 		} finally {
-			try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+			removeDir(cwd);
 		}
 	});
 
@@ -176,7 +176,7 @@ describe("Fixed goal tool list", () => {
 				expectGoalProfile(WITHOUT_TASKS);
 				expectHostUntouched(HOST_SEED_B);
 			} finally {
-				try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+				removeDir(cwd);
 			}
 		}
 	});

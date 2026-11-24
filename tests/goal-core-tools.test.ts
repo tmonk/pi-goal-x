@@ -16,7 +16,7 @@ import { appendGoalEvent } from "../extensions/goal-ledger.ts";
  *    active, with the goal_blocked ledger event.
  */
 
-import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -24,7 +24,7 @@ import assert from "node:assert/strict";
 import { createGoal, goalFocusDetails, normalizeGoalRecord } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { STATE_ENTRY } from "../extensions/goal-format.ts";
-import { activeGoalFiles, ledgerEvents, tempDir } from "./support/fs.ts";
+import { activeGoalFiles, ledgerEvents, removeDir, tempDir } from "./support/fs.ts";
 
 interface HarnessOptions {
 	cwd: string;
@@ -62,7 +62,7 @@ function makeFixture(opts: { objective?: string; tokenBudget?: number; pauseReas
 	if (opts.status === "complete") goal.status = "complete" as const;
 	const written = writeActiveGoalFile({ cwd }, goal);
 	const sessionEntries = [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") }];
-	const cleanup = () => { try { rmSync(cwd, { recursive: true, force: true }); } catch {} };
+	const cleanup = () => { removeDir(cwd); };
 	return { cwd, goal: written, sessionEntries, cleanup };
 }
 
@@ -96,7 +96,7 @@ test("disabling tasks advertises the three core tools and the drafting tools", a
 			assert.equal(h.activeTools.includes(absent), false, `${absent} must NOT be advertised`);
 		}
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -143,7 +143,7 @@ test("create_goal accepts token_budget and sisyphus mode", async () => {
 		assert.match(JSON.stringify(result.content), /Budget: 5000 tokens/);
 		assert.equal(parsed.sisyphus, true, "sisyphus mode must be persisted");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -220,7 +220,7 @@ test("get_goal returns the complete stable snapshot", async () => {
 		assert.ok(text.includes("Verification contract:"), "contract present");
 		assert.ok(text.includes(`Path: ${written.activePath}`), "path present");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -263,7 +263,7 @@ test("get_goal default is concise; verbose retains full diagnostics", async () =
 		assert.ok(vtext.includes("Lifecycle:"), "verbose keeps lifecycle guidance");
 		assert.ok(vtext.includes("Path:"), "verbose keeps paths");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -459,7 +459,7 @@ test("legacy paused record with autoContinue:true stays paused after session res
 		assert.equal(parsed?.status, "paused", "disk record must stay paused after restore");
 		assert.equal(parsed?.autoContinue, true, "autoContinue flag survives as data");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 

@@ -13,7 +13,7 @@ import {
 	GOALS_DIR,
 	RECOVERY_BACKUP_DIR,
 } from "../extensions/goal-recovery.ts";
-import { tempDir } from "./support/fs.ts";
+import { removeDir, tempDir } from "./support/fs.ts";
 
 function tempCtx(): GoalFileContext {
 	const cwd = tempDir("goal-recovery-");
@@ -23,7 +23,7 @@ function tempCtx(): GoalFileContext {
 }
 
 function cleanup(ctx: GoalFileContext): void {
-	try { fs.rmSync(ctx.cwd, { recursive: true, force: true }); } catch {}
+	removeDir(ctx.cwd);
 }
 
 function writeGoal(ctx: GoalFileContext, objective = "healthy goal"): void {

@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { convertFlatTasks, mergeTasksWithExisting } from "../extensions/goal-task-tree.ts";
 import { createGoal, goalFocusDetails, normalizeGoalRecord, type GoalRecord, type GoalTask } from "../extensions/goal-record.ts";
 import { parseGoalFile, serializeGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
-import { ledgerEvents, tempDir } from "./support/fs.ts";
+import { ledgerEvents, removeDir, tempDir } from "./support/fs.ts";
 
 // ── Tool execution harness (mirrors goal-task-tools.test.ts) ────────────────
 
@@ -33,7 +33,7 @@ function fixtureWithTasks(tasks: Array<Record<string, unknown>>, opts: { pauseRe
 	}
 	const written = writeActiveGoalFile({ cwd }, goal);
 	const sessionEntries = [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") }];
-	const cleanup = () => { try { rmSync(cwd, { recursive: true, force: true }); } catch {} };
+	const cleanup = () => { removeDir(cwd); };
 	return { cwd, goal: written, sessionEntries, cleanup };
 }
 

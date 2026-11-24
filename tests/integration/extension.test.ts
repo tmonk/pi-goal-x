@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import { createGoal, goalFocusDetails } from "../../extensions/goal-record.ts";
 import { activePathForGoal, parseGoalFile, serializeGoalFile, writeActiveGoalFile } from "../../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../../extensions/goal-ledger.ts";
-import { activeGoalFiles, ledgerEvents, tempDir } from "../support/fs.ts";
+import { activeGoalFiles, ledgerEvents, removeDir, tempDir } from "../support/fs.ts";
 
 interface HarnessOptions {
 	cwd: string;
@@ -97,7 +97,7 @@ function fixture(opts: { objective?: string; skipAuditor?: boolean; tasksEnabled
 	const sessionEntries = [
 		{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") },
 	];
-	const cleanup = () => { try { rmSync(cwd, { recursive: true, force: true }); } catch {} };
+	const cleanup = () => { removeDir(cwd); };
 	return { cwd, goal: written, sessionEntries, cleanup };
 }
 
@@ -126,7 +126,7 @@ describe("five-tool handler integration", () => {
 			}
 			assert.ok(getActiveToolsCalls >= 1, "profile install at session_start calls getActiveTools once");
 		} finally {
-			try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+			removeDir(cwd);
 		}
 	});
 

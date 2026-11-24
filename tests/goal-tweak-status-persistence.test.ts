@@ -20,7 +20,7 @@ import { writeActiveGoalFile, parseGoalFile } from "../extensions/storage/goal-f
 import { readGoalLedger } from "../extensions/goal-ledger.ts";
 import { countTasks } from "../extensions/goal-task-tree.ts";
 import { writeProjectSettings } from "./support/settings.ts";
-import { activeGoalFiles } from "./support/fs.ts";
+import { activeGoalFiles, removeDir } from "./support/fs.ts";
 
 type Harness = ReturnType<typeof createHarness>;
 
@@ -113,7 +113,7 @@ test("e2e: completed task status, evidence, and completedAt survive a task-list 
 		assert.equal(goal.currentTaskId, "b", "currentTaskId survives while its task is still pending");
 		assert.ok(readGoalLedger({ cwd }).events.some((e) => e.type === "task_list_set"), "task_list_set ledger event on the tweak");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -145,7 +145,7 @@ test("e2e: a tweak without a task list retains the current list unchanged (statu
 		assert.ok(b.skippedAt, "skippedAt retained");
 		assert.equal(goal.taskList!.tasks.length, 2, "no tasks added or removed");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -176,7 +176,7 @@ test("e2e: subtask completion status survives a task-list tweak", async () => {
 		assert.ok(p1.completedAt, "subtask completedAt survives");
 		assert.equal(p1.title, "Child one (renamed)", "structural subtask title comes from the proposal");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -213,7 +213,7 @@ test("e2e: currentTaskId survives while its task stays pending and clears when r
 		assert.equal(goal.currentTaskId, undefined, "currentTaskId clears when its task is removed by the tweak");
 		assert.equal(goal.taskList!.tasks.find((t) => t.id === "x"), undefined, "removed task dropped");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 

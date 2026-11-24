@@ -10,7 +10,7 @@
  */
 
 import { skipWhenRoot } from "../support/permissions.ts";
-import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -22,7 +22,7 @@ import { parseGoalFile, readActiveGoalPool } from "../../extensions/storage/goal
 import { deriveGoalDashboardModel } from "../../extensions/widgets/goal-dashboard-model.ts";
 import { renderCompactDashboard, renderExpandedDashboard } from "../../extensions/widgets/goal-dashboard-renderer.ts";
 import { deriveAuditorDashboardModel } from "../../extensions/widgets/auditor-dashboard-model.ts";
-import { activeGoalFiles, tempDir } from "../support/fs.ts";
+import { activeGoalFiles, removeDir, tempDir } from "../support/fs.ts";
 
 const theme = {
 	fg: (_color: string, value: string) => value,
@@ -251,7 +251,7 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 		const archivedRecord = parseGoalFile(path.join(cwd, ".pi", "goals", "archived", archived[0]!));
 		assert.equal(archivedRecord?.status, "complete", "archived record is complete and durable");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -294,6 +294,6 @@ test("archive failure never reports success; the complete record stays recoverab
 		assert.equal(remaining.status, "complete");
 	} finally {
 				await import("node:fs/promises").then(async (fs) => { await fs.chmod(path.join(cwd, ".pi", "goals", "archived"), 0o755).catch(() => {}); });
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });

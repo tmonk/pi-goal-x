@@ -4,7 +4,7 @@
  */
 
 import { createExtensionHarness } from "./support/extension-harness.ts";
-import { mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -15,7 +15,7 @@ import { createGoal, goalFocusDetails, type GoalTask } from "../extensions/goal-
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 
 import { showTaskConfirmation } from "../extensions/goal-task-confirmation.ts";
-import { ledgerEvents, tempDir } from "./support/fs.ts";
+import { ledgerEvents, removeDir, tempDir } from "./support/fs.ts";
 
 // ── Flat conversion unit tests ───────────────────────────────────────────────
 
@@ -102,7 +102,7 @@ function fixtureWithTasks(tasks: Array<Record<string, unknown>>) {
 	goal.taskList = { tasks: tasks as any, blockCompletion: false, proposedAt: new Date().toISOString() };
 	const written = writeActiveGoalFile({ cwd }, goal);
 	const sessionEntries = [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") }];
-	const cleanup = () => { try { rmSync(cwd, { recursive: true, force: true }); } catch {} };
+	const cleanup = () => { removeDir(cwd); };
 	return { cwd, goal: written, sessionEntries, cleanup };
 }
 
@@ -207,7 +207,7 @@ test("update_goal_task(skipped) requires a reason and cascades to subtasks", asy
 		assert.equal(parsed?.taskList?.tasks[0]?.subtasks?.[0]?.status, "skipped", "subtask cascaded");
 		assert.ok(ledgerEvents(cwd).some((e) => e.type === "task_skipped"));
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -239,7 +239,7 @@ test("update_goal_task(pending) reopens a skipped task; completed tasks are immu
 		assert.equal(byId.get("sk")?.status, "pending", "skipped task reopened");
 		assert.equal(byId.get("done")?.status, "complete", "completed task immutable");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 
@@ -456,7 +456,7 @@ test("update_goal_task(pending) writes a task_reopened ledger event", async () =
 		assert.ok(reopened, "task_reopened ledger event must be written");
 		assert.equal(reopened!.taskId, "sk");
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 

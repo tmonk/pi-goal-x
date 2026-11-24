@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 
 import { createGoal, goalFocusDetails } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
-import { activeGoalFiles, ledgerEvents, tempDir } from "./support/fs.ts";
+import { activeGoalFiles, ledgerEvents, removeDir, tempDir } from "./support/fs.ts";
 
 function createHarness(cwd: string, sessionEntries: unknown[]) {
 	return createExtensionHarness({ cwd, sessionEntries, sessionId: "budget-test-session", systemPrompt: "base prompt" });
@@ -32,7 +32,7 @@ function fixture() {
 	const sessionEntries = [
 		{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") },
 	];
-	const cleanup = () => { try { rmSync(cwd, { recursive: true, force: true }); } catch {} };
+	const cleanup = () => { removeDir(cwd); };
 	return { cwd, goal: written, sessionEntries, cleanup };
 }
 
@@ -110,7 +110,7 @@ test("goal without a budget never transitions", async () => {
 		assert.equal(disk.status, "active", "no budget → no transition");
 		assert.equal(ledgerEvents(cwd).filter((e) => e.type === "goal_budget_limited").length, 0);
 	} finally {
-		try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+		removeDir(cwd);
 	}
 });
 

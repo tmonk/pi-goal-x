@@ -23,7 +23,7 @@ import {
 import { acquireGoalLock } from "../extensions/storage/goal-lock.ts";
 import { appendGoalEvent, goalLedgerPath, invalidateGoalLedgerCache, loadLedgerState, readGoalLedger } from "../extensions/goal-ledger.ts";
 import { diffGoalRefreshState } from "../extensions/goal-commands.ts";
-import { tempDir } from "./support/fs.ts";
+import { removeDir, tempDir } from "./support/fs.ts";
 
 const EXT_ROOT = fileURLToPath(new URL("../extensions/", import.meta.url));
 
@@ -34,7 +34,7 @@ function tempCwd(): string {
 }
 
 function cleanup(cwd: string): void {
-	try { fs.rmSync(cwd, { recursive: true, force: true }); } catch {}
+	removeDir(cwd);
 }
 
 function invalidateAll(): void {
