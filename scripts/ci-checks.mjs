@@ -57,12 +57,15 @@ if(process.argv[1]===fileURLToPath(import.meta.url)) {
   {name:'retention',args:['--experimental-strip-types','experiments/context/retention-check.mjs']},
  ];
  // `--skip name` leaves a check out and `--only name` keeps just that one, so CI can
- // run checks in jobs of their own. `--shard i/n` runs part of the test suite.
+ // run checks in jobs of their own. `--shard i/n` runs part of the test suite, and `--affected <sha>` only the test files
+ // that the changes since that commit can reach.
  const option=name=>process.argv.slice(2).filter((arg,i,args)=>args[i-1]===name);
- const skip=option('--skip'), only=option('--only'), [shard]=option('--shard');
+ const skip=option('--skip'), only=option('--only'), [shard]=option('--shard'), [affected]=option('--affected');
  const unknown=[...skip,...only].filter(name=>!checks.some(check=>check.name===name));
  if(unknown.length) throw new Error(`Unknown checks: ${unknown.join(', ')}`);
- if(shard) checks.find(check=>check.name==='tests').args.push(`--shard=${shard}`);
+ const testArgs=checks.find(check=>check.name==='tests').args;
+ if(shard) testArgs.push(`--shard=${shard}`);
+ if(affected) testArgs.push(`--affected=${affected}`);
  const results=await runChecks(checks.filter(check=>!skip.includes(check.name)&&(!only.length||only.includes(check.name))),{directory});
  process.exitCode=results.every(result=>result.passed)?0:1;
 }

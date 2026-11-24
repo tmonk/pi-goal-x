@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {needsRuntimeChecks,runsHeavyChecks,changedFiles} from './ci-scope.mjs';
 import {runChecks} from './ci-checks.mjs';
+import {affectedTests} from './affected-tests.mjs';
 
 test('only known prose/assets skip runtime checks; uncertainty and mixed changes run them',()=>{
  assert.equal(needsRuntimeChecks(['README.md','docs/controls.md','specs/feature/TECH.md','assets/ranking.json']),false);
@@ -22,6 +23,27 @@ test('the slow checks run on pushes and on unreadable diffs, not on pull request
  assert.equal(runsHeavyChecks('push',['docs/x.md']),true);
  assert.equal(runsHeavyChecks('push',undefined),true);
  assert.equal(runsHeavyChecks('pull_request',undefined),true);
+});
+
+test('a pull request runs only the test files its changes can reach',()=>{
+ const cwd=mkdtempSync(path.join(tmpdir(),'pi-ci-affected-'));
+ const put=(file,text)=>{mkdirSync(path.dirname(path.join(cwd,file)),{recursive:true});writeFileSync(path.join(cwd,file),text);};
+ try {
+  put('extensions/a.ts','import "./b.ts";');put('extensions/b.ts','export {};');put('extensions/c.ts','export {};');
+  put('tests/a.test.ts','import "../extensions/a.ts";');
+  put('tests/c.test.ts','import { x } from "./support/helper.ts";');put('tests/support/helper.ts','import "../../extensions/c.ts";');
+  put('tests/scan.test.ts','readdirSync(join(root,"extensions"));');
+  put('tests/worker.test.ts','run(new URL("./support/w.mjs", import.meta.url));');put('tests/support/w.mjs','export {};');
+  put('tests/alone.test.ts','export {};');put('package.json','{}');put('docs/x.md','x');
+  const tests=['tests/a.test.ts','tests/c.test.ts','tests/scan.test.ts','tests/worker.test.ts','tests/alone.test.ts'];
+  const pick=changed=>affectedTests(cwd,tests,changed);
+  assert.deepEqual(pick(['extensions/b.ts']),['tests/a.test.ts','tests/scan.test.ts']);
+  assert.deepEqual(pick(['extensions/c.ts']),['tests/c.test.ts','tests/scan.test.ts']);
+  assert.deepEqual(pick(['tests/support/w.mjs']),['tests/worker.test.ts']);
+  assert.deepEqual(pick(['tests/alone.test.ts','docs/x.md']),['tests/alone.test.ts']);
+  assert.deepEqual(pick(['docs/x.md']),[]);
+  for(const unsure of [['package.json'],['extensions/gone.ts'],undefined]) assert.equal(pick(unsure),'all');
+ }finally{rmSync(cwd,{recursive:true,force:true});}
 });
 
 test('change detection includes deleted runtime files and compares actual commit trees',()=>{
