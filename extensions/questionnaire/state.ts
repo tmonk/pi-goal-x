@@ -1,4 +1,5 @@
 import type { GoalQuestionnaireAnswer, GoalQuestionnaireQuestion } from "./types.ts";
+import { t } from "../i18n/index.ts";
 
 /**
  * Everything the dialog remembers between key presses: answers, drafts, which
@@ -67,7 +68,7 @@ export function displayOptions(state: QuestionnaireState): DisplayOption[] {
 	const q = currentQuestion(state);
 	if (!q) return [];
 	const opts: DisplayOption[] = q.options.map((label) => ({ label }));
-	if (q.allowCustom !== false) opts.push({ label: "Write your own answer...", isCustom: true });
+	if (q.allowCustom !== false) opts.push({ label: t("Write your own answer..."), isCustom: true });
 	return opts;
 }
 
