@@ -14,7 +14,7 @@ import { loadGoalSettings } from "./settings/resolve.ts";
 import { DIALOG_UNAVAILABLE_HINT, proposalDialogFailureMessage, formatQuestionnaireAnswers, runGoalQuestionnaire, shouldAutoConfirmProposal, showProposalDialog, type GoalQuestionnaireQuestion, type ProposalDecision } from "./goal-questionnaire.ts";
 import { currentTaskIdIsPending, nowIso, validateTokenBudgetInput, type GoalRecord, type GoalTaskList } from "./goal-record.ts";
 import type { GoalCore } from "./goal-state.ts";
-import { convertFlatTasks, countTasks, mergeTasksWithExisting, taskTreeSchema, type FlatTaskInput } from "./goal-task-tools.ts";
+import { convertFlatTasks, countTasks, mergeTasksWithExisting, taskTreeSchema, type FlatTaskInput } from "./goal-task-tree.ts";
 import { dropKey } from "./goal-tool-inputs.ts";
 import { PROPOSE_DRAFT_TOOL_NAME, QUESTIONNAIRE_TOOL_NAME } from "./goal-tool-names.ts";
 

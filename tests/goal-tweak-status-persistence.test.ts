@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import { newGoalScheduler } from "../extensions/goal-scheduler-state.ts";
 import { writeActiveGoalFile, parseGoalFile } from "../extensions/storage/goal-files.ts";
 import { readGoalLedger } from "../extensions/goal-ledger.ts";
-import { countTasks } from "../extensions/goal-task-tools.ts";
+import { countTasks } from "../extensions/goal-task-tree.ts";
 import { writeProjectSettings } from "./support/settings.ts";
 
 type Harness = ReturnType<typeof createHarness>;

@@ -11,7 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { convertFlatTasks, countTasks, mergeTasksWithExisting } from "../extensions/goal-task-tools.ts";
+import { convertFlatTasks, countTasks, mergeTasksWithExisting } from "../extensions/goal-task-tree.ts";
 import { createGoal, goalFocusDetails, type GoalTask } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../extensions/goal-ledger.ts";

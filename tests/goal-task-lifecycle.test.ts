@@ -11,7 +11,7 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { convertFlatTasks, mergeTasksWithExisting } from "../extensions/goal-task-tools.ts";
+import { convertFlatTasks, mergeTasksWithExisting } from "../extensions/goal-task-tree.ts";
 import { createGoal, goalFocusDetails, normalizeGoalRecord, type GoalRecord, type GoalTask } from "../extensions/goal-record.ts";
 import { parseGoalFile, serializeGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../extensions/goal-ledger.ts";
