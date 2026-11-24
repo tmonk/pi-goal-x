@@ -639,8 +639,6 @@ export function createGoalCore(
 
 	function renderUI(ctx: ExtensionContext): void {
 		if (!interruption.isHeld()) ctx.ui.setStatus("goal-interrupt", undefined);
-		const goalCwd = ctx.cwd;
-		const storage = goalStorageContext(ctx);
 		const totalOpen = otherOpenGoalCount(goalsById, null);
 		if (!state.goal && totalOpen === 0) {
 			clearGoalWidget(ctx);
@@ -655,26 +653,7 @@ export function createGoalCore(
 				return;
 			}
 			ctx.ui.setStatus("goal", `goal: unfocused [${totalOpen} open] - ${commandHint("goal-focus", core.loadedCommands)}`);
-			if (!widgetRegistered) {
-				ctx.ui.setWidget(
-					GOAL_WIDGET_KEY,
-					makeGoalWidgetFactory({
-						getGoal: () => goalForDisplay() ?? state.goal,
-						getOpenGoalCount: () => otherOpenGoalCount(goalsById, null),
-						getAuditorProgress: () => auditProgress,
-						getSettings: () => ({ ...loadGoalSettings(goalCwd), commands: core.loadedCommands }),
-						getStalled: () => stallNotified,
-						getExpanded: () => dashboardExpanded,
-						getLedgerEvents: () => state.goal ? goalActivityEvents(storage, state.goal.id) : [],
-						getAuditResult: () => auditResult,
-						componentRef: goalWidgetComponentRef,
-					}),
-					{ placement: "aboveEditor" },
-				);
-				widgetRegistered = true;
-			} else {
-				goalWidgetComponentRef.current?.update();
-			}
+			showGoalWidget(ctx);
 			return;
 		}
 
@@ -684,8 +663,14 @@ export function createGoalCore(
 		// unfocused hint or earlier status must not linger once a goal is
 		// focused. The unfocused branch above still sets its own hint.
 		ctx.ui.setStatus("goal", undefined);
+		showGoalWidget(ctx);
+	}
 
+	/** Register the widget once; later calls just ask it to re-render. */
+	function showGoalWidget(ctx: ExtensionContext): void {
 		if (!widgetRegistered) {
+			const goalCwd = ctx.cwd;
+			const storage = goalStorageContext(ctx);
 			ctx.ui.setWidget(
 				GOAL_WIDGET_KEY,
 				makeGoalWidgetFactory({
