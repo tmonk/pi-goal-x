@@ -21,11 +21,12 @@ import { commandPaths, type GoalCommands } from "./goal-controls.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { readGoalLedger } from "./goal-ledger.ts";
-import { GOAL_LOCK_DIR } from "./storage/goal-lock.ts";
+import { GOAL_LOCK_DIR, safeLockName } from "./storage/goal-lock.ts";
+import { GOALS_DIR } from "./storage/goal-paths.ts";
 import { pidAlive } from "./storage/file-lock.ts";
 import { invalidateGoalPoolCache, parseGoalFile, readActiveGoalPool, type GoalFileContext } from "./storage/goal-files.ts";
 
-export const GOALS_DIR = ".pi/goals";
+export { GOALS_DIR };
 export const RECOVERY_BACKUP_DIR = ".pi/goals/.recovery-backup";
 
 interface MalformedGoalFileEntry {
@@ -61,10 +62,6 @@ interface RecoveryRepairResult {
 }
 
 const LOCK_STALE_TTL_MS = 30_000;
-
-function safeLockName(goalId: string): string {
-	return goalId.replace(/[^A-Za-z0-9._-]/g, "_");
-}
 
 function goalsDir(ctx: GoalFileContext): string {
 	return goalStoragePath(ctx, GOALS_DIR);
