@@ -15,43 +15,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-
-import piGoalExtension from "../extensions/goal.ts";
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
 	CORE_GOAL_TOOL_NAMES,
 	DRAFTING_GOAL_TOOLS,
 	FIVE_GOAL_TOOLS,
 } from "../extensions/goal-tool-names.ts";
+import { createExtensionHarness } from "./support/extension-harness.ts";
 
-// ── Recording mock Pi ───────────────────────────────────────────────────────
+// ── Extension on the shared fake host ───────────────────────────────────────
 
-function createRecordingPi() {
-	const registeredTools: string[] = [];
-	const registeredCommands: string[] = [];
-	const messages: unknown[] = [];
-
-	const pi = {
-		registerTool: (def: ToolDefinition) => {
-			registeredTools.push(def.name);
-		},
-		registerCommand: (name: string) => {
-			registeredCommands.push(name);
-		},
-		on: () => {},
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendMessage: (msg: unknown) => {
-			messages.push(msg);
-		},
-		sendUserMessage: () => {},
-		getActiveTools: () => ["read", "bash", "edit", "write"],
-		setActiveTools: () => {},
-		hasUI: false,
-	};
-
-	return { pi, registeredTools, registeredCommands, messages };
+function loadExtension() {
+	const { toolNames, commandNames } = createExtensionHarness({ cwd: process.cwd() });
+	return { registeredTools: toolNames, registeredCommands: commandNames };
 }
 
 // ── The pinned baseline ──────────────────────────────────────────────────────
@@ -98,22 +74,19 @@ const EXPECTED_REGISTERED_COMMANDS = [
 ] as const;
 
 test("baseline: execution and drafting tools are registered in pinned order", () => {
-	const { pi, registeredTools } = createRecordingPi();
-	piGoalExtension(pi as never);
+	const { registeredTools } = loadExtension();
 
 	assert.deepEqual(registeredTools, [...EXPECTED_REGISTERED_TOOLS]);
 });
 
 test("baseline: exactly 16 slash commands are registered, in pinned order", () => {
-	const { pi, registeredCommands } = createRecordingPi();
-	piGoalExtension(pi as never);
+	const { registeredCommands } = loadExtension();
 
 	assert.deepEqual(registeredCommands, [...EXPECTED_REGISTERED_COMMANDS]);
 });
 
 test("baseline: no duplicate tool or command registrations", () => {
-	const { pi, registeredTools, registeredCommands } = createRecordingPi();
-	piGoalExtension(pi as never);
+	const { registeredTools, registeredCommands } = loadExtension();
 
 	assert.equal(new Set(registeredTools).size, registeredTools.length);
 	assert.equal(new Set(registeredCommands).size, registeredCommands.length);
@@ -133,8 +106,7 @@ test("baseline: execution profiles remain three/five tools and drafting is separ
 });
 
 test("baseline: every registered tool name is referenced by goal-tool-names constants", () => {
-	const { pi, registeredTools } = createRecordingPi();
-	piGoalExtension(pi as never);
+	const { registeredTools } = loadExtension();
 
 	// Every registered goal tool must be named by goal-tool-names.ts so the
 	// surface stays centralized.

@@ -1,9 +1,12 @@
 /**
- * Shared fake Pi host for tests that load the whole extension.
+ * Shared fake Pi host for the goal tests.
  *
- * It records every registration and host call the extension makes, so a test
- * can drive lifecycle events, call tools and commands, and inspect what the
- * extension asked the host to do. Tests override only what they exercise.
+ * createFakeHost builds the fake pi and ctx and records every registration and
+ * host call made against them. Tests that exercise one GoalCore on its own
+ * (createGoalCore) use it directly. createExtensionHarness adds the whole
+ * extension on top, so a test can drive lifecycle events, call tools and
+ * commands, and inspect what the extension asked the host to do. Tests
+ * override only what they exercise.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import goalExtension from "../../extensions/goal.ts";
@@ -38,10 +41,12 @@ export interface ExtensionHarnessOptions {
 
 export interface Notice { message: string; level?: string }
 
-export function createExtensionHarness(options: ExtensionHarnessOptions) {
+export function createFakeHost(options: ExtensionHarnessOptions) {
 	const handlers = new Map<string, Function>();
 	const commands = new Map<string, any>();
 	const tools = new Map<string, any>();
+	const toolNames: string[] = [];
+	const commandNames: string[] = [];
 	const entries: Array<{ type: "custom"; customType: string; data: unknown }> = [];
 	const notices: Notice[] = [];
 	const userMessages: unknown[] = [];
@@ -53,13 +58,11 @@ export function createExtensionHarness(options: ExtensionHarnessOptions) {
 	let resolvePendingDialog: ((result: unknown) => void) | null = null;
 	let terminalInputHandler: ((data: string) => unknown) | null = null;
 
-	const branch = options.sessionEntries ?? "recorded";
-	const getBranch = branch === "recorded" ? () => [...entries] : typeof branch === "function" ? branch : () => branch;
 	const hasUI = options.hasUI ?? false;
 
 	const pi = {
-		registerTool: (definition: any) => { tools.set(definition.name, definition); },
-		registerCommand: (name: string, definition: any) => { commands.set(name, definition); },
+		registerTool: (definition: any) => { toolNames.push(definition.name); tools.set(definition.name, definition); },
+		registerCommand: (name: string, definition: any) => { commandNames.push(name); commands.set(name, definition); },
 		on: (event: string, handler: Function) => { handlers.set(event, handler); },
 		appendEntry: (customType: string, data: unknown) => { entries.push({ type: "custom", customType, data }); },
 		registerMessageRenderer: () => {},
@@ -71,51 +74,57 @@ export function createExtensionHarness(options: ExtensionHarnessOptions) {
 		...options.pi,
 	};
 
-	const ctx = {
-		cwd: options.cwd,
-		hasUI,
-		...(options.mode === undefined ? {} : { mode: options.mode }),
-		sessionManager: {
-			getBranch,
-			getCwd: () => options.cwd,
-			getSessionId: () => options.sessionId ?? "test-session",
-			getRoot: () => options.cwd,
-		},
-		ui: {
-			notify: (message: string, level?: string) => { notices.push({ message, level }); },
-			setStatus: () => {},
-			setWidget: () => {},
-			setWorkingVisible: () => {},
-			onTerminalInput: (handler: (data: string) => unknown) => {
-				terminalInputHandler = handler;
-				return () => { terminalInputHandler = null; };
+	/** Builds a ctx on this host. Overrides replace the options given to createFakeHost, for tests that switch session or cwd. */
+	function createContext(overrides: Partial<ExtensionHarnessOptions> = {}): ExtensionContext {
+		const merged = { ...options, ...overrides };
+		const branch = merged.sessionEntries ?? "recorded";
+		const getBranch = branch === "recorded" ? () => [...entries] : typeof branch === "function" ? branch : () => branch;
+		return {
+			cwd: merged.cwd,
+			hasUI,
+			...(merged.mode === undefined ? {} : { mode: merged.mode }),
+			sessionManager: {
+				getBranch,
+				getCwd: () => merged.cwd,
+				getSessionId: () => merged.sessionId ?? "test-session",
+				getRoot: () => merged.cwd,
 			},
-			select: async () => undefined,
-			input: async () => undefined,
-			confirm: async () => false,
-			custom: options.custom === "dialog"
-				? () => new Promise((resolve) => { resolvePendingDialog = resolve; })
-				: async () => undefined,
-			...options.ui,
-		},
-		getSystemPrompt: () => options.systemPrompt ?? "base",
-		isIdle: options.isIdle ?? (() => true),
-		hasPendingMessages: options.hasPendingMessages ?? (() => false),
-		abort: () => { abortCount += 1; },
-		...options.ctx,
-	} as unknown as ExtensionContext;
-
-	goalExtension(pi as any, options.runCompletionAuditor ? { runCompletionAuditor: options.runCompletionAuditor as typeof runGoalCompletionAuditor } : {});
-	const core = (pi as unknown as { _goalCore: GoalCore })._goalCore;
-	const emit = async (event: string, data: unknown = {}, context: ExtensionContext = ctx) => handlers.get(event)?.(data, context);
+			ui: {
+				notify: (message: string, level?: string) => { notices.push({ message, level }); },
+				setStatus: () => {},
+				setWidget: () => {},
+				setWorkingVisible: () => {},
+				onTerminalInput: (handler: (data: string) => unknown) => {
+					terminalInputHandler = handler;
+					return () => { terminalInputHandler = null; };
+				},
+				select: async () => undefined,
+				input: async () => undefined,
+				confirm: async () => false,
+				custom: merged.custom === "dialog"
+					? () => new Promise((resolve) => { resolvePendingDialog = resolve; })
+					: async () => undefined,
+				...merged.ui,
+			},
+			getSystemPrompt: () => merged.systemPrompt ?? "base",
+			isIdle: merged.isIdle ?? (() => true),
+			hasPendingMessages: merged.hasPendingMessages ?? (() => false),
+			abort: () => { abortCount += 1; },
+			...merged.ctx,
+		} as unknown as ExtensionContext;
+	}
 
 	return {
 		pi,
-		ctx,
-		core,
+		ctx: createContext(),
+		createContext,
 		handlers,
 		commands,
 		tools,
+		/** Every registered tool name in order, duplicates included. */
+		toolNames,
+		/** Every registered command name in order, duplicates included. */
+		commandNames,
 		entries,
 		notices,
 		userMessages,
@@ -134,12 +143,28 @@ export function createExtensionHarness(options: ExtensionHarnessOptions) {
 		},
 		/** Sends a key to the extension's terminal-input handler, as pi does before the focused overlay. */
 		terminalInput: (data: string) => terminalInputHandler?.(data),
+	};
+}
+
+export type FakeHost = ReturnType<typeof createFakeHost>;
+
+export function createExtensionHarness(options: ExtensionHarnessOptions) {
+	const host = createFakeHost(options);
+	const { pi, ctx, handlers, tools, commands } = host;
+
+	goalExtension(pi as any, options.runCompletionAuditor ? { runCompletionAuditor: options.runCompletionAuditor as typeof runGoalCompletionAuditor } : {});
+	const core = (pi as unknown as { _goalCore: GoalCore })._goalCore;
+	const emit = async (event: string, data: unknown = {}, context: ExtensionContext = ctx) => handlers.get(event)?.(data, context);
+
+	// Object.assign keeps the host's getters live; a spread would freeze them.
+	return Object.assign(host, {
+		core,
 		emit,
 		sessionStart: () => emit("session_start", { reason: "start" }),
 		callTool: (name: string, params: unknown, id = "call", context: ExtensionContext = ctx) =>
 			tools.get(name).execute(id, params, new AbortController().signal, undefined, context),
 		runCommand: (name: string, args = "", context: ExtensionContext = ctx) => commands.get(name).handler(args, context),
-	};
+	});
 }
 
 export type ExtensionHarness = ReturnType<typeof createExtensionHarness>;
