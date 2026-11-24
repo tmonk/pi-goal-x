@@ -83,14 +83,34 @@ jobs:
           path: ~/.npm
           key: npm-downloads-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - if: steps.setup.outputs.run == 'true'
-        name: Installed package, context and cache regressions
+        name: Installed package
         env:
           PI_GOAL_CI_LOG_DIR: ${{ runner.temp }}/pi-goal-validation
-        run: node scripts/ci-checks.mjs --skip tests --skip controls-cli
+        run: node scripts/ci-checks.mjs --only package
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: package
+          path: ${{ runner.temp }}/pi-goal-validation/
+          retention-days: 5
+          if-no-files-found: ignore
+
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - id: setup
+        uses: ./.github/actions/setup
+      - if: steps.setup.outputs.run == 'true'
+        name: Live session, context, provider, cache and retention gates
+        env:
+          PI_GOAL_CI_LOG_DIR: ${{ runner.temp }}/pi-goal-validation
+        run: node scripts/ci-checks.mjs --only lifecycle-cli --only context --only provider --only cache --only retention
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gates
           path: ${{ runner.temp }}/pi-goal-validation/
           retention-days: 5
           if-no-files-found: ignore
