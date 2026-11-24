@@ -10,7 +10,9 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "noUncheckedIndexedAccess": true,
-    "noUnusedLocals": true
+    "noUnusedLocals": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true
   },
   "include": [
     "extensions/**/*.ts",

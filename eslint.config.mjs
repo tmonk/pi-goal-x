@@ -50,6 +50,10 @@ export default tseslint.config(
 			"no-unused-vars": "off",
 			"no-regex-spaces": "off",
 			"no-empty": ["error", { allowEmptyCatch: true }],
+			// `x == null` stays allowed; every other comparison must be strict.
+			eqeqeq: ["error", "always", { null: "ignore" }],
+			// Type-only imports are erased, so a value import of a type breaks under strip-types.
+			"@typescript-eslint/consistent-type-imports": ["error", { disallowTypeAnnotations: false }],
 			"local/tab-indentation": "error",
 		},
 	},
