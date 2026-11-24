@@ -102,7 +102,8 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 		"Constraints: <hard rules>",
 		"Verification contract: <optional — what verification evidence is required before marking complete, e.g. 'Run npm test (0 failures), grep for remaining references, re-read requirements and confirm every item is addressed'>",
 		"If blocked: <default = stop and ask the user>",
-		"Call propose_goal_draft with sisyphus=false and autoContinue=true unless the user asked otherwise.",
+		"Put this whole block, headings included, in the objective argument of propose_goal_draft. The headings are not separate arguments: the tool takes only objective, tasks, token_budget, auto_continue, sisyphus and block_completion.",
+		"Call propose_goal_draft with sisyphus=false and auto_continue=true unless the user asked otherwise.",
 	];
 
 	const sisyphusFocusItems = [
@@ -117,7 +118,8 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 		"Ordered steps: <preserve the user's requested steps and ordering; do not add preflight or reconnaissance steps they did not ask for>",
 		"If blocked / unclear / failing: <default = stop and ask the user>",
 		"Sisyphus reminder: Work patiently and sequentially. No rushing, no unrequested preflight steps, no improvising around blockers.",
-		"Call propose_goal_draft with sisyphus=true and autoContinue=true unless the user asked otherwise.",
+		"Put this whole block, headings included, in the objective argument of propose_goal_draft. The headings are not separate arguments: the tool takes only objective, tasks, token_budget, auto_continue, sisyphus and block_completion.",
+		"Call propose_goal_draft with sisyphus=true and auto_continue=true unless the user asked otherwise.",
 	];
 
 	return [

@@ -48,5 +48,10 @@ test("goalDraftingPrompt routes the complete presentation through the tool rende
 		assert.ok(prompt.includes("do NOT duplicate the full proposal in a preceding prose message"), `${focus} prompt must forbid the prose duplication`);
 		assert.ok(prompt.includes("The tool call renderer is the scrollable, complete human presentation"), `${focus} prompt must name the renderer as the complete presentation`);
 		assert.ok(prompt.includes("tasks` parameter of `propose_goal_draft"), `${focus} prompt must still require the full task list via the tool`);
+		// Models otherwise pass the section headings as extra arguments, which
+		// the tool's schema rejects (#122).
+		assert.ok(prompt.includes("Put this whole block, headings included, in the objective argument"), `${focus} prompt must say where the block goes`);
+		assert.ok(prompt.includes("the tool takes only objective, tasks, token_budget, auto_continue, sisyphus and block_completion"), `${focus} prompt must list the real arguments`);
+		assert.ok(!prompt.includes("autoContinue="), `${focus} prompt must use the real argument name`);
 	}
 });
