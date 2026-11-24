@@ -14,6 +14,7 @@ const wantWriteManifest = process.argv.includes("--write-manifest");
 // `--shard=1/2` runs half of the files; CI uses it to spread the suite over jobs.
 const shard = process.argv.find((arg) => arg.startsWith("--shard="))?.slice("--shard=".length);
 if (shard && !/^[1-9]\d*\/[1-9]\d*$/.test(shard)) throw new Error("Bad --shard value: " + shard);
+if (shard && Number(shard.split("/")[0]) > Number(shard.split("/")[1])) throw new Error("Bad --shard value: " + shard);
 
 function discover(directory) {
 	return readdirSync(directory, { withFileTypes: true })
@@ -34,6 +35,21 @@ const testFiles = suite === "integration"
 			// The slow end-to-end files go first so they overlap with the many quick ones.
 			? [...e2eFiles, ...integrationFiles, ...unitFiles]
 			: unitFiles;
+
+// `--shard=1/4` runs a share of the files. The slowest files go first and are dealt out in turn, so
+// no shard is left holding all of them. The shards together cover every file exactly once.
+const SLOWEST = ["tests/e2e/goal-session-safety.test.ts", "tests/goal-cache-simulation.test.ts"];
+function shardFiles(files, shardSpec) {
+	if (!shardSpec) return files;
+	const [index, count] = shardSpec.split("/").map(Number);
+	const rank = (file) => {
+		const name = rel(file).slice(2);
+		return SLOWEST.includes(name) ? 0 : name.startsWith("tests/e2e/") ? 1 : name.startsWith("tests/integration/") ? 2 : 3;
+	};
+	const ordered = [...files].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+	return ordered.filter((_, position) => position % count === index - 1);
+}
+const shardedFiles = shardFiles(testFiles, shard);
 
 if (testFiles.length === 0) {
 	throw new Error("No " + suite + " test files were discovered.");
@@ -89,14 +105,13 @@ const result = spawnSync(
 		"--import", pathToFileURL(join(projectRoot, "scripts", "test-adapter-hooks.mjs")).href,
 		"--experimental-strip-types",
 		"--test",
-		...(shard ? ["--test-shard=" + shard] : []),
-		...testFiles,
+		...shardedFiles,
 	],
 	{ cwd: projectRoot, stdio: "inherit" },
 );
 
 const elapsedMs = Date.now() - startedAt;
-console.log(`[runner] ${testFiles.length} test file(s) discovered; suite finished in ${elapsedMs} ms.`);
+console.log(`[runner] ${shardedFiles.length} of ${testFiles.length} test file(s) run; suite finished in ${elapsedMs} ms.`);
 console.log("[runner] Timings are evidence on this machine, not machine-independent performance promises.");
 
 if (result.error) throw result.error;

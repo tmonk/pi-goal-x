@@ -38,14 +38,14 @@ jobs:
       - if: steps.setup.outputs.run == 'true'
         run: npm audit --omit=dev
 
-  # The unit, integration and end-to-end suite, in three parts.
+  # The unit, integration and end-to-end suite, in four parts.
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        shard: ['1/3', '2/3', '3/3']
+        shard: ['1/4', '2/4', '3/4', '4/4']
     steps:
       - uses: actions/checkout@v5
       - id: setup
@@ -83,7 +83,7 @@ jobs:
           retention-days: 5
           if-no-files-found: ignore
 
-  # The walkthrough cases are independent, so they run in three groups.
+  # The walkthrough cases are independent, so they run in five groups.
   # scripts/test-ci.mjs checks that every case is in exactly one group.
   controls:
     runs-on: ubuntu-latest
@@ -92,9 +92,11 @@ jobs:
       fail-fast: false
       matrix:
         cases:
-          - controls-ui answer-editing foreign-focus
-          - settings-paths together goal-first command-shortcuts
-          - goal-first-finish native-interrupt dialog-keys editor-controls
+          - controls-run settings-keys foreign-focus
+          - together editor-controls command-shortcuts
+          - goal-first goal-first-finish
+          - native-interrupt dialog-keys answer-editing
+          - controls-ui settings-paths
     steps:
       - uses: actions/checkout@v5
       - id: setup
@@ -139,19 +141,26 @@ jobs:
           wait "$base"
           PI_GOAL_BENCH_REFERENCE="$GITHUB_WORKSPACE/.benchmark-base/experiments/bench/baseline-naf-after.json" npm run bench:gate:naf
 
-  # The one check branch protection needs. It passes when every job above
-  # passed or had nothing to do.
+  # The one check branch protection needs. It starts with the others and watches them, so it
+  # finishes a moment after the last one instead of waiting for a new runner to start.
+  # It passes when every other job passed or had nothing to do.
   validate:
-    needs: [static, tests, package, controls, bench]
-    if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 12
+    permissions:
+      actions: read
     steps:
-      - name: Check job results
+      - name: Wait for the other jobs
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "$RESULTS"
-          for result in $RESULTS; do
-            if [ "$result" != success ] && [ "$result" != skipped ]; then exit 1; fi
+          url="repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100"
+          while true; do
+            jobs=$(gh api "$url" --jq '[.jobs[] | select(.name != "validate")]')
+            bad=$(jq -r '[.[] | select(.conclusion != null and .conclusion != "success" and .conclusion != "skipped") | .name] | join(", ")' <<<"$jobs")
+            if [ -n "$bad" ]; then echo "Failed: $bad"; exit 1; fi
+            open=$(jq '[.[] | select(.status != "completed")] | length' <<<"$jobs")
+            total=$(jq 'length' <<<"$jobs")
+            if [ "$total" -gt 0 ] && [ "$open" -eq 0 ]; then echo "All $total jobs passed or had nothing to do."; exit 0; fi
+            sleep 2
           done
