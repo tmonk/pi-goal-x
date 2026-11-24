@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const source = readFileSync(new URL("../extensions/goal-state.ts", import.meta.url), "utf8");
+// The view draws the widget and status; the core wires it up.
+const source = ["goal-state.ts", "goal-view.ts"]
+	.map((name) => readFileSync(new URL(`../extensions/${name}`, import.meta.url), "utf8"))
+	.join("\n");
 
 test("no periodic status-refresh timer is scheduled while goals are active", () => {
 	// PR #5 removed the 1s status refresh interval that forced TUI redraws
@@ -18,7 +21,7 @@ test("no periodic status-refresh timer is scheduled while goals are active", () 
 test("the widget and footer status still update on state changes", () => {
 	// The widget reads live values through closures; updateUI still requests
 	// renders on state changes so elapsed time catches up on natural renders.
-	assert.match(source, /goalWidgetComponentRef\.current\?\.update\(\)/);
+	assert.match(source, /widgetRef\.current\?\.update\(\)/);
 	assert.match(source, /ctx\.ui\.setStatus\("goal"/);
 });
 
