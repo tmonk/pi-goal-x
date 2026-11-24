@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+## [0.34.2] — 2026-11-24
+
+Includes #136 and #137.
+
 ### Added
 
 - `/goal-resume <text>` sends the text to the agent. Before, it was dropped silently. Thanks @TheNumberOne (#96).
