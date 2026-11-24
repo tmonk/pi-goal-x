@@ -16,7 +16,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { t, tn } from "../i18n/index.ts";
-import { bindingKeys, commandHint, type GoalCommands, type GoalKeybinding } from "../goal-controls.ts";
+import { bindingKeys, uiCommandHint, type GoalCommands, type GoalKeybinding } from "../goal-controls.ts";
 import type { GoalActivityItem } from "../goal-activity.ts";
 import { DEFAULT_GOAL_KEYBINDINGS, formatGoalKeybinding, type GoalDashboardKeybindings } from "../settings/schema.ts";
 import {
@@ -472,7 +472,7 @@ export function renderUnfocusedDashboard(openGoalCount: number, theme: Theme, wi
 	return [
 		box.header(frame(theme, `pi-goal-x ─ ${t("Goal focus required")}`)),
 		box.line(muted(theme, goals)),
-		box.line(muted(theme, t("Run {command} to choose the goal for this session.", { command: commandHint("goal-focus", commands) }))),
+		box.line(muted(theme, t("Run {command} to choose the goal for this session.", { command: uiCommandHint("goal-focus", commands) }))),
 		box.footer(""),
 	];
 }

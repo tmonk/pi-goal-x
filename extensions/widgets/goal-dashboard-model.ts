@@ -376,7 +376,7 @@ export function deriveGoalDashboardModel(
 	if (goal.usage.activeSeconds > 0) footerUsageBits.push(formatDuration(goal.usage.activeSeconds));
 	if (goal.usage.tokensUsed > 0) footerUsageBits.push(formatCompactTokens(goal.usage.tokensUsed));
 
-	const scheduling = schedulerSummaryParts(goal.scheduler, options.maxAutonomousRuns, options.showAutonomousRuns !== false, options.idleContinuationBackoff === true, options.commands);
+	const scheduling = schedulerSummaryParts(goal.scheduler, options.maxAutonomousRuns, options.showAutonomousRuns !== false, options.idleContinuationBackoff === true, options.commands, true);
 	return {
 		scheduling: [scheduling.runs, ...scheduling.instructions.split("\n")].filter(Boolean),
 		idlePacing: scheduling.idlePacing,

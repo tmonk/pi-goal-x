@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { commandHint, type GoalCommands } from "./goal-controls.ts";
+import { uiCommandHint, type GoalCommands } from "./goal-controls.ts";
 import type { GoalRecord } from "./goal-record.ts";
 import { nowIso } from "./goal-record.ts";
 import type { GoalService } from "./goal-service.ts";
@@ -80,7 +80,7 @@ export class GoalWatch {
 		} catch {
 			// A failed ledger write must not crash the turn.
 		}
-		const hint = commandHint("goal-tweak", this.deps.getCommands());
+		const hint = uiCommandHint("goal-tweak", this.deps.getCommands());
 		ctx.ui.notify(t("Token budget {percent}% used ({used}/{budget} tokens). Use {hint} to change or remove the budget.", { percent, used: goal.usage.tokensUsed, budget, hint }), "warning");
 	}
 }

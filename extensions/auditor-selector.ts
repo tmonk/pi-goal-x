@@ -65,7 +65,7 @@ export function parseManualAuditorModel(input: string): { provider: string; mode
 	const value = input.trim();
 	const slash = value.indexOf("/");
 	if (slash <= 0 || slash === value.length - 1) {
-		return { error: "Auditor model must use provider/model format; unavailable models will fail clearly at audit time." };
+		return { error: t("Auditor model must use provider/model format; unavailable models will fail clearly at audit time.") };
 	}
 	return { provider: value.slice(0, slash), model: value.slice(slash + 1) };
 }

@@ -1,4 +1,4 @@
-import { commandHint, type GoalCommands } from "./goal-controls.ts";
+import { uiCommandHint, type GoalCommands } from "./goal-controls.ts";
 import type { GoalKeybindings } from "./settings/schema.ts";
 /**
  * /goal-status text builder (plan §13).
@@ -74,7 +74,7 @@ export function buildGoalStatusText(options: GoalStatusTextOptions): string {
 	if (!options.goal) {
 		return options.otherOpenGoals > 0
 			? renderUnfocusedDashboard(options.otherOpenGoals, PLAIN_THEME, width, options.commands).join("\n")
-			: t("No goal is set. Use {goal} or {sisyphus} to draft a goal.", { goal: commandHint("goal", options.commands), sisyphus: commandHint("sisyphus", options.commands) });
+			: t("No goal is set. Use {goal} or {sisyphus} to draft a goal.", { goal: uiCommandHint("goal", options.commands), sisyphus: uiCommandHint("sisyphus", options.commands) });
 	}
 	const events = options.ledgerEvents ?? [];
 	const model = deriveGoalDashboardModel(options.goal, {
@@ -92,7 +92,7 @@ export function buildGoalStatusText(options: GoalStatusTextOptions): string {
 	}
 
 	const parts: string[] = [];
-	parts.push(renderCompactDashboard(model, PLAIN_THEME, width, { footerHint: t("Run {command} verbose for full detail", { command: commandHint("goal-status", options.commands) }), keybindings: options.keybindings?.dashboard, auditorKey: options.keybindings?.toggleAuditor }).join("\n"));
+	parts.push(renderCompactDashboard(model, PLAIN_THEME, width, { footerHint: t("Run {command} verbose for full detail", { command: uiCommandHint("goal-status", options.commands) }), keybindings: options.keybindings?.dashboard, auditorKey: options.keybindings?.toggleAuditor }).join("\n"));
 	if (model.currentTask) {
 		parts.push(renderCurrentTaskBlock(model, PLAIN_THEME, width).join("\n"));
 	}

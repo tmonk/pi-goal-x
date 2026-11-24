@@ -626,7 +626,7 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 			return;
 		}
 		// Only reachable under a configured bounded cap (maxAttempts > 0).
-		core.scheduler.pauseForError(ctx, commandInstructions("Provider network errors persisted after all recovery attempts. Goal paused. Use /goal-resume when the provider works again.", core.loadedCommands));
+		core.scheduler.pauseForError(ctx, commandInstructions("Provider network errors persisted after all recovery attempts. Goal paused. Use /goal-resume when the provider works again.", core.loadedCommands), commandInstructions(t("Provider network errors persisted after all recovery attempts. Goal paused. Use /goal-resume when the provider works again."), core.loadedCommands));
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {

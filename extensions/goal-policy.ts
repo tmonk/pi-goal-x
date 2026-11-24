@@ -1,4 +1,5 @@
 import { statusLabel, type GoalDisplayRecordLike } from "./goal-display.ts";
+import { t } from "./i18n/index.ts";
 import type { GoalTask, GoalTaskList } from "./goal-record.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
 
@@ -69,7 +70,7 @@ export function validateGoalAgentPause(args: {
 }
 
 export function clearGoalCommandMessage(args: { archived: boolean }): string {
-	return args.archived ? "Goal cleared and archived." : "No goal is set.";
+	return args.archived ? t("Goal cleared and archived.") : t("No goal is set.");
 }
 
 /** Count tasks in subtree recursively */

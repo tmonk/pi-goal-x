@@ -5,6 +5,7 @@ import {
 	statusLabel,
 	truncateText,
 } from "./goal-display.ts";
+import { t, tn } from "./i18n/index.ts";
 import { cloneGoal, type GoalFocusEntry, type GoalRecord } from "./goal-record.ts";
 
 export function openGoalsFromPool(pool: Map<string, GoalRecord>): GoalRecord[] {
@@ -83,6 +84,15 @@ export function buildGoalListText(pool: Map<string, GoalRecord>, focusedGoalId: 
 
 export function buildUnfocusedOpenGoalsSummary(openGoalCount: number): string {
 	return `No goal is focused in this session. ${openGoalCount} open goal${openGoalCount === 1 ? "" : "s"} exist in the goal pool. Use /goal-focus to choose the session focus before doing goal work.`;
+}
+
+/** Host-UI variant of buildUnfocusedOpenGoalsSummary (the model-facing one stays English). */
+export function unfocusedOpenGoalsNotice(openGoalCount: number): string {
+	return [
+		t("No goal is focused in this session."),
+		tn(openGoalCount, { one: "{n} open goal exist in the goal pool.", other: "{n} open goals exist in the goal pool." }),
+		t("Use /goal-focus to choose the session focus before doing goal work."),
+	].join(" ");
 }
 
 export function mergeFocusedGoalWithDisk(args: { memoryGoal: GoalRecord; diskGoal: GoalRecord }): GoalRecord {
