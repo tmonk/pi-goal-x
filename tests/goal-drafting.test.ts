@@ -1384,3 +1384,42 @@ test("goal tools stay listed during a draft but are blocked until it ends", asyn
 		rmSync(cwd, { recursive: true, force: true });
 	}
 });
+
+async function goalContext(h: Harness): Promise<string> {
+	const result = await h.emit("context_with_system", { messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }] });
+	return JSON.stringify(result ?? "");
+}
+
+test("a draft hides the goal block that asks for update_goal", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-context-"));
+	try {
+		const h = createHarness(cwd, { hasUI: true });
+		await h.sessionStart();
+		await h.commands.get("goal-direct")!.handler("Existing objective", h.ctx);
+		assert.match(await goalContext(h), /PI GOAL ACTIVE/, "an active goal normally adds its block");
+
+		await h.commands.get("goal-tweak")!.handler("Add a constraint", h.ctx);
+		assert.doesNotMatch(await goalContext(h), /\[PI GOAL|update_goal/, "no goal block during the draft");
+
+		await h.commands.get("goal-cancel")!.handler("", h.ctx);
+		assert.match(await goalContext(h), /PI GOAL ACTIVE/, "the block returns after the draft");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("a draft hides the unfocused reminder", async () => {
+	const cwd = mkdtempSync(path.join(tmpdir(), "goal-draft-unfocused-"));
+	try {
+		writeActiveGoalFile({ cwd } as ExtensionContext, createGoal({ objective: "An older open goal", autoContinue: true, sisyphus: false }));
+		const h = createHarness(cwd, { hasUI: true });
+		await h.sessionStart();
+		await h.commands.get("goal-unfocus")!.handler("", h.ctx);
+		assert.match(await goalContext(h), /PI GOAL UNFOCUSED/, "the reminder shows outside a draft");
+
+		await h.commands.get("goal")!.handler("A new objective", h.ctx);
+		assert.doesNotMatch(await goalContext(h), /PI GOAL UNFOCUSED/, "no reminder during the draft");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});

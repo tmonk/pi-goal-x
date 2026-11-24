@@ -5,6 +5,7 @@ import type { GoalCore } from "./goal-state.ts";
 import { asRecord, type GoalRecord } from "./goal-record.ts";
 import { budgetReached } from "./goal-accounting.ts";
 import { loadGoalSettings, invalidateGoalSettingsCache } from "./goal-settings.ts";
+import { hasActiveDraft } from "./goal-drafting.ts";
 import { newGoalScheduler, schedulerSummary, type GoalContinuation, type GoalSchedulerState } from "./goal-scheduler-state.ts";
 
 /** Scheduling intent is durable; timers only arrange an opportunity to claim it. */
@@ -353,6 +354,9 @@ export class GoalScheduler {
 	}
 	schedule(ctx: ExtensionContext): void {
 		if (this.inRun || this.denied || this.core.interruption.isHeld()) return;
+		// No automatic turns while the user is drafting. Work resumes after
+		// the draft is confirmed or cancelled.
+		if (hasActiveDraft(this.core)) return;
 		invalidateGoalSettingsCache();
 		this.safe(ctx, () => {
 			this.core.reconcileFocusedGoalFromDisk(ctx);

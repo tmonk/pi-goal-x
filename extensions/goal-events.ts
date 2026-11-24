@@ -468,6 +468,10 @@ export function registerGoalEvents(core: GoalCore): void {
 	/** Request-only state: no live counters, focus, or reminders enter the system prefix. */
 	/** Request-only goal state split into a rarely-changing policy block and per-turn counters. Other branches are stable-only. */
 	function currentGoalContextParts(ctx: ExtensionContext): { state: string; counters?: string } | undefined {
+		// During a draft the drafting prompt is in charge. The goal block would
+		// ask for update_goal, which is blocked until the draft ends, and the
+		// unfocused reminder would tell the agent to stop.
+		if (hasActiveDraft(core)) return;
 		const checkpoint = core.runtime.getCheckpointGoalId();
 		if (checkpoint !== null && (core.scheduler.isDenied() || !core.isActionableContinuationGoal(checkpoint))) {
 			return { state: staleContinuationPrompt(checkpoint, core.state.goal) };
