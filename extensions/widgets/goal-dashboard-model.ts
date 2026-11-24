@@ -195,7 +195,11 @@ export function deriveTopLevelTaskProgress(goal: GoalRecord): TaskProgress | und
  * so the tree and the current-task block always agree.
  */
 export function flattenTaskTree(tasks: readonly GoalTask[] | undefined, currentTaskId?: string): DashboardTaskNode[] {
-	const index = taskIndex(tasks);
+	return flattenTaskIndex(taskIndex(tasks), currentTaskId);
+}
+
+/** flattenTaskTree for a task index the caller already has, so it is not looked up (and compared) twice. */
+function flattenTaskIndex(index: ReturnType<typeof taskIndex>, currentTaskId?: string): DashboardTaskNode[] {
 	return index.ordered.map(({task: t, depth}) => ({
 		id: t.id, title: t.title, status: t.status, depth, isCurrent: t.id === currentTaskId,
 		verificationContract: t.verificationContract, evidence: t.evidence, completedAt: t.completedAt,
@@ -324,7 +328,7 @@ function taskPresentation(goal: GoalRecord, disabled: boolean) {
 	const hit = entries.get(key);
 	if (hit) return hit;
 	const taskProgress = disabled ? undefined : deriveTopLevelTaskProgress(goal);
-	const tree = disabled ? [] : flattenTaskTree(index.tasks);
+	const tree = disabled ? [] : flattenTaskIndex(index);
 	const currentTask = disabled ? undefined : deriveCurrentTask(goal, tree);
 	const taskTree = tree.map(n => n.id === currentTask?.id ? {...n, isCurrent: true} : n);
 	const value = {taskProgress, taskTree, currentTask, taskTitles: new Map(taskTree.map(n => [n.id, n.title]))};
