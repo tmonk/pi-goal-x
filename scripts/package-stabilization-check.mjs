@@ -44,9 +44,9 @@ try {
  const testedEntry=path.join(artifact,'extensions/goal.ts');
  assert.deepEqual(readFileSync(testedEntry),readFileSync(entry));
  assert.equal(realpathSync(testedEntry),testedEntry);
- const files=['stabilization-utils.ts','tui-test-utils.ts','goal-stabilization-lifecycle.test.ts','goal-drafting.test.ts','goal-update-goal.test.ts','goal-task-count.test.ts','goal-context-usage.test.ts','goal-keyboard-focus.test.ts','update-goal-sdk-worker.mjs','prompt-cache-sdk-worker.ts'];
+ const files=['stabilization-utils.ts','tui-test-utils.ts','support','goal-stabilization-lifecycle.test.ts','goal-drafting.test.ts','goal-update-goal.test.ts','goal-task-count.test.ts','goal-context-usage.test.ts','goal-keyboard-focus.test.ts','update-goal-sdk-worker.mjs','prompt-cache-sdk-worker.ts'];
  mkdirSync(path.join(artifact,'tests'));
- for(const file of files)cpSync(path.join(root,'tests',file),path.join(artifact,'tests',file));
+ for(const file of files)cpSync(path.join(root,'tests',file),path.join(artifact,'tests',file),{recursive:true});
  const tests=files.filter(file=>file.endsWith('.test.ts')||file==='prompt-cache-sdk-worker.ts').map(file=>`tests/${file}`);
  const output=run(process.execPath,['--experimental-strip-types','--test','--test-concurrency=2',...tests],artifact);
  assert.match(output,/(?:#|ℹ)\s+fail 0/);
