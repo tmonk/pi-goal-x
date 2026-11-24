@@ -1,0 +1,11 @@
+name: Set up Node
+description: Install the pinned Node and the locked dependencies.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 22.19.0
+        cache: npm
+    - run: npm ci --no-audit --no-fund
+      shell: bash

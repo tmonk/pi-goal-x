@@ -11,59 +11,91 @@ permissions:
 env:
   CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
 
-# Cancel superseded runs: a new push/PR update stops the previous run, so
-# runner time is never spent on outdated commits.
+# A new push stops the run for the commit it replaces.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: validate
+  scope:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      runtime: ${{ steps.changes.outputs.runtime }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 2
-      - name: Determine affected checks
-        id: changes
+      - id: changes
         run: node scripts/ci-scope.mjs
-      - uses: actions/setup-node@v4
-        if: steps.changes.outputs.runtime == 'true'
-        with:
-          node-version: 22.19.0
-          cache: npm
-      - name: Install dependencies
-        if: steps.changes.outputs.runtime == 'true'
-        run: npm ci --no-audit --no-fund
       - name: Ranking updater tests
         run: python3 -B scripts/test-update-ranking.py
+
+  static:
+    needs: scope
+    if: needs.scope.outputs.runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
       - name: Publication workflow tests
-        if: steps.changes.outputs.runtime == 'true'
         run: node --test scripts/test-publish-workflow.mjs scripts/test-ci.mjs
-      - name: Type check
-        if: steps.changes.outputs.runtime == 'true'
-        run: npm run check
-      - name: Lint
-        if: steps.changes.outputs.runtime == 'true'
-        run: npm run lint
-      - name: Runtime, installed package and cache regressions
-        if: steps.changes.outputs.runtime == 'true'
+      - run: npm run check
+      - run: npm run lint
+      - run: npm audit --omit=dev
+
+  tests:
+    needs: scope
+    if: needs.scope.outputs.runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - name: Tests, installed package and cache regressions
         env:
           PI_GOAL_CI_LOG_DIR: ${{ runner.temp }}/pi-goal-validation
-        run: node scripts/ci-checks.mjs
-      - name: Production dependency audit
-        if: steps.changes.outputs.runtime == 'true'
-        run: npm audit --omit=dev
-      - name: Check out benchmark base
-        if: steps.changes.outputs.runtime == 'true'
-        uses: actions/checkout@v4
+        run: node scripts/ci-checks.mjs --skip controls-cli
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.event.before }}
+          name: validation
+          path: ${{ runner.temp }}/pi-goal-validation/
+          retention-days: 5
+          if-no-files-found: ignore
+
+  controls:
+    needs: scope
+    if: needs.scope.outputs.runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - name: Controls walkthrough in the Pi CLI
+        run: node experiments/controls/cli-walkthrough.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: controls
+          path: experiments/runs/goal-controls/
+          retention-days: 5
+          if-no-files-found: ignore
+
+  bench:
+    needs: scope
+    if: needs.scope.outputs.runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.CI_BASE_SHA }}
           path: .benchmark-base
       - name: Runtime benchmark regression gate
-        if: steps.changes.outputs.runtime == 'true'
         run: |
           ln -s "$GITHUB_WORKSPACE/node_modules" .benchmark-base/node_modules
           # Main preserves compact historical checkpoints; use the corrected fixture for both runs.
@@ -71,13 +103,20 @@ jobs:
           npm --prefix .benchmark-base run bench:naf -- after naf
           npm run bench:naf -- after naf
           PI_GOAL_BENCH_REFERENCE="$GITHUB_WORKSPACE/.benchmark-base/experiments/bench/baseline-naf-after.json" npm run bench:gate:naf
-      - name: Save validation evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: validation
-          path: |
-            ${{ runner.temp }}/pi-goal-validation/
-            experiments/runs/goal-controls/
-          retention-days: 5
-          if-no-files-found: ignore
+
+  # The one check branch protection needs. It passes when every job above
+  # passed or was skipped for a prose-only change.
+  validate:
+    needs: [scope, static, tests, controls, bench]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != success ] && [ "$result" != skipped ]; then exit 1; fi
+          done
