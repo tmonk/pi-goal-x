@@ -390,8 +390,8 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 
 	async function startSession(event: {reason?: string}, ctx: ExtensionContext): Promise<void> {
 		teardown(ctx);
-		configureLocale(loadGoalSettings(ctx.cwd).locale);
 		try {
+			configureLocale(loadGoalSettings(ctx.cwd).locale);
 			const owner: SessionOwner = {ctx, manager: ctx.sessionManager, storage: goalStorageContext(ctx), keys: new Set()};
 			session = owner;
 			core.sessionOwner = owner;
