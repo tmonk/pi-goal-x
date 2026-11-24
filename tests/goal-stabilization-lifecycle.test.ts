@@ -193,6 +193,7 @@ test("session replacement while the Escape choice is pending retires exactly one
 	let result: Promise<any> | undefined;
 	try {
 		h.ctx.hasUI = true;
+		h.ctx.mode = "tui";
 		h.ctx.ui.custom = async () => {shown.resolve(null); return choice.promise;};
 		await h.start(); result = h.call("update_goal", {status: "complete"}); await started.promise;
 		h.core.abortAudit(h.ctx); pending.resolve({...approved, approved: false, error: "Auditor aborted."}); await shown.promise;
@@ -211,6 +212,7 @@ test("a retired resume selector cannot open a dialog for the replacement's pause
 	let confirms = 0, resuming: Promise<any> | undefined;
 	try {
 		h.ctx.hasUI = true;
+		h.ctx.mode = "tui";
 		h.ctx.sessionManager.getBranch = () => [];
 		h.ctx.ui.select = async () => {shown.resolve(null); return selected.promise;};
 		h.ctx.ui.confirm = async () => {confirms++; return true;};
@@ -232,6 +234,7 @@ for (const response of ["answer", "cancel", "error"]) test(`a retired command sh
 	let calls = 0;
 	try {
 		h.ctx.hasUI = true;
+		h.ctx.mode = "tui";
 		mutateSettingsLayer({scope: "project", cwd: h.cwd, mutation: {op: "set", path: ["keybindings", "commands", "goal-direct"], value: "f8"}});
 		h.ctx.ui.input = async () => {shown.resolve(null); return answer.promise;};
 		h.core.invokeGoalCommand = async () => {calls++;};
@@ -255,6 +258,7 @@ test("a command shortcut releases its own modal when the command changes focus",
 	const dispatched = deferred<any>();
 	try {
 		h.ctx.hasUI = true;
+		h.ctx.mode = "tui";
 		mutateSettingsLayer({scope: "project", cwd: h.cwd, mutation: {op: "set", path: ["keybindings", "commands", "goal-direct"], value: "f8"}});
 		h.ctx.ui.input = async () => "New topic";
 		h.core.invokeGoalCommand = async () => {h.core.setFocusedGoalId(null, h.ctx, "selected"); dispatched.resolve(null);};
