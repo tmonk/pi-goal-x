@@ -158,7 +158,6 @@ test("Esc-skip path: buildCompletionReport includes Esc-abort reason", () => {
  * underlying buildCompletionReport function.
  */
 test("all three paths produce distinct tool output text", () => {
-	const baseSummary = "Goal: Distinct output test\nStatus: active";
 	const commonDetailed = "Goal: Distinct output test\nStatus: active";
 
 	const approval = buildCompletionReport({

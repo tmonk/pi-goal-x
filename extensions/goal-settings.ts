@@ -337,34 +337,6 @@ function asThinkingLevel(value: unknown): ThinkingLevel | undefined {
 	return text && THINKING_LEVELS.has(text) ? text as ThinkingLevel : undefined;
 }
 
-const ALLOWED_SETTINGS_KEYS = new Set([
-	"disableTasks",
-	"disableContracts",
-	"subtaskDepth",
-	"provider",
-	"model",
-	"thinkingLevel",
-	"thinking_level",
-	"disabled",
-	"autoSelectSingleGoal",
-	"auditorProjectResources",
-	"stallTimeoutMinutes",
-	"maxAutonomousRuns",
-	"strictExecutionContract",
-	"idleContinuationBackoff",
-	"objectiveMaxChars",
-	"keybindings",
-	"commands",
-	"pauseOrder",
-	"hideUnfocusedBanner",
-	"showAutonomousRuns",
-	"showContextUsage",
-	"hideUnfocusedPrompt",
-	"goalsRoot",
-	"oracle",
-	"networkRecovery",
-]);
-
 const ALLOWED_NETWORK_RECOVERY_KEYS = new Set(["maxAttempts", "maxDelayMs"]);
 
 const ALLOWED_ORACLE_KEYS = new Set([
@@ -706,10 +678,6 @@ function resolveLeaf<T>(args: {
 	if (args.projectValue !== undefined) return { value: args.projectValue, source: "project" };
 	if (args.globalValue !== undefined) return { value: args.globalValue, source: "global" };
 	return { value: args.defaultValue, source: "default" };
-}
-
-function pathKey(...parts: Array<string | undefined>): string {
-	return parts.filter((p) => p !== undefined).join(".");
 }
 
 /**

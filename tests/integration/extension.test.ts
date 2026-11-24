@@ -103,7 +103,6 @@ async function start(h: Harness): Promise<void> {
 }
 
 const HOST_TOOLS = ["read", "bash", "edit", "write"];
-const FIVE = ["create_goal", "get_goal", "update_goal", "set_goal_tasks", "update_goal_task"];
 const THREE = ["create_goal", "get_goal", "update_goal"];
 
 /** The installed profile (from captured setActiveTools calls) contains these names. */
@@ -575,7 +574,6 @@ describe("five-tool handler integration", () => {
 				const saved = readSettings(f.cwd);
 				assert.equal(saved.thinking_level, "max", "all seven levels accepted in sequence");
 				// Unknown value is rejected with a warning and nothing is persisted.
-				const notifiesBefore = h.notifies.length;
 				const selects2 = ["  thinking_level: max (project override)", "bogus", "Done"];
 				const inputs2 = ["bogus"];
 				const h2 = createHarness({

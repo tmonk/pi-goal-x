@@ -1,5 +1,5 @@
 import { statusLabel, type GoalDisplayRecordLike } from "./goal-display.ts";
-import type { GoalTask, GoalTaskList, TaskStatus } from "./goal-record.ts";
+import type { GoalTask, GoalTaskList } from "./goal-record.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
 
 export type GoalStatusLike = "active" | "paused" | "blocked" | "budget_limited" | "complete";

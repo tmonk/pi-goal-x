@@ -5,7 +5,7 @@ import { statusLabel, truncateText } from "../goal-display.ts";
 import { promptSafeObjective } from "../goal-contract.ts";
 import type { GoalRecord, GoalTask } from "../goal-record.ts";
 import type { GoalSettings } from "../goal-settings.ts";
-import { modelBudgetLine, contextUsageLine, type GoalContextUsage } from "../goal-accounting.ts";
+import { contextUsageLine, type GoalContextUsage } from "../goal-accounting.ts";
 
 /** Hard cap for the complete injected prompt fragment (TECH Stage 6). */
 export const MAX_PROMPT_FRAGMENT_CHARS = 10_000;

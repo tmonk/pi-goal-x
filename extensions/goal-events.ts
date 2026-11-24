@@ -14,7 +14,7 @@ import {
 	isErrorAssistantMessage,
 	isMeaningfulProgressToolCall,
 } from "./goal-format.ts";
-import { buildCompactionSummary, buildPostCompactionGoalDelta } from "./goal-compaction.ts";
+import { buildPostCompactionGoalDelta } from "./goal-compaction.ts";
 import { latestAuditorResultForGoal, readGoalLedger, goalRuntimeEvents, invalidateGoalLedgerCache } from "./goal-ledger.ts";
 import { shouldArmPostCompactReminder, shouldInjectPostCompactReminder } from "./goal-policy.ts";
 import { formatTokenValue } from "./goal-display.ts";

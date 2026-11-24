@@ -5,8 +5,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { extractVerificationContract } from "../extensions/goal-contract.ts";
-import { verificationContractBlock } from "../extensions/prompts/goal-prompts.ts";
-import type { GoalRecord } from "../extensions/goal-record.ts";
 
 // ── extractVerificationContract ─────────────────────────────────────────
 

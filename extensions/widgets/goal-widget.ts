@@ -1,17 +1,11 @@
 import type { GoalKeybinding, GoalCommands } from "../goal-controls.ts";
-import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import { truncateToWidth } from "./text-cache.ts";
 import {
-	displayObjectiveTitle,
-	formatDuration,
-	formatTokenValue,
 	type GoalDisplayRecordLike,
 } from "../goal-display.ts";
-import type { GoalRecord, GoalTask, GoalTaskList, TaskStatus } from "../goal-record.ts";
+import type { GoalRecord, GoalTaskList } from "../goal-record.ts";
 import type { GoalDashboardKeybindings, GoalSettings } from "../goal-settings.ts";
-import { sisyphusStepProgress } from "../goal-policy.ts";
 import type { GoalLedgerEvent } from "../goal-ledger.ts";
 import {
 	anchoredScrollOffset,
@@ -33,8 +27,6 @@ import {
 	renderUnfocusedDashboard,
 } from "./goal-dashboard-renderer.ts";
 import { deriveAuditResultCard, deriveAuditorDashboardModel } from "./auditor-dashboard-model.ts";
-
-type GoalWidgetColor = Extract<ThemeColor, "accent" | "warning" | "success" | "error" | "dim" | "muted" | "text">;
 
 export interface GoalWidgetRecord extends GoalDisplayRecordLike {
 	id: string;
@@ -132,10 +124,6 @@ export interface GoalWidgetOptions {
 	getLedgerEvents?: () => GoalLedgerEvent[];
 	/** §15.4: finished audit result card (cleared after a short display). */
 	getAuditResult?: () => AuditResultView | null;
-}
-
-function fit(value: string, width: number): string {
-	return visibleWidth(value) > width ? truncateToWidth(value, width, "…") : value;
 }
 
 // ── terminal-height bound (spec 2026-08-10-widget-height-bound-scrollback-fix) ──
@@ -251,32 +239,6 @@ export function applyStableHeightBound(
 	}
 	// Exactly the committed height: unchanged.
 	return lines;
-}
-
-function heading(theme: Theme, width: number, left: string, right = ""): string {
-	if (!right) return fit(left, width);
-	const rightPart = ` ${right}`;
-	const fill = Math.max(1, width - visibleWidth(left) - visibleWidth(rightPart));
-	return fit(`${left}${theme.fg("dim", " ".repeat(fill))}${rightPart}`, width);
-}
-
-function branchLine(theme: Theme, width: number, isLast: boolean, content: string): string {
-	const prefix = isLast ? "└─" : "├─";
-	return fit(`${theme.fg("dim", prefix)} ${content}`, width);
-}
-
-function progressBar(pct: number, barWidth: number, theme: Theme): string {
-	const safeBar = Math.max(3, barWidth);
-	const filled = Math.min(safeBar, Math.max(0, Math.round((pct / 100) * safeBar)));
-	const empty = safeBar - filled;
-	return `[${theme.fg("accent", "█".repeat(filled))}${theme.fg("dim", "░".repeat(empty))}]`;
-}
-
-
-const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-function spinnerFrame(): string {
-	return SPINNER[Math.floor(Date.now() / 80) % SPINNER.length]!;
 }
 
 export interface AuditResultView {
@@ -407,7 +369,6 @@ export class GoalWidgetComponent implements Component {
 	}
 
 	render(width: number): string[] {
-		const settings = this.getSettings();
 		this.lastRenderWidth = Math.max(1, width);
 		// Terminal-height bound (spec 2026-08-10): read pi's terminal rows at
 		// render time so the widget never fills the terminal — the chat/editor

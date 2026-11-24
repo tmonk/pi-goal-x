@@ -1,10 +1,10 @@
 import { GoalInterruption } from "./goal-interruption.ts";
 import { commandHint, type GoalCommandId, type GoalCommands } from "./goal-controls.ts";
 import * as path from "node:path";
-import { goalStorageContext, goalStorageRoot } from "./storage/goal-root.ts";
+import { goalStorageContext } from "./storage/goal-root.ts";
 import { type AgentToolResult, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { FOCUS_ENTRY, STATE_ENTRY, GOAL_EVENT_ENTRY, goalDetails } from "./goal-format.ts";
-import { loadGoalSettings, loadGoalSettingsFileConfig } from "./goal-settings.ts";
+import { loadGoalSettings } from "./goal-settings.ts";
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
 	DRAFTING_GOAL_TOOLS,
@@ -858,7 +858,6 @@ export function createGoalCore(
 
 	function pauseActiveGoal(ctx: ExtensionContext): void {
 		if (!state.goal || state.goal.status !== "active") return;
-		const pausedGoalId = state.goal.id;
 		// User-initiated pause (Esc / aborted turn). Clear any stale agent pause reason.
 		state.goal = { ...state.goal, autoContinue: false, pauseReason: undefined, pauseSuggestedAction: undefined };
 		stopActiveGoal("paused", "user", ctx);

@@ -157,7 +157,6 @@ async function runOutageScenario(t: import("node:test").TestContext, scenario: O
 	const notifications: Notify[] = [];
 	const rawLines: string[] = [];
 	let sawCheckpointAfterSettle = false;
-	let sawAgentEndAfterFirstNotify = false;
 	let sawFirstNotify = false;
 
 	const linesReady: Array<{ resolve: () => void }> = [];
@@ -195,11 +194,7 @@ async function runOutageScenario(t: import("node:test").TestContext, scenario: O
 				const message = (params.message ?? (event as { message?: string }).message) as string | undefined;
 				if (message && /Retrying the goal in \d+s \(recovery \d+, unbounded\)/.test(message)) {
 					notifications.push({ message, notifyType: params.notifyType ?? (event as { notifyType?: string }).notifyType });
-					if (!sawFirstNotify) {
-						sawFirstNotify = true;
-					} else {
-						sawAgentEndAfterFirstNotify = true;
-					}
+					sawFirstNotify = true;
 				}
 			}
 		}

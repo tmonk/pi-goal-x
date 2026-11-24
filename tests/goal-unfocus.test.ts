@@ -1,3 +1,4 @@
+import { createExtensionHarness } from "./support/extension-harness.ts";
 import { goalStorageContext } from "../extensions/storage/goal-root.ts";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -6,7 +7,6 @@ import path from "node:path";
 import test from "node:test";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../extensions/goal.ts";
 import { createGoal, goalFocusDetails, type GoalRecord } from "../extensions/goal-record.ts";
 import { writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { invalidateGoalSettingsCache } from "../extensions/goal-settings.ts";
@@ -21,64 +21,21 @@ interface HarnessOptions {
 }
 
 function createHarness(options: HarnessOptions) {
-	const appendedEntries: Array<{ customType: string; data: unknown }> = [];
-	const notifications: string[] = [];
-	const commands = new Map<string, { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void }>();
-	const handlers = new Map<string, Function>();
-	const tools = new Map<string, any>();
-	let activeTools = ["read", "bash", "edit", "write"];
-	let abortCount = 0;
 	let selectCount = 0;
-
-	const pi = {
-		registerTool: (definition: any) => { tools.set(definition.name, definition); },
-		registerCommand: (name: string, definition: { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void }) => {
-			commands.set(name, definition);
-		},
-		on: (event: string, handler: Function) => { handlers.set(event, handler); },
-		appendEntry: (customType: string, data: unknown) => { appendedEntries.push({ customType, data }); },
-		registerMessageRenderer: () => {},
-		sendMessage: () => {},
-		getActiveTools: () => [...activeTools],
-		setActiveTools: (names: string[]) => { activeTools = [...names]; },
-		hasUI: options.hasUI ?? false,
-	};
-
-	const ctx = {
+	const h = createExtensionHarness({
 		cwd: options.cwd,
-		hasUI: options.hasUI ?? false,
-		sessionManager: {
-			getBranch: () => options.sessionEntries,
-			getCwd: () => options.cwd,
-			getSessionId: () => "unfocus-test-session",
-			getRoot: () => options.cwd,
-		},
-		ui: {
-			notify: (message: string) => { notifications.push(message); },
-			setStatus: () => {},
-			setWidget: () => {},
-			onTerminalInput: () => () => {},
-			select: async () => { selectCount += 1; return undefined; },
-			confirm: async () => false,
-			custom: async () => options.custom ? options.custom() : undefined,
-		},
-		getSystemPrompt: () => "base prompt",
+		sessionEntries: options.sessionEntries,
+		hasUI: options.hasUI,
+		sessionId: "unfocus-test-session",
+		systemPrompt: "base prompt",
 		isIdle: () => options.idle ?? true,
-		hasPendingMessages: () => false,
-		abort: () => { abortCount += 1; },
-	} as unknown as ExtensionContext;
-
-	goalExtension(pi as any, { runCompletionAuditor: options.runCompletionAuditor });
-	return {
-		ctx,
-		commands,
-		handlers,
-		tools,
-		appendedEntries,
-		notifications,
-		get abortCount() { return abortCount; },
-		get selectCount() { return selectCount; },
-	};
+		runCompletionAuditor: options.runCompletionAuditor,
+		ui: {
+			select: async () => { selectCount += 1; return undefined; },
+			...(options.custom ? { custom: options.custom } : {}),
+		},
+	});
+	return Object.assign(h, { appendedEntries: h.entries, get selectCount() { return selectCount; } });
 }
 
 function createFixture(overrides: Partial<GoalRecord> = {}, settings: Record<string, unknown> = { autoSelectSingleGoal: false, disabled: true }) {

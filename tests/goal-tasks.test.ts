@@ -16,27 +16,6 @@ import {
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
-function makeGoal(taskOverrides: Array<Partial<{ id: string; title: string; status: "pending" | "complete" | "skipped" }>>) {
-	const tasks = taskOverrides.map((t, i) => ({
-		id: t.id ?? `task-${i + 1}`,
-		title: t.title ?? `Task ${i + 1}`,
-		status: t.status ?? "pending" as const,
-	}));
-	return {
-		id: "goal-1",
-		objective: "Test goal",
-		status: "active" as const,
-		autoContinue: true,
-		usage: { tokensUsed: 0, activeSeconds: 0 },
-		sisyphus: false,
-		taskList: {
-			tasks,
-			blockCompletion: false,
-			proposedAt: "2026-05-27T00:00:00.000Z",
-		},
-	};
-}
-
 // ── buildTaskSummary ─────────────────────────────────────────────────────────
 
 test("buildTaskSummary: no tasks", () => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createGoal, type GoalTaskList } from "../extensions/goal-record.ts";
+import { createGoal } from "../extensions/goal-record.ts";
 import {
 	CHECKPOINT_TRIGGER_MAX_CHARS,
 	checkpointTriggerPrompt,

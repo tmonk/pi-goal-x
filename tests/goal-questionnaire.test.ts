@@ -560,11 +560,7 @@ test("pressing 'a' toggles the auditor status with visible feedback in the bound
 // theme blind spot is exercised.
 
 const PAGE_DOWN = "\x1b[6~";
-const PAGE_UP = "\x1b[5~";
-const CTRL_DOWN = "\x1bOb";
-const CTRL_UP = "\x1bOa";
 const ARROW_DOWN = "\x1b[B";
-const ARROW_UP = "\x1b[A";
 const TAB_KEY = "\t";
 const ENTER_KEY = "\r";
 const ESC_KEY = "\x1b";

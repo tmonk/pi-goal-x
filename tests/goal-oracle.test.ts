@@ -15,7 +15,6 @@ import * as path from "node:path";
 
 import {
 	buildBlockerFingerprint,
-	buildBlockerOraclePrompt,
 	resolveOracleModel,
 	runBlockerOracle,
 	type OracleAdvice,

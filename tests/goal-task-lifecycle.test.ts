@@ -4,15 +4,14 @@
  * normalization (legacy + stale ids), and task-list replacement rules (§7.5).
  */
 
+import { createExtensionHarness } from "./support/extension-harness.ts";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../extensions/goal.ts";
-import { convertFlatTasks, mergeTasksWithExisting, type FlatTaskInput } from "../extensions/goal-task-tools.ts";
+import { convertFlatTasks, mergeTasksWithExisting } from "../extensions/goal-task-tools.ts";
 import { createGoal, goalFocusDetails, normalizeGoalRecord, type GoalRecord, type GoalTask } from "../extensions/goal-record.ts";
 import { parseGoalFile, serializeGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../extensions/goal-ledger.ts";
@@ -20,45 +19,7 @@ import { goalLedgerPath } from "../extensions/goal-ledger.ts";
 // ── Tool execution harness (mirrors goal-task-tools.test.ts) ────────────────
 
 function createHarness(cwd: string, sessionEntries: unknown[]) {
-	const handlers = new Map<string, Function>();
-	const tools = new Map<string, ToolDefinition>();
-	let activeTools = ["read", "bash", "edit", "write"];
-	const pi = {
-		registerTool: (def: ToolDefinition) => { tools.set(def.name, def); },
-		registerCommand: () => {},
-		on: (event: string, handler: Function) => { handlers.set(event, handler); },
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendMessage: () => {},
-		getActiveTools: () => [...activeTools],
-		setActiveTools: (names: string[]) => { activeTools = [...names]; },
-		hasUI: false,
-	};
-	const ctx = {
-		cwd,
-		hasUI: false,
-		sessionManager: {
-			getBranch: () => sessionEntries,
-			getCwd: () => cwd,
-			getSessionId: () => "task-lifecycle-session",
-			getRoot: () => cwd,
-		},
-		ui: {
-			notify: () => {},
-			setStatus: () => {},
-			setWidget: () => {},
-			onTerminalInput: () => () => {},
-			select: async () => undefined,
-			confirm: async () => false,
-			custom: async () => undefined,
-		},
-		getSystemPrompt: () => "base",
-		isIdle: () => true,
-		hasPendingMessages: () => false,
-		abort: () => {},
-	} as unknown as ExtensionContext;
-	goalExtension(pi as any, {});
-	return { handlers, tools, ctx };
+	return createExtensionHarness({ cwd, sessionEntries, sessionId: "task-lifecycle-session" });
 }
 
 function fixtureWithTasks(tasks: Array<Record<string, unknown>>, opts: { pauseReason?: string; status?: "active" | "paused" } = {}) {

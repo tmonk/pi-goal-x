@@ -1,6 +1,6 @@
 import { goalDialogControls } from "./goal-dialog-controls.ts";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Editor, type EditorTheme, Text, visibleWidth } from "@earendil-works/pi-tui";
+import { Editor, type EditorTheme, visibleWidth } from "@earendil-works/pi-tui";
 import { truncateToWidth, wrapTextWithAnsi } from "./widgets/text-cache.ts";
 
 

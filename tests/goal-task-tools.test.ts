@@ -3,15 +3,15 @@
  * validation, id-stable merging, and the update_goal_task discriminated union.
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createExtensionHarness } from "./support/extension-harness.ts";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../extensions/goal.ts";
-import { convertFlatTasks, countTasks, mergeTasksWithExisting, type FlatTaskInput } from "../extensions/goal-task-tools.ts";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { convertFlatTasks, countTasks, mergeTasksWithExisting } from "../extensions/goal-task-tools.ts";
 import { createGoal, goalFocusDetails, type GoalTask } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { goalLedgerPath } from "../extensions/goal-ledger.ts";
@@ -93,45 +93,7 @@ test("mergeTasksWithExisting preserves status and evidence for matching ids", ()
 // ── Tool execution harness ───────────────────────────────────────────────────
 
 function createHarness(cwd: string, sessionEntries: unknown[]) {
-	const handlers = new Map<string, Function>();
-	const tools = new Map<string, ToolDefinition>();
-	let activeTools = ["read", "bash", "edit", "write"];
-	const pi = {
-		registerTool: (def: ToolDefinition) => { tools.set(def.name, def); },
-		registerCommand: () => {},
-		on: (event: string, handler: Function) => { handlers.set(event, handler); },
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendMessage: () => {},
-		getActiveTools: () => [...activeTools],
-		setActiveTools: (names: string[]) => { activeTools = [...names]; },
-		hasUI: false,
-	};
-	const ctx = {
-		cwd,
-		hasUI: false,
-		sessionManager: {
-			getBranch: () => sessionEntries,
-			getCwd: () => cwd,
-			getSessionId: () => "task-tools-session",
-			getRoot: () => cwd,
-		},
-		ui: {
-			notify: () => {},
-			setStatus: () => {},
-			setWidget: () => {},
-			onTerminalInput: () => () => {},
-			select: async () => undefined,
-			confirm: async () => false,
-			custom: async () => undefined,
-		},
-		getSystemPrompt: () => "base",
-		isIdle: () => true,
-		hasPendingMessages: () => false,
-		abort: () => {},
-	} as unknown as ExtensionContext;
-	goalExtension(pi as any, {});
-	return { handlers, tools, ctx };
+	return createExtensionHarness({ cwd, sessionEntries, sessionId: "task-tools-session" });
 }
 
 function fixtureWithTasks(tasks: Array<Record<string, unknown>>) {

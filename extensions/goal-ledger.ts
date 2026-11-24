@@ -4,7 +4,7 @@ import { buildLedgerIndex, indexLedgerEvent, auditApplies, type GoalLedgerIndex 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { writeFileAtomicSync } from "./storage/atomic-rename.ts";
-import { nowIso, safeIdPart, type GoalRecord } from "./goal-record.ts";
+import { nowIso, safeIdPart } from "./goal-record.ts";
 
 export const GOAL_LEDGER_FILE = ".pi/goals/goal_events.jsonl";
 

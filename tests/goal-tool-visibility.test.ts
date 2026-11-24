@@ -11,7 +11,6 @@ import piGoalExtension from "../extensions/goal.ts";
 import {
 	createGoal,
 	goalFocusDetails,
-	type GoalRecord,
 	type GoalStateEntry,
 } from "../extensions/goal-record.ts";
 import { writeActiveGoalFile } from "../extensions/storage/goal-files.ts";

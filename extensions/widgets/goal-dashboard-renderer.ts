@@ -77,10 +77,6 @@ function boxLine(theme: Theme, width: number, content: string): string {
 	return `${frame(theme, V)} ${contentFit}${" ".repeat(pad)}${frame(theme, V)}`;
 }
 
-function boxRule(theme: Theme, width: number): string {
-	return frame(theme, `├${H.repeat(Math.max(1, width - 2))}┤`);
-}
-
 /** Section separator with a label and optional right-side content:
  * `├─ Tasks ──── [████░] · Sub 2/3 [██░░] ┤` (§5.1). The right content
  * (e.g. the header progress bars) always survives; the label truncates when

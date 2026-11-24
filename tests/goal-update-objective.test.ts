@@ -247,7 +247,7 @@ test("tweak persist path: task validation rejects deep subtasks", () => {
 	const ctx = tempCtx();
 	try {
 		const goal = makeGoal({ objective: "Test validation" });
-		const active = writeActiveGoalFile(ctx, goal);
+		void writeActiveGoalFile(ctx, goal);
 
 		// Tasks with subtask depth > 1 (default max) — this is what the
 		// handler's findSubtaskDepthViolation call would catch at confirm time.
@@ -270,10 +270,6 @@ test("tweak persist path: task validation rejects deep subtasks", () => {
 		cleanup(ctx);
 	}
 });
-
-function tweakedRecord(g: GoalRecord): GoalRecord {
-	return { ...g, status: "active" as const, autoContinue: true };
-}
 
 // ─── prompt evolution instruction ────────────────────────────────────────────
 

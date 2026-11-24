@@ -21,7 +21,6 @@ import {
 	saveGoalSettingsFileConfig,
 	effectiveSettingsReport,
 	formatGoalKeybinding,
-	type GoalSettings,
 } from "../extensions/goal-settings.ts";
 
 // ── parseGoalSettings ───────────────────────────────────────────────────

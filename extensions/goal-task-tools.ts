@@ -8,7 +8,7 @@
  */
 
 import { StringEnum, Type } from "@earendil-works/pi-ai";
-import { defineTool, type AgentToolResult, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
 import type { GoalTaskUpdateSpec } from "./goal-service.ts";
@@ -23,7 +23,7 @@ import {
 	SET_GOAL_TASKS_TOOL_NAME,
 	UPDATE_GOAL_TASK_TOOL_NAME,
 } from "./goal-tool-names.ts";
-import { nowIso, currentTaskIdIsPending, type GoalTask, type GoalTaskList } from "./goal-record.ts";
+import { nowIso, currentTaskIdIsPending, type GoalTask } from "./goal-record.ts";
 
 export const MAX_TASKS = 50;
 

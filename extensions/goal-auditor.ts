@@ -1,12 +1,7 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import type { Static } from "@earendil-works/pi-ai";
-import { Type } from "@earendil-works/pi-ai";
 import type { Model } from "@earendil-works/pi-ai";
 import {
 	createAgentSession,
 	createExtensionRuntime,
-	defineTool,
 	SessionManager,
 	SettingsManager,
 	type ExtensionContext,
@@ -15,7 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { GoalRecord, GoalTask, GoalTaskList } from "./goal-record.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
-import { GOAL_THINKING_LEVELS, loadGoalSettings, type GoalSettings, type ThinkingLevel } from "./goal-settings.ts";
+import { loadGoalSettings, type GoalSettings, type ThinkingLevel } from "./goal-settings.ts";
 import { statusLabel } from "./goal-display.ts";
 
 export interface AuditorProgress {
@@ -47,19 +42,6 @@ export interface GoalAuditorResult {
 	thinkingLevel?: ThinkingLevel;
 	error?: string;
 }
-
-const THINKING_LEVELS = new Set<string>(GOAL_THINKING_LEVELS);
-
-function asNonEmptyString(value: unknown): string | undefined {
-	return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function asThinkingLevel(value: unknown): ThinkingLevel | undefined {
-	const text = asNonEmptyString(value);
-	return text && THINKING_LEVELS.has(text) ? text as ThinkingLevel : undefined;
-}
-
-
 
 export function parseAuditorDecision(output: string): { approved: boolean; disapproved: boolean } {
 	// The prompt contract: the verdict marker must be the FINAL line of the

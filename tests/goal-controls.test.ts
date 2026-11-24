@@ -22,7 +22,7 @@ import { runGoalQuestionnaire, fitDialogLines } from "../extensions/goal-questio
 import { detailedSummary } from "../extensions/goal-format.ts";
 import { formatRecoveryReport, runRecoveryReport } from "../extensions/goal-recovery.ts";
 
-const ESC = "\x1b", ENTER = "\r", DOWN = "\x1b[B", UP = "\x1b[A", TAB = "\t";
+const ESC = "\x1b", ENTER = "\r", DOWN = "\x1b[B", TAB = "\t";
 const F6 = "\x1b[17~";
 
 function fixture(settings: unknown = {}) {

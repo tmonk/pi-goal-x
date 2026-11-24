@@ -14,9 +14,8 @@ import { createGoalCore } from "../extensions/goal-state.ts";
 import { createGoal } from "../extensions/goal-record.ts";
 import { readGoalLedger } from "../extensions/goal-ledger.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
-import { syncTerminalInputPause } from "../extensions/goal-terminal-input.ts";
 import { renderGoalWidgetLines } from "../extensions/widgets/goal-widget.ts";
-import { createMockTheme, createMockExtensionContext, invokeCustomFactory, renderComponent } from "./tui-test-utils.ts";
+import { createMockTheme } from "./tui-test-utils.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
 const theme = createMockTheme() as unknown as Theme;

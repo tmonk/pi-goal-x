@@ -263,7 +263,7 @@ test("full guided lifecycle: create → focus → tasks → audit → archive (�
 		assert.match(dashboardText(goal, false, cwd), /✓5 done · 0 open/, "all tasks done");
 
 		// ── Step 11: request completion ─────────────────────────────────────
-		const completion = await callTool(h, "update_goal", "complete-1", { status: "complete" });
+		await callTool(h, "update_goal", "complete-1", { status: "complete" });
 		assert.ok(ledgerEvents(cwd).some((e) => e.type === "completion_requested"), "completion_requested ledger event");
 		assert.ok(ledgerEvents(cwd).some((e) => e.type === "audit_started"), "audit_started ledger event");
 

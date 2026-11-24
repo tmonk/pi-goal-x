@@ -19,10 +19,9 @@
 import { Type } from "@earendil-works/pi-ai";
 import { createHash } from "node:crypto";
 
-import { defineTool, SessionManager, SettingsManager, type AgentToolResult, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { defineTool, SessionManager, SettingsManager, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { makeAuditorResourceLoader, resolveAuditorSessionModelOptions } from "./goal-auditor.ts";
-import type { GoalLedgerEvent } from "./goal-ledger.ts";
 import type { ResolvedGoalOracleSettings } from "./goal-settings.ts";
 import { safeIdPart, type GoalRecord } from "./goal-record.ts";
 

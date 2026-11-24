@@ -20,10 +20,6 @@ function fixedAddWrappedPipe(content: string, safeWidth: number): string[] {
  * Helper: apply the BUGGY addWrappedPipe logic to content.
  * Wraps at full width and prepends pipe prefix to continuations.
  */
-function buggyAddWrappedPipe(content: string, safeWidth: number): string[] {
-	const wrapped = wrapTextWithAnsi(content, safeWidth);
-	return wrapped.map((line, i) => (i === 0 ? line : PIPE_PREFIX + line));
-}
 
 // ─── addWrappedPipe fix math ────────────────────────────────────────────────
 
@@ -203,7 +199,6 @@ test("addWrappedPipe fix: content with leading/trailing whitespace", () => {
 
 test("addWrappedPipe fix: content exactly at minimum safeWidth=20", () => {
 	const safeWidth = 20;
-	const wrapWidth = Math.max(1, safeWidth - PIPE_WIDTH);
 	// At safeWidth=20, wrapWidth=16. Content should wrap and fit.
 	const content = "x".repeat(safeWidth * 4) + " " + "y".repeat(safeWidth * 4);
 	const lines = fixedAddWrappedPipe(content, safeWidth);

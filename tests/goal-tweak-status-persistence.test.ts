@@ -8,82 +8,23 @@
  * stays pending.
  */
 
+import { createExtensionHarness } from "./support/extension-harness.ts";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../extensions/goal.ts";
-import type { GoalCore } from "../extensions/goal-state.ts";
 import { newGoalScheduler } from "../extensions/goal-scheduler-state.ts";
 import { writeActiveGoalFile, parseGoalFile } from "../extensions/storage/goal-files.ts";
 import { readGoalLedger } from "../extensions/goal-ledger.ts";
 import { countTasks } from "../extensions/goal-task-tools.ts";
 
-interface Harness {
-	core: GoalCore;
-	ctx: ExtensionContext;
-	commands: Map<string, any>;
-	tools: Map<string, any>;
-	dialogResult(result: unknown): void;
-	hasDialog: () => boolean;
-	sessionStart(): Promise<void>;
-}
+type Harness = ReturnType<typeof createHarness>;
 
-function createHarness(cwd: string): Harness {
-	const handlers = new Map<string, Function>();
-	const commands = new Map<string, any>();
-	const tools = new Map<string, any>();
-	let activeTools = ["read", "bash", "edit", "write"];
-	let dialogResolve: ((result: any) => void) | null = null;
-	let hasDialogPending = false;
-	const pi = {
-		registerTool: (def: any) => { tools.set(def.name, def); },
-		registerCommand: (name: string, def: any) => { commands.set(name, def); },
-		on: (event: string, handler: Function) => { handlers.set(event, handler); },
-		appendEntry: () => {},
-		registerMessageRenderer: () => {},
-		sendUserMessage: () => {},
-		sendMessage: () => {},
-		getActiveTools: () => [...activeTools],
-		setActiveTools: (names: string[]) => { activeTools = [...names]; },
-		hasUI: true,
-	};
-	const ctx = {
-		cwd,
-		hasUI: true,
-		sessionManager: {
-			getBranch: () => [],
-			getCwd: () => cwd,
-			getSessionId: () => "tweak-status-session",
-			getRoot: () => cwd,
-		},
-		ui: {
-			notify: () => {},
-			setStatus: () => {},
-			setWidget: () => {},
-			onTerminalInput: () => () => {},
-			select: async () => undefined,
-			confirm: async () => false,
-			custom: async () => new Promise((resolve) => { dialogResolve = resolve; hasDialogPending = true; }),
-		},
-		getSystemPrompt: () => "base",
-		isIdle: () => true,
-		hasPendingMessages: () => false,
-		abort: () => {},
-	} as unknown as ExtensionContext;
-	goalExtension(pi as any, {});
-	return {
-		core: (pi as any)._goalCore,
-		ctx,
-		commands,
-		tools,
-		dialogResult: (result: unknown) => { hasDialogPending = false; dialogResolve?.(result); },
-		hasDialog: () => hasDialogPending,
-		sessionStart: async () => { await handlers.get("session_start")?.({ reason: "start" }, ctx); },
-	};
+function createHarness(cwd: string) {
+	const h = createExtensionHarness({ cwd, sessionEntries: [], hasUI: true, sessionId: "tweak-status-session", custom: "dialog" });
+	return Object.assign(h, { dialogResult: h.resolveDialog });
 }
 
 const CONFIRM_ANSWER = "Confirm — create this goal now";
