@@ -113,14 +113,6 @@ export interface LegacyGoalEventDetails {
 	focus?: GoalMode;
 }
 
-/** Historical "stale" rewrite of a checkpoint that no longer matches the goal. */
-export interface GoalStaleDetails {
-	kind: "stale";
-	goalId: string;
-	currentGoalId?: string | null;
-	currentStatus?: GoalStatus | null;
-}
-
 /** Everything that can appear in a persisted pi-goal-event entry's details. */
 export interface GoalCheckpointDetailsV3 extends Omit<GoalCheckpointDetailsV2, "version"> {
 	version: 3;

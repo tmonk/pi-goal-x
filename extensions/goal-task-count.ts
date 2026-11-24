@@ -51,9 +51,3 @@ export function countTaskSubtree(
 		...(opts.collectPending ? { pendingTasks } : {}),
 	};
 }
-
-/** Total node count only (task-list tools / overlay header counts). */
-export function countAllTasks(tasks: readonly GoalTask[] | undefined): number {
-	if (!tasks) return 0;
-	return countTaskSubtree(tasks).total;
-}

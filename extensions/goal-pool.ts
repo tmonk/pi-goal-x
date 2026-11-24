@@ -7,14 +7,6 @@ import {
 } from "./goal-display.ts";
 import { cloneGoal, type GoalFocusEntry, type GoalRecord } from "./goal-record.ts";
 
-export function goalPoolFromGoals(goals: Iterable<GoalRecord>): Map<string, GoalRecord> {
-	const pool = new Map<string, GoalRecord>();
-	for (const goal of goals) {
-		if (goal.status !== "complete") pool.set(goal.id, cloneGoal(goal));
-	}
-	return pool;
-}
-
 export function openGoalsFromPool(pool: Map<string, GoalRecord>): GoalRecord[] {
 	return Array.from(pool.values())
 		.filter((goal) => goal.status !== "complete")

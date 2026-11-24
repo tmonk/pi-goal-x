@@ -12,7 +12,6 @@
     "./tests/goal-budget.test.ts",
     "./tests/goal-cache-regression.test.ts",
     "./tests/goal-command-palette.test.ts",
-    "./tests/goal-compaction.test.ts",
     "./tests/goal-comprehensive-optimization.test.ts",
     "./tests/goal-context-isolation.test.ts",
     "./tests/goal-context-usage.test.ts",

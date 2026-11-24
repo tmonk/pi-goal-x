@@ -9,7 +9,6 @@ import {
 	shouldInjectPostCompactReminder,
 	validateGoalBlock,
 	validateGoalCompletion,
-	validateResumeGoal,
 	type GoalPolicyRecordLike,
 } from "../extensions/goal-policy.ts";
 
@@ -62,12 +61,7 @@ test("update_goal(blocked) policy applies only to an active goal", () => {
 	assert.match(rejectedMessage(validateGoalBlock({ goal: null })), /No goal is set/);
 });
 
-test("resume and clear policy preserve human-owned lifecycle affordances", () => {
-	assert.match(rejectedMessage(validateResumeGoal(null)), /No goal is set/);
-	assert.match(rejectedMessage(validateResumeGoal(goal({ status: "complete" }))), /Goal is complete/);
-	assert.match(rejectedMessage(validateResumeGoal(goal({ status: "active", autoContinue: true }))), /already running/);
-	assert.deepEqual(validateResumeGoal(goal({ status: "paused", autoContinue: false })), { ok: true });
-
+test("clear policy preserves human-owned lifecycle affordances", () => {
 	assert.equal(clearGoalCommandMessage({ archived: true }), "Goal cleared and archived.");
 	assert.equal(clearGoalCommandMessage({ archived: false }), "No goal is set.");
 
