@@ -46,8 +46,13 @@ export const MAX_RETAINED_LIVE_TAILS = 32;
 
 /** Upper bound on concurrently tracked sessions (parent plus isolated runs). */
 export const MAX_TRACKED_SESSIONS = 16;
-/** Extra historical observations, excluding the single current policy block. */
-export const MAX_RETAINED_COUNTER_BYTES = 4096;
+/**
+ * Extra historical snapshots (task list, usage, runs), excluding the single
+ * current policy block. Past this a full reset happens. Old snapshots are
+ * cheap cached tokens; a reset re-sends the whole history since the first
+ * anchor uncached, so this is sized to hold a few task-list updates.
+ */
+export const MAX_RETAINED_COUNTER_BYTES = 16384;
 
 export interface FreshLiveTails {
 	state: string;

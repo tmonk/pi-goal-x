@@ -230,17 +230,18 @@ function retainedTaskChars(task: GoalTask): number {
 }
 
 export function goalPromptParts(goal: GoalRecord, settings?: GoalSettings, contextUsage?: GoalContextUsage): { state: string; counters: string } {
-	// The policy block changes only when the goal itself changes; the counters
-	// change nearly every turn. Splitting them lets request-only injection retain
-	// each at its own rate so consecutive provider requests stay prefix-stable.
-	// Scheduling instructions ride with the policy block: they are cleared by
-	// omission, so a retained copy would keep issuing a cancelled order.
+	// The policy block changes only when the goal itself changes. The snapshot
+	// (task list, usage, runs) changes often. Each is retained separately, so a
+	// task update appends a new snapshot instead of resetting the cached prefix
+	// (#108). Scheduling instructions stay in the policy block: they are cleared
+	// by omission, so a retained copy would keep issuing a cancelled order.
 	const fixed = cachedPrompt(goal, settings, "goal", () => buildGoalPrompt(goal, settings));
 	const { runs, instructions } = schedulerSummaryParts(goal.scheduler, settings?.maxAutonomousRuns, settings?.showAutonomousRuns, settings?.idleContinuationBackoff === true, settings?.commands);
 	const limits = `Limits: lifetime tokens=${goal.tokenBudget ?? "none"}; runs=${settings?.maxAutonomousRuns ?? "unlimited"}.`;
-	const state = [fixed, instructions, limits, "Usage spans goal turns, not context. Latest snapshot supersedes earlier snapshots."].filter(Boolean).join("\n");
+	const state = [fixed, instructions, limits, "Usage spans goal turns, not context. The latest snapshot, including its task list, supersedes earlier ones."].filter(Boolean).join("\n");
 	const context = settings?.showContextUsage === true ? `\n${contextUsageLine(contextUsage)}` : "";
-	const counters = `Goal snapshot: ${formatUsage(goal)}${context}\n${runs}`;
+	const tasks = taskListBlock(goal, settings);
+	const counters = `${tasks ? `${tasks}\n` : ""}Goal snapshot: ${formatUsage(goal)}${context}\n${runs}`;
 	return { state, counters };
 }
 
@@ -256,7 +257,7 @@ function buildGoalPrompt(goal: GoalRecord, settings?: GoalSettings): string {
 		`[PI GOAL ACTIVE goalId=${goal.id}]`,
 		lifecyclePolicyBlock(settings?.maxAutonomousRuns !== 0, settings?.strictExecutionContract === true || !!goal.scheduler?.wait, settings?.commands), sisyphusDisciplineBlock(goal),
 		`Status: ${statusLabel(goal)}\nMode: ${goal.sisyphus ? "sisyphus" : "regular"}`,
-		untrustedObjectiveBlock(goal), taskListBlock(goal, settings), verificationContractBlock(goal, settings),
+		untrustedObjectiveBlock(goal), verificationContractBlock(goal, settings),
 		].filter(Boolean).join("\n\n");
 }
 

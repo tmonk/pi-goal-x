@@ -40,7 +40,9 @@ for (const pending of [false, true]) for (const approved of [false, true]) test(
 		const taskList = {tasks: [{id: "complete", title: "Verified work", status: "complete" as const, evidence: "tests pass"}, {id: "skip", title: "Out of scope", status: "skipped" as const, skipReason: "user excluded", subtasks: [{id: "child", title: "Nested work", status: pending ? "pending" as const : "skipped" as const, skipReason: "user excluded"}]}], blockCompletion: true, proposedAt: new Date().toISOString()};
 		h.core.updateFocusedGoal({...h.core.state.goal!, taskList}, h.ctx);
 		assert.equal(!!taskCompletionBlockWarning(taskList), pending);
-		const prompt = goalPromptParts(h.core.state.goal!).state;
+		// The task gate travels with the task list in the snapshot block.
+		const parts = goalPromptParts(h.core.state.goal!);
+		const prompt = `${parts.state}\n${parts.counters}`;
 		const auditPrompt = buildGoalAuditorPrompt({goal: h.core.state.goal!, detailedSummary: "verified fixture"});
 		assert.equal(/TASK GATE:/.test(prompt), pending);
 		assert.equal(/TASK GATE:/.test(auditPrompt), pending);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LiveTailRetention, MAX_RETAINED_LIVE_TAILS } from "../extensions/goal-live-retention.ts";
+import { LiveTailRetention, MAX_RETAINED_COUNTER_BYTES, MAX_RETAINED_LIVE_TAILS } from "../extensions/goal-live-retention.ts";
 
 const msg = (role: string, content: string, timestamp: number): any => ({ role, content, timestamp });
 const contents = (messages: any[]): string[] => messages.map(message => message.content);
@@ -175,7 +175,7 @@ test("a thousand changing requests bound retained counter bytes", () => {
 	for (let i = 0; i < 1000; i++) {
 		base.push({ role: "assistant", content: `turn ${i}` });
 		const out = retention.apply("s", base, { state: "S", counters: `Snapshot ${i}: ${"x".repeat(180)}` });
-		assert.ok(out.transientContents.filter(s => s !== "S").reduce((n, s) => n + Buffer.byteLength(s), 0) <= 4096);
+		assert.ok(out.transientContents.filter(s => s !== "S").reduce((n, s) => n + Buffer.byteLength(s), 0) <= MAX_RETAINED_COUNTER_BYTES);
 		assert.equal((out.messages.at(-1) as { content: string }).content, `Snapshot ${i}: ${"x".repeat(180)}`);
 	}
 });
