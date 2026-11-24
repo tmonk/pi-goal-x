@@ -224,3 +224,63 @@ function fitProposalPresentation(
 	const keepTasks = Math.min(tasks.length, Math.max(0, maxDialogLines - keepHead - tailKept.length));
 	return [...head, ...tasks.slice(0, keepTasks), ...tailKept];
 }
+
+/**
+ * Options-first fit: every option line always stays in frame. When the
+ * question + context + options exceed the bound, the question/context
+ * section yields first (it remains in the agent transcript): middle lines
+ * (blanks, auditor, "Current:", context) drop before the question block
+ * and the footer hint, and the tail slack (blank/footer) gives way before
+ * the question. Returns null when even the option block + borders cannot
+ * fit (pathological) so the caller falls back to the scroll viewport.
+ */
+export function fitOptionsInFrame(
+	lines: string[],
+	maxDialogLines: number,
+	questionBlockEnd: number,
+	optionsStart: number,
+	lastOptionLine: number,
+): string[] | null {
+	if (maxDialogLines <= 0 || lines.length <= maxDialogLines) return lines;
+	if (optionsStart < 0 || lastOptionLine < optionsStart) return null;
+	const head = lines.slice(0, Math.max(questionBlockEnd, 1));
+	const middle = lines.slice(Math.max(questionBlockEnd, 1), optionsStart);
+	const tail = lines.slice(optionsStart);
+	const optionsBlockLen = lastOptionLine - optionsStart + 1;
+	// The option block + bottom border must fit on their own; otherwise the
+	// scroll viewport is the last resort (nothing is ever hidden).
+	if (optionsBlockLen + 1 > maxDialogLines) return null;
+	// Shrink the middle from its end: blanks first, then auditor/Current/
+	// context lines — the question block is untouched.
+	const mid = middle.slice();
+	while (head.length + mid.length + tail.length > maxDialogLines && mid.length > 0) {
+		let blankIdx = -1;
+		for (let i = mid.length - 1; i >= 0; i--) {
+			if (mid[i]!.trim() === "") { blankIdx = i; break; }
+		}
+		if (blankIdx >= 0) mid.splice(blankIdx, 1);
+		else mid.pop();
+	}
+	// Still over: the tail gives its slack (blank between options and
+	// footer, then the footer hint) before the question block does. Never
+	// drop the option block or the bottom border.
+	const tailKept = tail.slice();
+	while (head.length + mid.length + tailKept.length > maxDialogLines && tailKept.length > optionsBlockLen + 1) {
+		// Prefer removing a blank line (never the options or the border),
+		// then the line just above the bottom border (the footer hint).
+		let tailBlank = -1;
+		for (let i = tailKept.length - 2; i >= 1; i--) {
+			if (tailKept[i]!.trim() === "") { tailBlank = i; break; }
+		}
+		if (tailBlank >= 1) tailKept.splice(tailBlank, 1);
+		else tailKept.splice(tailKept.length - 2, 1);
+	}
+	// Still over: give the question block's trailing wrap lines (then the
+	// question itself) before giving up — options + borders always stay.
+	const headKept = head.slice();
+	while (head.length + mid.length + tailKept.length > maxDialogLines && headKept.length > 1) {
+		headKept.pop();
+	}
+	if (headKept.length + mid.length + tailKept.length > maxDialogLines) return null;
+	return [...headKept, ...mid, ...tailKept];
+}
