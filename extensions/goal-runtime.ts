@@ -14,11 +14,11 @@ import { checkpointTriggerPrompt } from "./prompts/goal-prompts.ts";
 import { POST_STOP_ALLOWED_TOOLS } from "./goal-tool-names.ts";
 import { networkErrorBackoffPlan, type NetworkErrorBackoffPlan, type NetworkErrorRecoveryPolicy } from "./network-error-backoff.ts";
 
-export const CONTINUATION_IDLE_RETRY_MS = 50;
+const CONTINUATION_IDLE_RETRY_MS = 50;
 
 const POST_STOP_ALLOWED = new Set<string>(POST_STOP_ALLOWED_TOOLS);
 
-export interface GoalRuntimeHooks {
+interface GoalRuntimeHooks {
 	authorize?(ctx: ExtensionContext, goal: GoalRecord): Record<string, unknown> | null;
 	recover?(ctx: ExtensionContext): void;
 	dispatchFailed?(ctx: ExtensionContext): void;

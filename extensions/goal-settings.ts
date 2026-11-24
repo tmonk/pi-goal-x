@@ -72,7 +72,7 @@ export const DEFAULT_GOAL_KEYBINDINGS: GoalKeybindings = {
  * Default ceiling for a single recovery delay; the escalation ladder
  * plateaus here. Configurable via networkRecovery.maxDelayMs.
  */
-export const DEFAULT_NETWORK_RECOVERY_MAX_DELAY_MS = 80_000;
+const DEFAULT_NETWORK_RECOVERY_MAX_DELAY_MS = 80_000;
 
 export function formatGoalKeybinding(key: GoalKeybinding | undefined): string {
 	if (Array.isArray(key)) return key.length ? key.map(k => formatGoalKeybinding(k)).join(" / ") : "Unbound";
@@ -156,7 +156,7 @@ export interface GoalSettingsLayer {
  * Issue #26: sparse per-leaf Oracle settings. Every leaf inherits
  * independently (project > global > default); enabled defaults false.
  */
-export interface GoalOracleSettingsLayer {
+interface GoalOracleSettingsLayer {
 	enabled?: boolean;
 	provider?: string;
 	model?: string;
@@ -175,13 +175,13 @@ export interface ResolvedGoalOracleSettings {
 }
 
 /** Sparse per-leaf network-recovery settings (maxAttempts 0 = unbounded). */
-export interface GoalNetworkRecoverySettingsLayer {
+interface GoalNetworkRecoverySettingsLayer {
 	maxAttempts?: number;
 	maxDelayMs?: number;
 }
 
 /** Resolved network-recovery settings (concrete defaults). */
-export interface ResolvedGoalNetworkRecoverySettings {
+interface ResolvedGoalNetworkRecoverySettings {
 	maxAttempts: number;
 	maxDelayMs: number;
 }
@@ -192,8 +192,8 @@ export interface GoalSettings extends GoalSettingsLayer {
 	networkRecovery?: ResolvedGoalNetworkRecoverySettings;
 }
 
-export const PI_GOAL_SETTINGS_FILE_ENV = "PI_GOAL_SETTINGS_FILE";
-export const PI_GOAL_GLOBAL_SETTINGS_FILE_ENV = "PI_GOAL_GLOBAL_SETTINGS_FILE";
+const PI_GOAL_SETTINGS_FILE_ENV = "PI_GOAL_SETTINGS_FILE";
+const PI_GOAL_GLOBAL_SETTINGS_FILE_ENV = "PI_GOAL_GLOBAL_SETTINGS_FILE";
 
 const THINKING_LEVELS = new Set<string>(GOAL_THINKING_LEVELS);
 
@@ -240,14 +240,14 @@ export function goalSettingsPath(cwd: string, env: NodeJS.ProcessEnv = process.e
 
 export type SettingsScope = "global" | "project";
 
-export type SettingsDiagnosticCode =
+type SettingsDiagnosticCode =
 	| "invalid_json"
 	| "not_object"
 	| "unknown_key"
 	| "invalid_value"
 	| "invalid_nested_key";
 
-export interface SettingsDiagnostic {
+interface SettingsDiagnostic {
 	scope: SettingsScope;
 	path: string;
 	settingPath?: string;
@@ -255,7 +255,7 @@ export interface SettingsDiagnostic {
 	message: string;
 }
 
-export interface SettingsLayerRead {
+interface SettingsLayerRead {
 	scope: SettingsScope;
 	path: string;
 	status: "ok" | "missing" | "invalid";
@@ -585,9 +585,9 @@ export function loadGoalSettingsFileConfig(cwd: string, env: NodeJS.ProcessEnv =
 
 // ── resolution with provenance ──────────────────────────────────────────────
 
-export type SettingsSource = "environment" | "project" | "global" | "default";
+type SettingsSource = "environment" | "project" | "global" | "default";
 
-export interface ResolvedSetting<T> {
+interface ResolvedSetting<T> {
 	value: T;
 	source: SettingsSource;
 	envVar?: string;
@@ -749,7 +749,7 @@ export type SettingsMutation =
 	| { op: "set"; path: readonly string[]; value: unknown }
 	| { op: "unset"; path: readonly string[] };
 
-export interface MutateSettingsInput {
+interface MutateSettingsInput {
 	scope: SettingsScope;
 	cwd: string;
 	env?: NodeJS.ProcessEnv;

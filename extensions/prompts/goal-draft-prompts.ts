@@ -133,7 +133,7 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 
 // ── §14 durable proposal summary ─────────────────────────────────────────────
 
-export interface ProposalSummaryArgs {
+interface ProposalSummaryArgs {
 	objective: string;
 	taskList?: GoalTaskList;
 	verificationContract?: string;

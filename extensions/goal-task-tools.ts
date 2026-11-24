@@ -25,7 +25,7 @@ import {
 } from "./goal-tool-names.ts";
 import { nowIso, currentTaskIdIsPending, type GoalTask } from "./goal-record.ts";
 
-export const MAX_TASKS = 50;
+const MAX_TASKS = 50;
 
 export interface FlatTaskInput {
 	id: string;
@@ -35,7 +35,7 @@ export interface FlatTaskInput {
 	lightweight_subtasks?: boolean;
 }
 
-export type FlatTaskConversion =
+type FlatTaskConversion =
 	| { ok: true; tasks: GoalTask[] }
 	| { ok: false; message: string };
 

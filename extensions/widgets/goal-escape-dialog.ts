@@ -7,7 +7,7 @@ import { borderedLine, dialogInnerWidth, horizontalRule } from "./dialog-scaffol
 /**
  * Result of the Escape dialog during audit.
  */
-export type EscapeDialogResult = "complete_without_audit" | "continue_working";
+type EscapeDialogResult = "complete_without_audit" | "continue_working";
 
 /**
  * Show a TUI confirmation dialog when the user presses Escape during a completion audit.

@@ -2,7 +2,7 @@ import { statusLabel, type GoalDisplayRecordLike } from "./goal-display.ts";
 import type { GoalTask, GoalTaskList } from "./goal-record.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
 
-export type GoalStatusLike = "active" | "paused" | "blocked" | "budget_limited" | "complete";
+type GoalStatusLike = "active" | "paused" | "blocked" | "budget_limited" | "complete";
 export interface GoalPolicyRecordLike extends GoalDisplayRecordLike {
 	id: string;
 	status: GoalStatusLike;
@@ -12,15 +12,15 @@ export interface GoalPolicyRecordLike extends GoalDisplayRecordLike {
 	taskList?: GoalTaskList;
 }
 
-export type PolicyValidation =
+type PolicyValidation =
 	| { ok: true }
 	| { ok: false; message: string };
 
-export function isRunnableStatus(status: GoalStatusLike): boolean {
+function isRunnableStatus(status: GoalStatusLike): boolean {
 	return status === "active";
 }
 
-export function isCompletableStatus(status: GoalStatusLike): boolean {
+function isCompletableStatus(status: GoalStatusLike): boolean {
 	// A budget-limited goal is NOT completed by the transition itself, but the
 	// user (or the model on explicit evidence) may still complete it. A blocked
 	// goal is the model's terminal surrender — resume or clear it instead.
@@ -92,7 +92,7 @@ export function taskCompletionBlockWarning(taskList: GoalTaskList): string | nul
  * Count the maximum nesting depth of a task's subtask tree.
  * Root level = 0. Returns the deepest nesting depth found.
  */
-export function measureSubtaskDepth(task: GoalTask): number {
+function measureSubtaskDepth(task: GoalTask): number {
 	if (!task.subtasks || task.subtasks.length === 0) return 0;
 	let maxChild = 0;
 	for (const child of task.subtasks) {
@@ -207,7 +207,7 @@ export function buildCompletionReport(args: { detailedSummary: string; auditorRe
 	return lines.join("\n");
 }
 
-export interface GoalCreatedReportArgs {
+interface GoalCreatedReportArgs {
 	objective: string;
 	detailedSummary?: string | null;
 	/**

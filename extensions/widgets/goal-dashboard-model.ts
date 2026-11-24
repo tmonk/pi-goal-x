@@ -103,7 +103,7 @@ export interface DashboardTaskNode {
 	completedSubtasks: number;
 }
 
-export interface GoalDashboardModelOptions {
+interface GoalDashboardModelOptions {
 	commands?: GoalCommands;
 	maxAutonomousRuns?: number;
 	idleContinuationBackoff?: boolean;
@@ -121,7 +121,7 @@ export interface GoalDashboardModelOptions {
 // Status derivation
 // ---------------------------------------------------------------------------
 
-export interface DashboardGoalStatus {
+interface DashboardGoalStatus {
 	code: DashboardStatusCode;
 	label: string;
 	/** Footer-status label (goal-core statusLabel: running / paused (agent) /
@@ -166,7 +166,7 @@ export function deriveGoalStatus(goal: GoalRecord): DashboardGoalStatus {
 // Task progress (plan §9)
 // ---------------------------------------------------------------------------
 
-export interface TaskProgress {
+interface TaskProgress {
 	completed: number;
 	total: number;
 	percentage: number;
@@ -212,7 +212,7 @@ export function flattenTaskTree(tasks: readonly GoalTask[] | undefined, currentT
 // Current task (plan §7.2, §9.3)
 // ---------------------------------------------------------------------------
 
-export interface CurrentTaskSubtaskProgress {
+interface CurrentTaskSubtaskProgress {
 	completedSubtasks: number;
 	totalSubtasks: number;
 	subtaskPercentage: number;
@@ -237,7 +237,7 @@ export function deriveCurrentTaskSubtaskProgress(current: { id: string }, tasks:
 	};
 }
 
-export interface DashboardCurrentTask extends CurrentTaskSubtaskProgress {
+interface DashboardCurrentTask extends CurrentTaskSubtaskProgress {
 	id: string;
 	title: string;
 	depth: number;

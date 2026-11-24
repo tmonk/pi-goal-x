@@ -13,7 +13,7 @@ export interface FileLock {
 	release(): void;
 }
 
-export interface FileLockOptions {
+interface FileLockOptions {
 	attempts: number;
 	retryMs: number;
 	staleTtlMs: number;

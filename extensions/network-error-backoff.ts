@@ -19,7 +19,7 @@ export interface NetworkErrorRecoveryPolicy {
 	maxDelayMs: number;
 }
 
-export const DEFAULT_NETWORK_ERROR_RECOVERY_POLICY: NetworkErrorRecoveryPolicy = {
+const DEFAULT_NETWORK_ERROR_RECOVERY_POLICY: NetworkErrorRecoveryPolicy = {
 	maxAttempts: 0,
 	maxDelayMs: NETWORK_ERROR_BACKOFF_DELAYS_MS[NETWORK_ERROR_BACKOFF_DELAYS_MS.length - 1]!,
 };

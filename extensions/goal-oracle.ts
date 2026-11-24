@@ -48,7 +48,7 @@ function taskStateFingerprint(goal: GoalRecord): string {
 	return createHash("sha256").update(lines.join("|")).digest("hex").slice(0, 16);
 }
 
-export interface BlockerFingerprintInput {
+interface BlockerFingerprintInput {
 	goalId: string;
 	objectiveHash: string;
 	verificationContractHash: string;
@@ -112,11 +112,11 @@ export type OracleAdvice = {
 	disposition: "actionable" | "needs_human" | "insufficient_context";
 };
 
-export type OracleRunResult =
+type OracleRunResult =
 	| { ok: true; advice: OracleAdvice }
 	| { ok: false; errorCode: "config" | "provider" | "aborted" | "invalid_output"; message: string };
 
-export function buildBlockerOraclePrompt(args: {
+function buildBlockerOraclePrompt(args: {
 	goal: GoalRecord;
 	reason: string;
 	attemptedActions: string[];

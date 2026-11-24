@@ -41,14 +41,14 @@ export type GoalLedgerEvent =
 
 export type GoalLedgerContext = GoalStorageContext;
 
-export interface GoalLedgerReadResult {
+interface GoalLedgerReadResult {
 	events: GoalLedgerEvent[];
 	malformed: number;
 	/** Opaque generation for borrowed, read-only history views; replaced on append/refresh. */
 	revision?: object;
 }
 
-export interface ReconstructedGoalState {
+interface ReconstructedGoalState {
 	goalId: string;
 	latestStatus: "active" | "paused" | "complete" | "aborted" | "unknown";
 	latestFocus: boolean;
@@ -65,7 +65,7 @@ export interface ReconstructedGoalState {
 	resumedAt?: string;
 }
 
-export interface ReconstructedLedgerState {
+interface ReconstructedLedgerState {
 	focusedGoalId: string | null;
 	goals: Map<string, ReconstructedGoalState>;
 	terminalGoals: Map<string, ReconstructedGoalState>;
@@ -79,7 +79,7 @@ export function goalLedgerPath(ctx: GoalLedgerContext): string {
 	return goalStoragePath(ctx, GOAL_LEDGER_FILE);
 }
 
-export type GoalLedgerAppendResult = { ok: true } | { ok: false; error: unknown };
+type GoalLedgerAppendResult = { ok: true } | { ok: false; error: unknown };
 
 /**
  * Append one ledger event. Returns a discriminated result instead of swallowing
@@ -265,7 +265,7 @@ export const LEDGER_CHECKPOINT_VERSION = 4;
 const CHECKPOINT_RECENT_CAP = 12;
 
 /** In-memory ledger checkpoint (maps in native form). */
-export interface LedgerCheckpoint {
+interface LedgerCheckpoint {
 	version: typeof LEDGER_CHECKPOINT_VERSION;
 	format: "goal-ledger-checkpoint";
 	createdAt: string;
@@ -280,7 +280,7 @@ export interface LedgerCheckpoint {
 	runtimeIndex: Map<string, GoalLedgerIndex>;
 }
 
-export interface LedgerStateReadResult {
+interface LedgerStateReadResult {
 	state: ReconstructedLedgerState;
 	recentEventsByGoal: Map<string, GoalLedgerEvent[]>;
 	malformed: number;
@@ -783,7 +783,7 @@ export function reconstructGoalLedger(events: GoalLedgerEvent[]): ReconstructedL
  * so a checkpoint can store the accumulator mid-stream and replay only the
  * ledger tail by applying the remaining events, then finalizing once.
  */
-export interface ReconstructAccumulator {
+interface ReconstructAccumulator {
 	goals: Map<string, ReconstructedGoalState>;
 	terminalGoals: Map<string, ReconstructedGoalState>;
 	focusedGoalId: string | null;
@@ -791,7 +791,7 @@ export interface ReconstructAccumulator {
 	focusGenByGoal: Map<string, number>;
 }
 
-export function freshAccumulator(): ReconstructAccumulator {
+function freshAccumulator(): ReconstructAccumulator {
 	return {
 		goals: new Map(),
 		terminalGoals: new Map(),

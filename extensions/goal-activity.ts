@@ -30,7 +30,7 @@ export interface GoalActivityItem {
 	marker?: "done" | "current" | "skipped";
 }
 
-export interface DeriveGoalActivityOptions {
+interface DeriveGoalActivityOptions {
 	/** taskId → title lookup; falls back to the raw task id when absent. */
 	taskTitles?: ReadonlyMap<string, string>;
 	/** Maximum items to return (the latest N, in chronological order). Default 5. */
@@ -38,9 +38,9 @@ export interface DeriveGoalActivityOptions {
 }
 
 /** Completion evidence longer than this is omitted (kept only for full history). */
-export const CONCISE_EVIDENCE_MAX = 48;
+const CONCISE_EVIDENCE_MAX = 48;
 /** Lifecycle reasons (pause/block/skip) longer than this are truncated. */
-export const ACTIVITY_REASON_MAX = 80;
+const ACTIVITY_REASON_MAX = 80;
 
 function quote(title: string): string {
 	return `“${title}”`;
@@ -143,7 +143,7 @@ export function indexedActivityEvents(events: GoalLedgerEvent[]): GoalLedgerEven
 }
 
 /** Stable event identity for append-order deduplication, independent of title edits. */
-export function activityEventKey(event: GoalLedgerEvent): string | undefined {
+function activityEventKey(event: GoalLedgerEvent): string | undefined {
 	const item = mapEvent(event, undefined);
 	return item ? `${item.kind}:${item.text}` : undefined;
 }

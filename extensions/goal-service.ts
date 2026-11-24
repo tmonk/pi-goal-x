@@ -23,7 +23,7 @@ import { mergeFocusedGoalWithDisk } from "./goal-pool.ts";
  * (continuation queue, accounting, nudge state, tools, UI) remain in the
  * extension's event handlers.
  */
-export interface GoalDiagnostic {
+interface GoalDiagnostic {
 	severity: "warning";
 	source: "ledger" | "storage";
 	goalId?: string;
@@ -53,9 +53,9 @@ export interface GoalServiceRef {
 	onDiagnostic(diagnostic: GoalDiagnostic): void;
 }
 
-export type GoalServiceContext = GoalFileContext;
+type GoalServiceContext = GoalFileContext;
 
-export interface GoalMutationSpec {
+interface GoalMutationSpec {
 	/** If provided, the focused goal id must equal this or the mutation is rejected. */
 	expectedGoalId?: string | null;
 	/** If provided, the token must still be current (same goal id + focus revision). */
@@ -74,7 +74,7 @@ export interface GoalMutationSpec {
 	commitFocused?: boolean;
 }
 
-export interface GoalMutationResult {
+interface GoalMutationResult {
 	ok: true;
 	goal: GoalRecord;
 	previousGoalId: string | null;
@@ -82,7 +82,7 @@ export interface GoalMutationResult {
 	focusChanged: boolean;
 }
 
-export interface GoalMutationFailure {
+interface GoalMutationFailure {
 	ok: false;
 	message: string;
 }
@@ -128,7 +128,7 @@ export interface GoalTaskUpdateSpec {
 	ledger?(written: GoalRecord, updatedTask: GoalTask): GoalLedgerEvent[];
 }
 
-export type GoalTaskUpdateOutcome = { ok: true; goal: GoalRecord; task: GoalTask } | { ok: false; message: string };
+type GoalTaskUpdateOutcome = { ok: true; goal: GoalRecord; task: GoalTask } | { ok: false; message: string };
 
 /**
  * §8 execution-focus resolution for a task update: an explicit start sets the

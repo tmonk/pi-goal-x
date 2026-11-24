@@ -32,11 +32,11 @@ export const GOAL_AUDIT_ENTRY = "pi-goal-audit-event";
  * turn ends without any of these having been called, we DO NOT queue the next
  * autoContinue — the agent was just chatting. This stops infinite chat loops.
  */
-export const GOAL_PROGRESS_TOOL_SET = new Set<string>(GOAL_PROGRESS_TOOL_NAMES);
+const GOAL_PROGRESS_TOOL_SET = new Set<string>(GOAL_PROGRESS_TOOL_NAMES);
 
 // ---------- summaries ----------
 
-export function usageLines(goal: GoalRecord): string[] {
+function usageLines(goal: GoalRecord): string[] {
 	return [
 		`Time spent: ${formatDuration(goal.usage.activeSeconds)}`,
 		`Tokens used: ${formatTokenValue(goal.usage.tokensUsed)}`,
@@ -114,7 +114,7 @@ export function renderGoalResult(result: { details?: unknown; content: Array<{ t
 	return new Text(theme.fg("accent", "Goal ") + theme.fg("muted", oneLineSummary(details.goal)), 0, 0);
 }
 
-export function normalizeGoalEventDetails(value: unknown): GoalEventDetails {
+function normalizeGoalEventDetails(value: unknown): GoalEventDetails {
 	const raw = asRecord(value);
 	// "checkpoint" is the only kind writers emit today; "stale" remains a
 	// legacy read for historical checkpoint entries.
@@ -300,7 +300,7 @@ export function hasNetworkErrorAssistantMessage(messages: unknown[]): boolean {
 	return messages.some(isNetworkErrorAssistantMessage);
 }
 
-export function usageChannelTokens(value: unknown): number {
+function usageChannelTokens(value: unknown): number {
 	if (typeof value !== "number" || !Number.isFinite(value)) return 0;
 	return Math.max(0, Math.trunc(value));
 }

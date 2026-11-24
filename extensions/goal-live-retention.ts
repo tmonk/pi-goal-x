@@ -23,12 +23,12 @@ import { asRecord } from "./goal-record.ts";
  * structure.
  */
 
-export const LIVE_CONTEXT_TYPE = "pi-goal-live-context";
+const LIVE_CONTEXT_TYPE = "pi-goal-live-context";
 
-export type LiveTailKind = "goal-state" | "goal-counters";
+type LiveTailKind = "goal-state" | "goal-counters";
 
 /** A request-only tail message. Never persisted; the hook replays it per request. */
-export interface LiveMessage {
+interface LiveMessage {
 	role: "custom";
 	customType: typeof LIVE_CONTEXT_TYPE;
 	content: string;
@@ -45,7 +45,7 @@ export interface LiveMessage {
 export const MAX_RETAINED_LIVE_TAILS = 32;
 
 /** Upper bound on concurrently tracked sessions (parent plus isolated runs). */
-export const MAX_TRACKED_SESSIONS = 16;
+const MAX_TRACKED_SESSIONS = 16;
 /**
  * Extra historical snapshots (task list, usage, runs), excluding the single
  * current policy block. Past this a full reset happens. Old snapshots are
@@ -54,7 +54,7 @@ export const MAX_TRACKED_SESSIONS = 16;
  */
 export const MAX_RETAINED_COUNTER_BYTES = 16384;
 
-export interface FreshLiveTails {
+interface FreshLiveTails {
 	state: string;
 	counters?: string | undefined;
 }

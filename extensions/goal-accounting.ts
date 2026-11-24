@@ -11,12 +11,12 @@
  * one-time `budget_limited` transition.
  */
 
-export interface AccountingCharge {
+interface AccountingCharge {
 	tokens: number;
 	seconds: number;
 }
 
-export interface BudgetLike {
+interface BudgetLike {
 	tokenBudget?: number;
 	usage: { tokensUsed: number };
 }

@@ -109,7 +109,7 @@ export interface AuditorWidgetProgress {
 	auditorLabel?: string;
 }
 
-export interface GoalWidgetOptions {
+interface GoalWidgetOptions {
 	theme: Theme;
 	tui: TUI;
 	getGoal: () => GoalWidgetRecord | null;

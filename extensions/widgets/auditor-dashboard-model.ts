@@ -10,9 +10,9 @@
 import type { AuditorProgress } from "../goal-auditor.ts";
 import { formatDashboardDuration } from "./goal-dashboard-model.ts";
 
-export type AuditCheckState = "pending" | "running" | "passed" | "failed";
+type AuditCheckState = "pending" | "running" | "passed" | "failed";
 
-export type AuditCheckId = "objective" | "verification" | "tasks" | "workspace" | "decision";
+type AuditCheckId = "objective" | "verification" | "tasks" | "workspace" | "decision";
 
 export interface AuditCheck {
 	id: AuditCheckId;
@@ -51,7 +51,7 @@ const CHECK_LABELS: Array<{ id: AuditCheckId; label: string }> = [
 	{ id: "decision", label: "Final decision" },
 ];
 
-export interface DeriveAuditorDashboardOptions {
+interface DeriveAuditorDashboardOptions {
 	auditorLabel?: string;
 	/** Result verdict when known (set after the audit session finishes). */
 	verdict?: AuditVerdict | null;

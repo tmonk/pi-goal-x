@@ -27,24 +27,24 @@ import { invalidateGoalPoolCache, parseGoalFile, readActiveGoalPool, type GoalFi
 export const GOALS_DIR = ".pi/goals";
 export const RECOVERY_BACKUP_DIR = ".pi/goals/.recovery-backup";
 
-export interface MalformedGoalFileEntry {
+interface MalformedGoalFileEntry {
 	relPath: string;
 	error: string;
 }
 
-export interface StaleLockEntry {
+interface StaleLockEntry {
 	fileName: string;
 	pid: number;
 	startedAt: string;
 	ageMs: number;
 }
 
-export interface OrphanedSnapshotEntry {
+interface OrphanedSnapshotEntry {
 	goalId: string;
 	activePath: string;
 }
 
-export interface RecoveryReport {
+interface RecoveryReport {
 	scannedAt: string;
 	malformedGoalFiles: MalformedGoalFileEntry[];
 	malformedLedgerLines: number;
@@ -53,7 +53,7 @@ export interface RecoveryReport {
 	healthy: boolean;
 }
 
-export interface RecoveryRepairResult {
+interface RecoveryRepairResult {
 	applied: string[];
 	backupDir: string | null;
 	confirmed: boolean;

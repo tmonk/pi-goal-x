@@ -27,12 +27,12 @@ import { formatCheckpointHealthReport, type CheckpointHealth } from "./goal-sess
 export const GOAL_STATUS_WIDTH = 78;
 
 /** Identity theme: the box text is emitted as plain text for ctx.ui.notify. */
-export const PLAIN_THEME = {
+const PLAIN_THEME = {
 	fg: (_color: string, value: string) => value,
 	bold: (value: string) => value,
 } as never;
 
-export interface GoalStatusTextOptions {
+interface GoalStatusTextOptions {
 	commands?: GoalCommands;
 	keybindings?: GoalKeybindings;
 	maxAutonomousRuns?: number;

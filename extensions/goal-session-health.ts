@@ -17,7 +17,7 @@ const V2_MARKER_PATTERN =
 	/^<pi_goal_continuation\s+goal_id="[^"]+"\s+kind="checkpoint"\s+v="2"\s*\/>$/;
 
 /** Approximate persisted size of one repaired marker, used for projections. */
-export const REPAIRED_MARKER_ESTIMATE_CHARS = "<pi_goal_continuation goal_id=xxxxxxxxxxxxxxxxxxxx kind=\"checkpoint\" v=\"2\"/>".length;
+const REPAIRED_MARKER_ESTIMATE_CHARS = "<pi_goal_continuation goal_id=xxxxxxxxxxxxxxxxxxxx kind=\"checkpoint\" v=\"2\"/>".length;
 
 export interface CheckpointHealth {
 	total: number;

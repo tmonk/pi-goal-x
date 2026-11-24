@@ -10,7 +10,7 @@
 
 import { GOAL_THINKING_LEVELS } from "./goal-settings.ts";
 
-export type AuditorModelSummary = { provider: string; id: string; name?: string };
+type AuditorModelSummary = { provider: string; id: string; name?: string };
 
 export type AuditorChoice =
 	| { kind: "default"; label: string }
@@ -19,7 +19,7 @@ export type AuditorChoice =
 
 export const AUDITOR_THINKING_LEVELS = GOAL_THINKING_LEVELS;
 
-export function auditorModelLabel(model: AuditorModelSummary): string {
+function auditorModelLabel(model: AuditorModelSummary): string {
 	return `${model.provider}/${model.id}${model.name && model.name !== model.id ? ` — ${model.name}` : ""}`;
 }
 
