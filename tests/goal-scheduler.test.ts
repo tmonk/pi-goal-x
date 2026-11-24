@@ -4,14 +4,13 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import goalExtension from "../extensions/goal.ts";
-import type { GoalCore } from "../extensions/goal-state.ts";
 import { createGoal, goalFocusDetails, cloneGoal, normalizeGoalRecord } from "../extensions/goal-record.ts";
 import { writeActiveGoalFile, parseGoalFile } from "../extensions/storage/goal-files.ts";
 import { invalidateGoalSettingsCache } from "../extensions/settings/files.ts";
 import { loadGoalSettings } from "../extensions/settings/resolve.ts";
 import { newGoalScheduler, normalizeGoalScheduler, schedulerSummary } from "../extensions/goal-scheduler-state.ts";
 import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "../extensions/goal-drafting.ts";
+import { createExtensionHarness } from "./support/extension-harness.ts";
 import { writeProjectSettings, parseSettings } from "./support/settings.ts";
 
 async function fixture(t: TestContext, limit?: number, owner = "owner", existing?: string, strict = true, idleBackoff = false) {
@@ -26,16 +25,15 @@ async function fixture(t: TestContext, limit?: number, owner = "owner", existing
 	const goal = createGoal({ objective: "Test explicit scheduling", autoContinue: true, sisyphus: false });
 	goal.id = "scheduler-fixture";
 	if (!existing) writeActiveGoalFile({ cwd }, goal);
-	const handlers: Record<string, Function> = {};
-	const tools = new Map<string, any>();
-	const sent: any[] = [];
-	const notifications: string[] = [];
 	const listeners = new Map<string, Function>();
-	let aborts = 0;
-	const pi = { registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand: () => {}, on: (event: string, handler: Function) => { handlers[event] = handler; }, getActiveTools: () => ["read", "write", "bash"], setActiveTools: () => {}, appendEntry: () => {}, registerMessageRenderer: () => {}, sendMessage: (message: unknown) => { sent.push(message); }, sendUserMessage: () => {}, events: { on: (name: string, fn: Function) => { listeners.set(name, fn); return () => listeners.delete(name); }, emit: (name: string, event: unknown) => listeners.get(name)?.(event) } };
-	const ctx = { cwd, hasUI: false, isIdle: () => true, hasPendingMessages: () => false, abort: () => { aborts++; }, getSystemPrompt: () => "base", sessionManager: { getSessionId: () => owner, getCwd: () => cwd, getRoot: () => cwd, getBranch: () => [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") }] }, ui: { notify: (message: string) => notifications.push(message), setStatus: () => {}, setWidget: () => {} } } as unknown as ExtensionContext;
-	goalExtension(pi as any);
-	const core = (pi as any)._goalCore as GoalCore;
+	const events = { on: (name: string, fn: Function) => { listeners.set(name, fn); return () => listeners.delete(name); }, emit: (name: string, event: unknown) => listeners.get(name)?.(event) };
+	const harness = createExtensionHarness({
+		cwd,
+		sessionId: owner,
+		sessionEntries: [{ type: "custom", customType: "pi-goal-focus", data: goalFocusDetails(goal.id, "created") }],
+		pi: { getActiveTools: () => ["read", "write", "bash"], events },
+	});
+	const { core, ctx } = harness;
 	await core.loadState(ctx);
 	core.scheduler.attach(ctx);
 	t.after(() => {
@@ -45,10 +43,10 @@ async function fixture(t: TestContext, limit?: number, owner = "owner", existing
 		invalidateGoalSettingsCache();
 	});
 	const begin = () => core.scheduler.begin(ctx);
-	const admit = () => { begin(); core.scheduler.message(ctx, { ...sent.at(-1), role: "custom" }); };
+	const admit = () => { begin(); core.scheduler.message(ctx, { ...harness.sentMessages.at(-1), role: "custom" }); };
 	const ready = () => core.scheduler.declare(ctx, { kind: "ready" });
 	const wait = () => core.scheduler.declare(ctx, { kind: "wait", reason: "Await fixture job", deadline: new Date(Date.now() + 10000).toISOString(), polling: { interval_seconds: 1, max_checks: 2 } });
-	return { cwd, ctx, core, handlers, tools, sent, notifications, begin, admit, ready, wait, pi, aborts: () => aborts };
+	return Object.assign(harness, { cwd, events, handlers: Object.fromEntries(harness.handlers) as Record<string, Function>, sent: harness.sentMessages, begin, admit, ready, wait, aborts: () => harness.abortCount });
 }
 
 test("explicit zero means no automatic model runs, even for missing disposition", async t => {
@@ -147,10 +145,10 @@ test("early wake and check timer race produce one claimed run", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
 	h.begin(); assert.equal(h.wait().terminate, true);
 	const w = h.core.state.goal!.scheduler!.wait!;
-	h.pi.events.emit("pi-goal:wake", { goalId: h.core.state.goal!.id, waitToken: w.token });
+	h.events.emit("pi-goal:wake", { goalId: h.core.state.goal!.id, waitToken: w.token });
 	assert.equal(h.sent.length, 0, "signal before settlement must not start a run");
 	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
-	h.pi.events.emit("pi-goal:wake", { goalId: h.core.state.goal!.id, waitToken: w.token });
+	h.events.emit("pi-goal:wake", { goalId: h.core.state.goal!.id, waitToken: w.token });
 	t.mock.timers.tick(1000);
 	assert.equal(h.sent.length, 1);
 	assert.equal(h.core.state.goal?.scheduler?.dispatch?.kind, "wake");
