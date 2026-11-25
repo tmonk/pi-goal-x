@@ -50,6 +50,27 @@ export const MAX_OBJECTIVE_BLOCK_CHARS = 1_500;
 /** Cap on pending tasks rendered inline in the prompt (P1-4 trim). */
 const MAX_PENDING_RENDERED = 3;
 
+/** A phase is a task with real children: it has to be closed on its own terms. */
+function awaitingWrapUp(task: GoalTask): boolean {
+	return task.lightweightSubtasks !== true && task.subtasks !== undefined && task.subtasks.length > 0;
+}
+
+/**
+ * The earliest pending phase whose own subtasks have all ended.
+ *
+ * Completing the last subtask clears `currentTaskId` (`resolveUpdatedCurrentTaskId`
+ * in `goal-task-update.ts`), so the phase that still has to be closed has nothing
+ * pointing at it: it renders as one more `[ ]` line among the pending roots and
+ * the model moves on to the next phase. Pre-order keeps this inside-out for
+ * nested phases, because a parent only qualifies once every child has ended.
+ */
+export function wrapUpPhase(goal: GoalRecord, settings?: GoalSettings): GoalTask | undefined {
+	if (settings?.disableTasks || !goal.taskList?.tasks.length) return undefined;
+	return taskIndex(goal.taskList.tasks).ordered
+		.map(entry => entry.task)
+		.find(task => task.status === "pending" && awaitingWrapUp(task) && task.subtasks!.every(child => child.status === "complete" || child.status === "skipped"));
+}
+
 /**
  * PR E prompt profile: compact-v2 (default) removes duplicate renderings;
  * legacy-v1 is the emergency A/B fallback for one minor release. It restores
@@ -107,6 +128,13 @@ export function taskListBlock(goal: GoalRecord, settings?: GoalSettings): string
 	const pending = pendingTasks.length;
 	const lines: string[] = [];
 	lines.push(`[TASK LIST — ${complete}/${total} tasks complete${skipped > 0 ? ` (${skipped} skipped)` : ""}]`);
+	// Say what the pending roots no longer say: this one has no open child left,
+	// so the only work it offers is its own acceptance and completion.
+	const wrapUp = wrapUpPhase(goal, settings);
+	if (wrapUp && wrapUp.id !== goal.currentTaskId) {
+		const id = excerpt(wrapUp.id, 80, "tasks");
+		lines.push(`  Wrap-up: every subtask of ${id} has ended and ${id} is still pending. Close it with update_goal_task({task_id:"${id}", status:"complete"}) once its own acceptance is met, instead of moving on to the next phase.`);
+	}
 	// §8.1: surface the persisted execution focus (current task), with its
 	// verification contract when present, so the next continuation prompt
 	// carries the contract of the task the agent is working on.

@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- A phase whose subtasks have all ended is now named in the task block as needing wrap-up, instead of silently becoming one more pending line. Completing a subtask clears the current task, and nothing pointed at the phase afterwards, so agents moved on to the next phase and left it open.
+
 ### Changed
 
 - Goal turns are faster and gentler on slow disks, with no change to prompts or behavior. Checking the history on every request no longer gets slower as a session grows (a goal turn at 2.8 MiB of history went from 32 ms to 7 ms). A turn saves the goal file once instead of twice, so file operations per turn fall from 44 to 22. Locks and goal writes skip needless folder checks. `/goal-settings`, `/goal-status` and `/goal-recovery` load when first used. Prompt-cache results are identical.
