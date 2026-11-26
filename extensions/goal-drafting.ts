@@ -197,7 +197,7 @@ export async function startGoalDrafting(core: GoalDraftingCore, ctx: ExtensionCo
 	ctx.ui.notify(trimmed
 		? t("{label} started: {topic}. The agent will clarify, propose a goal and tasks where useful, then ask you to confirm.", { label, topic: trimmed.slice(0, 60) })
 		: t("{label} started. The agent will clarify, propose a goal and tasks where useful, then ask you to confirm.", { label }), "info");
-	const prompt = mode === "tweak" ? tweakDraftPrompt(trimmed, targetGoal) : goalDraftingPrompt(trimmed, mode, core.loadedCommands);
+	const prompt = mode === "tweak" ? tweakDraftPrompt(trimmed, targetGoal) : goalDraftingPrompt(trimmed, mode, core.loadedCommands, loadGoalSettings(ctx.cwd).draftStyle);
 	try {
 		core.pi.sendUserMessage(prompt, { deliverAs: ctx.isIdle() ? "followUp" : "steer" });
 	} catch (err) {

@@ -71,7 +71,7 @@ export function buildTweakConfirmationText(args: {
 	return lines.join("\n");
 }
 
-export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, commands?: GoalCommands): string {
+export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, commands?: GoalCommands, style: "ask" | "propose" = "ask"): string {
 	const safeTopic = promptSafeObjective(topic.trim() || "(no topic provided — ask the user what they want to accomplish)");
 	const header = focus === "sisyphus"
 		? "[GOAL CONFIRMATION focus=sisyphus]\nThe user invoked Sisyphus intent discussion (/sisyphus). Help turn their request into a confirmed goal contract. Do NOT start substantive work yet."
@@ -80,9 +80,14 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 	const commonProtocol = [
 		"How to draft:",
 		"- Keep this a short conversation. Do not start the work until the user confirms.",
-		"- If the request is vague, ask a focused question with a suggested answer. goal_questionnaire shows questions in a dialog; plain chat is fine too.",
-		"- Read-only research is fine if it helps define the goal.",
-		"- Make the objective, success criteria, boundaries, constraints and blocker rule clear. Keep asking until they are. If the request already covers them, propose right away.",
+		...(style === "propose" ? [
+			"- Do not interview the user. Call propose_goal_draft right away. Where the request is unclear, pick a sensible default and list it on an \"Assumptions:\" line in the objective, so the user can correct it before confirming.",
+			"- Read-only research is fine if it helps define the goal.",
+		] : [
+			"- If the request is vague, ask a focused question with a suggested answer. goal_questionnaire shows questions in a dialog; plain chat is fine too.",
+			"- Read-only research is fine if it helps define the goal.",
+			"- Make the objective, success criteria, boundaries, constraints and blocker rule clear. Keep asking until they are. If the request already covers them, propose right away.",
+		]),
 		"- If the work splits into milestones you can track, you MUST pass them in the tasks argument of propose_goal_draft, so the user confirms the goal and tasks together. Simple goals need no tasks. Once the goal exists, set_goal_tasks changes the task list.",
 		"- Set token_budget only if the user asked for a budget or spend limit. Never estimate one.",
 		"- propose_goal_draft opens a dialog that shows the full proposal, so do not repeat it in chat first. Confirm creates and focuses the goal; Continue Chatting keeps the draft open.",
@@ -96,7 +101,7 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 		"Success criteria: <observable evidence the goal is done>",
 		"Boundaries: <in scope / out of scope>",
 		"Constraints: <hard rules>",
-		"Verification contract: <optional — what verification evidence is required before marking complete, e.g. 'Run npm test (0 failures), grep for remaining references, re-read requirements and confirm every item is addressed'>",
+		"Verification contract: <optional — what verification evidence is required before marking complete, e.g. 'Run npm test (0 failures), grep for remaining references, re-read requirements and confirm every item is addressed'. To have the extension run a check itself before the audit, add: Verify command: `npm test`>",
 		"If blocked: <default = stop and ask the user>",
 		"Put this whole block, headings included, in the objective argument of propose_goal_draft. The headings are not separate arguments.",
 	];
@@ -109,7 +114,7 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 		"Success criteria: <observable evidence the whole ordered goal is done>",
 		"Boundaries: <in scope / out of scope>",
 		"Constraints: <hard rules, files not to touch, etc.>",
-		"Verification contract: <optional — what verification evidence is required before marking complete>",
+		"Verification contract: <optional — what verification evidence is required before marking complete. To have the extension run a check itself before the audit, add: Verify command: `npm test`>",
 		"Ordered steps: <preserve the user's requested steps and ordering; do not add preflight or reconnaissance steps they did not ask for>",
 		"If blocked / unclear / failing: <default = stop and ask the user>",
 		"Sisyphus reminder: Work patiently and sequentially. No rushing, no unrequested preflight steps, no improvising around blockers.",
