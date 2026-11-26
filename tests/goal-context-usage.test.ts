@@ -137,6 +137,34 @@ test("the registered settings menu edits and resets context display in both scop
 	}
 });
 
+test("the settings menu has a draft style row and shows the oracle model as text", async () => {
+	const h = stabilizationHarness(), previousGlobal = process.env.PI_GOAL_GLOBAL_SETTINGS_FILE;
+	process.env.PI_GOAL_GLOBAL_SETTINGS_FILE = path.join(h.cwd, "global.json");
+	const menus: string[][] = [];
+	try {
+		h.ctx.hasUI = true;
+		const choices = ["row", "Set project override to propose", "Done"];
+		h.ctx.ui.select = async (title: string, options: string[]) => {
+			if (title === "Goal settings") menus.push(options);
+			const next = choices.shift();
+			if (next === "row") return options.find(option => option.startsWith("  draft style:"));
+			assert.ok(next && options.includes(next), `${next} not in ${options.join(" | ")}`);
+			return next;
+		};
+		await h.start();
+		await h.commands.get("goal-settings").handler("", h.ctx);
+		assert.equal(choices.length, 0);
+		assert.ok(menus[0]!.some(option => option.startsWith("  draft style: ask (default)")));
+		assert.ok(menus[1]!.some(option => option.startsWith("  draft style: propose (project override)")));
+		assert.equal(loadGoalSettings(h.cwd).draftStyle, "propose");
+		assert.ok(!menus[0]!.some(option => option.includes("[object Object]")));
+	} finally {
+		if (previousGlobal === undefined) delete process.env.PI_GOAL_GLOBAL_SETTINGS_FILE;
+			else process.env.PI_GOAL_GLOBAL_SETTINGS_FILE = previousGlobal;
+		await h.cleanup();
+	}
+});
+
 test("changing and removing budget or run limits appends a policy block that supersedes the old limits", () => {
 	const goal = createGoal({ objective: "Continue work", autoContinue: true, sisyphus: false });
 	goal.tokenBudget = 100;

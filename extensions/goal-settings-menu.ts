@@ -25,7 +25,9 @@ type SettingRow = {
 	key: keyof GoalSettings | string;
 	label: string;
 	section: string;
-	kind: "boolean" | "modelSelector" | "thinking" | "positiveInteger";
+	kind: "boolean" | "modelSelector" | "thinking" | "positiveInteger" | "choice";
+	/** The allowed values of a "choice" row. */
+	choices?: string[];
 	/** Settings path for the mutation (defaults to [key]). */
 	path?: string[];
 	help?: string;
@@ -44,6 +46,8 @@ const settingRows = (): SettingRow[] => [
 	{ key: "stallTimeoutMinutes", label: t("stall timeout (minutes)"), section: t("Goal behavior"), kind: "positiveInteger" },
 	{ key: "maxIdleTurns", label: t("pause after idle turns (0 = never)"), section: t("Goal behavior"), kind: "positiveInteger" },
 	{ key: "maxGoalMinutes", label: t("goal time limit (minutes, 0 = none)"), section: t("Goal behavior"), kind: "positiveInteger" },
+	{ key: "draftStyle", label: t("draft style"), section: t("Goal behavior"), kind: "choice", choices: ["ask", "propose"],
+		help: t("ask: the drafter asks questions first. propose: it drafts straight away and you tweak it.") },
 	{ key: "objectiveMaxChars", label: t("max objective length (0 = none)"), section: t("Goal behavior"), kind: "positiveInteger" },
 	{ key: "idleContinuationBackoff", label: t("slow repeated idle replies (opt-in)"), section: t("Advanced execution"), kind: "boolean",
 		help: t("Slows repeated replies without recognized work. May delay reasoning or custom tools. For a hard stop, set an autonomous run allowance.") },
@@ -79,6 +83,7 @@ function settingsValue(config: GoalSettings, key: keyof GoalSettings | string): 
 	if (key === "maxIdleTurns") return String(config.maxIdleTurns ?? 4);
 	if (key === "auditorTimeoutMinutes") return String(config.auditorTimeoutMinutes ?? 20);
 	if (key === "maxGoalMinutes") return String(config.maxGoalMinutes ?? 0);
+	if (key === "draftStyle") return config.draftStyle ?? "ask";
 	if (key === "objectiveMaxChars") return config.objectiveMaxChars !== undefined ? String(config.objectiveMaxChars) : "0";
 	if (key === "keybindings") return config.keybindings ? `${config.keybindings.dashboard.toggleExpand}, ${config.keybindings.dashboard.scrollUp}, ${config.keybindings.dashboard.scrollDown}` : "(default)";
 	const value = (config as Record<string, unknown>)[key];
@@ -176,6 +181,24 @@ async function editIntegerRow(edit: RowEdit): Promise<void> {
 	apply(scope, { op: "set", path: rowPath, value: Number(value) });
 }
 
+async function editChoiceRow(edit: RowEdit): Promise<void> {
+	const { ctx, row, scope, rowPath, hasLocalOverride, apply } = edit;
+	const inheritLabel = inheritLabelFor(scope);
+	const cancel = t("Cancel");
+	const choices = row.choices ?? [];
+	const actions = choices.map((choice) => t("Set {scope} override to {choice}", { scope: scopeName(scope), choice }));
+	if (hasLocalOverride) actions.push(inheritLabel);
+	actions.push(cancel);
+	const action = await ctx.ui.select(rowTitle(row, scope), actions);
+	if (!action || action === cancel) return;
+	if (action === inheritLabel) {
+		apply(scope, { op: "unset", path: rowPath });
+		return;
+	}
+	const value = choices[actions.indexOf(action)];
+	if (value !== undefined) apply(scope, { op: "set", path: rowPath, value });
+}
+
 async function editThinkingRow(edit: RowEdit): Promise<void> {
 	const { ctx, row, scope, snapshot, rowPath, hasLocalOverride, apply } = edit;
 	const currentValue = settingsValue(snapshot.value, row.key);
@@ -247,6 +270,7 @@ const ROW_EDITORS: Record<SettingRow["kind"], (edit: RowEdit) => Promise<void>> 
 	positiveInteger: editIntegerRow,
 	thinking: editThinkingRow,
 	modelSelector: editModelRow,
+	choice: editChoiceRow,
 };
 
 /** What the settings menu reads from the session, on top of what the controls dialog needs. */
@@ -320,9 +344,11 @@ export async function handleSettingsMenu(core: SettingsMenuCore, ctx: ExtensionC
 					line = `  ${row.label}: ${settingsValue(snapshot.value, row.key)} ${t("(environment; read-only)")}`;
 				} else {
 					// Nested rows render their leaf value directly.
-					const displayValue = row.path
-						? String(valueAtPath(snapshot.value, row.path) ?? "(default)")
-						: settingsValue(snapshot.value, row.key);
+					const displayValue = row.kind === "modelSelector" && row.path?.[0] === "oracle"
+						? [snapshot.value.oracle?.provider, snapshot.value.oracle?.model].filter(Boolean).join("/") || "(default)"
+						: row.path
+							? String(valueAtPath(snapshot.value, row.path) ?? "(default)")
+							: settingsValue(snapshot.value, row.key);
 					line = `  ${row.label}: ${displayValue} ${sourceLabel(snapshot, localLayer, scope, rowPathOf(row))}`;
 				}
 				rowByOption.set(line, row);
