@@ -101,7 +101,7 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 		"Success criteria: <observable evidence the goal is done>",
 		"Boundaries: <in scope / out of scope>",
 		"Constraints: <hard rules>",
-		"Verification contract: <optional — what verification evidence is required before marking complete, e.g. 'Run npm test (0 failures), grep for remaining references, re-read requirements and confirm every item is addressed'. To have the extension run a check itself before the audit, add: Verify command: `npm test`>",
+		"Verification contract: <optional — what verification evidence is required before marking complete, e.g. 'Run npm test (0 failures), grep for remaining references, re-read requirements and confirm every item is addressed'. To have the extension run a check itself before the audit, add: Verify command: `npm test`. If the user names a command that checks the work, include it in exactly that form.>",
 		"If blocked: <default = stop and ask the user>",
 		"Put this whole block, headings included, in the objective argument of propose_goal_draft. The headings are not separate arguments.",
 	];
@@ -114,7 +114,7 @@ export function goalDraftingPrompt(topic: string, focus: GoalDraftingFocus, comm
 		"Success criteria: <observable evidence the whole ordered goal is done>",
 		"Boundaries: <in scope / out of scope>",
 		"Constraints: <hard rules, files not to touch, etc.>",
-		"Verification contract: <optional — what verification evidence is required before marking complete. To have the extension run a check itself before the audit, add: Verify command: `npm test`>",
+		"Verification contract: <optional — what verification evidence is required before marking complete. To have the extension run a check itself before the audit, add: Verify command: `npm test`. If the user names a command that checks the work, include it in exactly that form.>",
 		"Ordered steps: <preserve the user's requested steps and ordering; do not add preflight or reconnaissance steps they did not ask for>",
 		"If blocked / unclear / failing: <default = stop and ask the user>",
 		"Sisyphus reminder: Work patiently and sequentially. No rushing, no unrequested preflight steps, no improvising around blockers.",
