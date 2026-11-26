@@ -303,7 +303,7 @@ export async function runGoalCompletionAuditor(args: {
 		let toolCalls = 0;
 		const stopForLimit = (why: string) => { if (!limitHit) { limitHit = why; session.abort(); } };
 		const timeoutMs = (config.auditorTimeoutMinutes ?? 0) * 60_000;
-		const limitTimer = timeoutMs > 0 ? setTimeout(() => stopForLimit(`ran longer than ${config.auditorTimeoutMinutes} minutes`), timeoutMs) : undefined;
+		const limitTimer = timeoutMs > 0 ? setTimeout(() => stopForLimit(`ran longer than ${config.auditorTimeoutMinutes} ${config.auditorTimeoutMinutes === 1 ? "minute" : "minutes"}`), timeoutMs) : undefined;
 		limitTimer?.unref?.();
 		const maxToolCalls = config.auditorMaxToolCalls ?? 0;
 		const unsubscribe = session.subscribe((event) => {
