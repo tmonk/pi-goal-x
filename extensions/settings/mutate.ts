@@ -38,7 +38,7 @@ export class SettingsMutationError extends Error {
 function acquireSettingsLock(target: string): FileLock {
 	const lockPath = `${target}.lock`;
 	return acquireFileLock(lockPath, {
-		attempts: 200,
+		attempts: 1000,
 		retryMs: 5,
 		staleTtlMs: 30_000,
 		timeoutError: () => new SettingsMutationError(`Timed out acquiring the settings lock at ${lockPath}. Another writer may hold it.`),
