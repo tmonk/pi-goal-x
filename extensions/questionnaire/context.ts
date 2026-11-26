@@ -2,7 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 /** Where the context renderer sends its lines; the dialog renderer supplies one that wraps and truncates for its width. */
-export interface ContextOutput {
+interface ContextOutput {
 	/** One line, truncated to the dialog width. */
 	line(text: string): void;
 	/** A line wrapped to the dialog width. */

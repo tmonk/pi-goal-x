@@ -2,7 +2,7 @@ import type { GoalRecord } from "./goal-record.ts";
 import { mergeFocusedGoalWithDisk } from "./goal-pool.ts";
 
 /** What reconciling the session's goals with the disk should do. */
-export type ReconcilePlan =
+type ReconcilePlan =
 	/** Memory already matches the disk; `goal` is the focused goal, if any. */
 	| { kind: "unchanged"; goal: GoalRecord | undefined }
 	/** Nothing is focused: just take the disk pool. */
@@ -16,7 +16,7 @@ export type ReconcilePlan =
 	/** The focused goal is gone from the disk. */
 	| { kind: "lost"; pool: Map<string, GoalRecord>; lostGoalId: string | null };
 
-export interface ReconcileInput {
+interface ReconcileInput {
 	/** The focused goal in memory. */
 	current: GoalRecord | null;
 	focusedGoalId: string | null;

@@ -12,7 +12,7 @@ import { t } from "../i18n/index.ts";
  * a tab that draws no options leaves the previous values in place, exactly as
  * the closure-local variables used to.
  */
-export interface RenderLayout {
+interface RenderLayout {
 	/** First option line, or -1 before any options were drawn. */
 	optionsStartIndex: number;
 	/** [first, last] line of each option. */
@@ -25,7 +25,7 @@ export function createRenderLayout(): RenderLayout {
 	return { optionsStartIndex: -1, optionRanges: [], questionBlockEnd: -1 };
 }
 
-export interface RenderArgs {
+interface RenderArgs {
 	/** Read for content; only `scrollTop` and `needsFollow` are written, when the viewport settles. */
 	state: QuestionnaireState;
 	layout: RenderLayout;

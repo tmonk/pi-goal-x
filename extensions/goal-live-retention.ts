@@ -76,7 +76,7 @@ const MAX_TRACKED_SESSIONS = 16;
  */
 export const MAX_RETAINED_COUNTER_BYTES = 24576;
 
-export interface FreshLiveTails {
+interface FreshLiveTails {
 	/** Goal policy. Retained; a change is appended and supersedes earlier blocks. */
 	state: string;
 	/** Task list snapshot. Retained; a change appends a new snapshot. */

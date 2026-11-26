@@ -1,7 +1,7 @@
 import type { GoalRecord, GoalUsage } from "./goal-record.ts";
 
 /** Usage the session added on top of a baseline, never negative. */
-export interface UsageDelta {
+interface UsageDelta {
 	tokens: number;
 	seconds: number;
 }

@@ -20,7 +20,7 @@ import type {
 } from "./goal-core-types.ts";
 
 /** What the task tools read and change. */
-export type TaskToolsCore = HostSlice<"registerTool"> &
+type TaskToolsCore = HostSlice<"registerTool"> &
 	GoalFocusedGoalAccess &
 	GoalOperationGuard &
 	GoalModalAccess &

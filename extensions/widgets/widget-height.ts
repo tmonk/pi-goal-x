@@ -38,7 +38,7 @@ export function boundWidgetRenderLines(lines: string[], terminalRows: number | u
 }
 
 /** The latch that applyStableHeightBound keeps between renders. */
-export interface StableHeightState {
+interface StableHeightState {
 	stickyCap: number | undefined;
 	stickyRegime: string | undefined;
 	stickyTerminalRows: number | undefined;

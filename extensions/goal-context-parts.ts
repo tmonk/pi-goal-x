@@ -41,7 +41,7 @@ import {
  * (kept, appended when it changes), and request-only text sent with every
  * request and never kept: usage, scheduling, notes and one-shot reminders.
  */
-export interface GoalContextParts {
+interface GoalContextParts {
 	state: string;
 	counters?: string;
 	ephemeral?: string;

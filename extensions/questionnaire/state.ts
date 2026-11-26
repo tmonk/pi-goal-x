@@ -27,13 +27,13 @@ export interface QuestionnaireState {
 	drafts: Map<string, string>;
 }
 
-export interface DisplayOption {
+interface DisplayOption {
 	label: string;
 	isCustom?: boolean;
 }
 
 /** What the dialog should do after an answer is recorded. */
-export type AfterAnswer = "submit" | "input" | "select";
+type AfterAnswer = "submit" | "input" | "select";
 
 export function createQuestionnaireState(questions: GoalQuestionnaireQuestion[], auditorToggleInit?: { defaultEnabled: boolean }): QuestionnaireState {
 	return {
@@ -52,7 +52,7 @@ export function createQuestionnaireState(questions: GoalQuestionnaireQuestion[],
 	};
 }
 
-export function totalTabs(state: QuestionnaireState): number {
+function totalTabs(state: QuestionnaireState): number {
 	return state.questions.length + 1;
 }
 
@@ -135,7 +135,7 @@ export function enterQuestion(state: QuestionnaireState, q: GoalQuestionnaireQue
 }
 
 /** The submit summary also opens from the top. */
-export function enterSubmitTab(state: QuestionnaireState): void {
+function enterSubmitTab(state: QuestionnaireState): void {
 	state.optionIndex = 0;
 	state.scrollTop = 0;
 	state.needsFollow = false;
