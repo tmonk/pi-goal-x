@@ -122,7 +122,7 @@ function pausedState(core: GoalContextCore, goal: GoalRecord, ledgerEvents: () =
 	} catch {
 		// Ledger read failure should not break the prompt
 	}
-	const state = `[PI GOAL PAUSED goalId=${goal.id}]\n${untrustedObjectiveBlock(goal)}${pauseExtras.join("\n")}${auditorExtra}\n\nThe goal is paused. Do not autonomously continue substantive work unless the user resumes it with ${commandHint("goal-resume", core.loadedCommands)}. If the user explicitly asks to finish the paused goal and the objective is already satisfied based on available evidence, you may call update_goal({status: "complete"}). To abandon a goal, the user runs ${commandHint("goal-clear", core.loadedCommands)}. Do not report the goal blocked in response to a pause.`;
+	const state = `[PI GOAL PAUSED goalId=${goal.id}]\n${untrustedObjectiveBlock(goal)}${pauseExtras.join("\n")}${auditorExtra}\n\nThe goal is paused. Do not autonomously continue substantive work unless the user resumes it with ${commandHint("goal-resume", core.loadedCommands)}. If the user explicitly asks to finish the paused goal and the objective is already satisfied based on available evidence, you may call update_goal({status: "complete"}). To abandon a goal, the user runs ${commandHint("goal-clear", core.loadedCommands)} or you call goal_control({action: "archive"}) and they confirm. Do not report the goal blocked in response to a pause.`;
 	return { state, scope: goalScope(goal) };
 }
 

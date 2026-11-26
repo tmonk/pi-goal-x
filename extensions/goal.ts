@@ -16,6 +16,7 @@ import { createGoalCore } from "./goal-state.ts";
 import { registerCoreTools } from "./goal-core-tools.ts";
 import { registerTaskTools } from "./goal-task-tools.ts";
 import { registerDraftingTools } from "./goal-drafting-tools.ts";
+import { registerControlTools } from "./goal-control-tools.ts";
 import { runGoalCompletionFlow } from "./goal-completion.ts";
 import { filterGoalSessionContext, isDelegatedGoalSession } from "./goal-session-safety.ts";
 import { registerGoalContext } from "./goal-context.ts";
@@ -48,5 +49,6 @@ export default function goalExtension(
 	registerCoreTools(core, { runGoalCompletionFlow });
 	registerTaskTools(core);
 	registerDraftingTools(core);
+	registerControlTools(core);
 	registerGoalEvents(core);
 }

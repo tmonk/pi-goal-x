@@ -1,7 +1,7 @@
 import { commandHint, commandInstructions } from "./goal-controls.ts";
 import { randomUUID } from "node:crypto";
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { defineTool, type AgentToolResult, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { extractVerificationContract, sisyphusObjectiveSufficient } from "./goal-contract.ts";
 import { buildDraftConfirmationText, buildProposalSummary, buildTweakConfirmationText } from "./prompts/goal-draft-prompts.ts";
@@ -33,7 +33,7 @@ import type {
 } from "./goal-core-types.ts";
 
 /** What the questionnaire and propose tools read and change. */
-type DraftingToolsCore = HostSlice<"registerTool" | "appendEntry"> &
+export type DraftingToolsCore = HostSlice<"registerTool" | "appendEntry"> &
 	GoalFocusedGoalAccess &
 	GoalOperationGuard &
 	GoalModalAccess &
@@ -327,6 +327,126 @@ function renderProposalCall(core: DraftingToolsCore, args: { objective?: unknown
 	return new Text(text, 0, 0);
 }
 
+/** The arguments a proposal (create or revise) is built from. */
+export interface ProposalInput {
+	objective: string;
+	tasks?: FlatTaskInput[];
+	block_completion?: boolean;
+	token_budget?: number | null;
+	auto_continue?: boolean;
+}
+
+/** A proposal that passed validation, with the focused goal already reconciled. */
+export interface PreparedProposal {
+	objective: string;
+	taskList: GoalTaskList | undefined;
+}
+
+/**
+ * Validate a proposal and reconcile the focused goal without touching a draft
+ * or writing anything. Callers that already hold a draft (propose_goal_draft)
+ * and callers that start one themselves (goal_control revise) share this, so a
+ * rejected proposal never leaves a draft behind.
+ */
+export function prepareProposal(
+	core: DraftingToolsCore,
+	ctx: ExtensionContext,
+	params: ProposalInput,
+): { ok: true; value: PreparedProposal } | { ok: false; message: string } {
+	if (params.token_budget !== undefined && params.token_budget !== null) {
+		const validation = validateTokenBudgetInput(params.token_budget);
+		if (!validation.ok) return { ok: false, message: validation.message };
+	}
+	const objective = params.objective.trim();
+	if (!objective) return { ok: false, message: "The proposed objective must be at least 1 character." };
+	const objectiveMaxChars = loadGoalSettings(ctx.cwd).objectiveMaxChars ?? 0;
+	if (objectiveMaxChars > 0 && objective.length > objectiveMaxChars) return { ok: false, message: `The proposed objective must be at most ${objectiveMaxChars} characters (${objective.length} given).` };
+	const taskResult = proposedTaskList(core, ctx, params.tasks, params.block_completion);
+	if (!taskResult.ok) return { ok: false, message: taskResult.message };
+	const flushError = core.goalService.flushForAudit(ctx);
+	if (flushError || core.goalService.isTurnBuffered()) return { ok: false, message: "Proposal not saved: " + (flushError ?? "goal changes are still buffered") };
+	core.reconcileFocusedGoalFromDisk(ctx);
+	return { ok: true, value: { objective, taskList: taskResult.value } };
+}
+
+/**
+ * Show the confirmation dialog for a validated proposal and apply the user's
+ * decision. Confirming a tweak draft revises the SAME goal; it never creates a
+ * replacement goal, so completed work and usage are preserved.
+ */
+export async function applyProposal(
+	core: DraftingToolsCore,
+	ctx: ExtensionContext,
+	draft: ActiveGoalDraft,
+	params: ProposalInput,
+	prepared: PreparedProposal,
+): Promise<AgentToolResult<unknown>> {
+	const reply = (text: string) => goalTextResult(text, core.state.goal);
+	const objective = prepared.objective;
+	const target = draft.mode === "tweak" ? core.state.goal : undefined;
+	if (draft.mode === "tweak" && (!target || target.id !== draft.targetGoalId)) return reply(commandInstructions("The goal changed while drafting; review it and start /goal-tweak again.", core.loadedCommands));
+	if (target?.status === "complete") return goalTextResult("Completed goals cannot be tweaked.", target);
+	const proposalToken = target ? core.state.focusToken(target.id) : undefined;
+	const proposalRevision = target?.revision ?? 0;
+	const proposedBudget = params.token_budget === undefined ? target?.tokenBudget : params.token_budget ?? undefined;
+	const budgetSummary = target ? `Current ${formatGoalBudget(target.tokenBudget)}\nProposed ${formatGoalBudget(proposedBudget)}` : formatGoalBudget(proposedBudget);
+	if (draft.mode === "sisyphus" && !sisyphusObjectiveSufficient(objective)) return reply("A Sisyphus goal needs ordered steps with explicit per-step done criteria. Refine the objective with numbered steps (1) ..., 2) ...) or Step N: blocks before proposing again.");
+	const taskResult = { value: prepared.taskList };
+	const autoContinue = params.auto_continue !== false;
+	let confirmation: { decision: ProposalDecision; auditorEnabled: boolean; unavailable: boolean };
+	if (shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM })) {
+		confirmation = { decision: "confirm" as const, auditorEnabled: draft.auditorEnabled, unavailable: false };
+	} else {
+		core.state.enterModal();
+		try {
+			confirmation = await showProposalDialog(ctx, proposalText(draft, objective, autoContinue, taskResult.value, target ?? undefined, params.token_budget), draft.mode === "sisyphus" ? "sisyphus" : "goal", draft.auditorEnabled);
+		} catch (error) {
+			return reply(`${proposalDialogFailureMessage(error)} Do not retry the dialog until the host issue is resolved.`);
+		} finally {
+			core.state.exitModal();
+		}
+	}
+	const settings = loadGoalSettings(ctx.cwd);
+	const extracted = settings.disableContracts ? { objective, verificationContract: undefined } : extractVerificationContract(objective);
+	// The durable proposal summary is part of the transcript for EVERY
+	// outcome (confirm / continue refining / cancel), so the user can
+	// review the proposal after the dialog closes.
+	const summary = budgetSummary + "\n\n" + buildProposalSummary({
+		objective: extracted.objective,
+		taskList: taskResult.value,
+		verificationContract: extracted.verificationContract,
+		autoContinue,
+		auditorEnabled: confirmation.auditorEnabled,
+	});
+	if (confirmation.decision === "cancel") {
+		clearGoalDrafting(core, ctx);
+		return reply(`${summary}\n\nDraft cancelled; no goal was created. Run ${commandHint("goal", core.loadedCommands)} or ${commandHint("sisyphus", core.loadedCommands)} to start a new draft.`);
+	}
+	if (confirmation.unavailable) {
+		return reply(`${summary}\n\n${DIALOG_UNAVAILABLE_HINT} The goal was NOT created and drafting remains active; do not retry the dialog until the host supports it or the user explicitly restarts with PI_GOAL_AUTO_CONFIRM=1.`);
+	}
+	if (confirmation.decision !== "confirm") {
+		// Continue refining: preserve the user's auditor choice for the
+		// next proposal (memory and the durable session entry).
+		if (confirmation.auditorEnabled !== draft.auditorEnabled) setActiveDraft(core, { ...draft, auditorEnabled: confirmation.auditorEnabled });
+		return reply(`${summary}\n\nGoal draft refinement requested. The goal was not changed; ask what the user wants revised before proposing again.`);
+	}
+	const proposal: ConfirmedProposal = {
+		draft,
+		objective: extracted.objective,
+		verificationContract: extracted.verificationContract,
+		taskList: taskResult.value,
+		autoContinue,
+		proposedBudget,
+		budgetProvided: params.token_budget !== undefined,
+		skipAuditor: confirmation.auditorEnabled === false,
+		summary,
+	};
+	if (draft.mode !== "tweak") return createGoalFromDraft(core, ctx, proposal);
+	if (!target) return reply(commandInstructions("The goal changed while drafting; review it and start /goal-tweak again.", core.loadedCommands));
+	return applyGoalTweak(core, ctx, proposal, target, proposalToken!, proposalRevision);
+}
+
 function registerProposeTool(core: DraftingToolsCore): void {
 	core.pi.registerTool(defineTool({
 		name: PROPOSE_DRAFT_TOOL_NAME,
@@ -346,79 +466,16 @@ function registerProposeTool(core: DraftingToolsCore): void {
 			const reply = (text: string) => goalTextResult(text, core.state.goal);
 			const draft = activeDraft(core);
 			if (!draft) return reply(commandInstructions("No guided goal draft is active. Do not create a goal without the user starting /goal or /sisyphus.", core.loadedCommands));
-			if (params.token_budget !== undefined && params.token_budget !== null) {
-				const validation = validateTokenBudgetInput(params.token_budget);
-				if (!validation.ok) return reply(validation.message);
-			}
-			const objective = params.objective.trim();
-			if (!objective) return reply("The proposed objective must be at least 1 character.");
-			const objectiveMaxChars = loadGoalSettings(ctx.cwd).objectiveMaxChars ?? 0;
-			if (objectiveMaxChars > 0 && objective.length > objectiveMaxChars) return reply(`The proposed objective must be at most ${objectiveMaxChars} characters (${objective.length} given).`);
-			const taskResult = proposedTaskList(core, ctx, params.tasks as FlatTaskInput[] | undefined, params.block_completion);
-			if (!taskResult.ok) return reply(taskResult.message);
-			const flushError = core.goalService.flushForAudit(ctx);
-			if (flushError || core.goalService.isTurnBuffered()) return reply("Proposal not saved: " + (flushError ?? "goal changes are still buffered"));
-			core.reconcileFocusedGoalFromDisk(ctx);
-			const target = draft.mode === "tweak" ? core.state.goal : undefined;
-			if (draft.mode === "tweak" && (!target || target.id !== draft.targetGoalId)) return reply(commandInstructions("The goal changed while drafting; review it and start /goal-tweak again.", core.loadedCommands));
-			if (target?.status === "complete") return goalTextResult("Completed goals cannot be tweaked.", target);
-			const proposalToken = target ? core.state.focusToken(target.id) : undefined;
-			const proposalRevision = target?.revision ?? 0;
-			const proposedBudget = params.token_budget === undefined ? target?.tokenBudget : params.token_budget ?? undefined;
-			const budgetSummary = target ? `Current ${formatGoalBudget(target.tokenBudget)}\nProposed ${formatGoalBudget(proposedBudget)}` : formatGoalBudget(proposedBudget);
-			if (draft.mode === "sisyphus" && !sisyphusObjectiveSufficient(objective)) return reply("A Sisyphus goal needs ordered steps with explicit per-step done criteria. Refine the objective with numbered steps (1) ..., 2) ...) or Step N: blocks before proposing again.");
-			let confirmation: { decision: ProposalDecision; auditorEnabled: boolean; unavailable: boolean };
-			if (shouldAutoConfirmProposal({ hasUI: ctx.hasUI, autoConfirmEnv: process.env.PI_GOAL_AUTO_CONFIRM })) {
-				confirmation = { decision: "confirm" as const, auditorEnabled: draft.auditorEnabled, unavailable: false };
-			} else {
-				core.state.enterModal();
-				try {
-					confirmation = await showProposalDialog(ctx, proposalText(draft, objective, params.auto_continue !== false, taskResult.value, target ?? undefined, params.token_budget), draft.mode === "sisyphus" ? "sisyphus" : "goal", draft.auditorEnabled);
-				} catch (error) {
-					return reply(`${proposalDialogFailureMessage(error)} Do not retry the dialog until the host issue is resolved.`);
-				} finally {
-					core.state.exitModal();
-				}
-			}
-			const settings = loadGoalSettings(ctx.cwd);
-			const extracted = settings.disableContracts ? { objective, verificationContract: undefined } : extractVerificationContract(objective);
-			// The durable proposal summary is part of the transcript for EVERY
-			// outcome (confirm / continue refining / cancel), so the user can
-			// review the proposal after the dialog closes.
-			const summary = budgetSummary + "\n\n" + buildProposalSummary({
-				objective: extracted.objective,
-				taskList: taskResult.value,
-				verificationContract: extracted.verificationContract,
-				autoContinue: params.auto_continue !== false,
-				auditorEnabled: confirmation.auditorEnabled,
-			});
-			if (confirmation.decision === "cancel") {
-				clearGoalDrafting(core, ctx);
-				return reply(`${summary}\n\nDraft cancelled; no goal was created. Run ${commandHint("goal", core.loadedCommands)} or ${commandHint("sisyphus", core.loadedCommands)} to start a new draft.`);
-			}
-			if (confirmation.unavailable) {
-				return reply(`${summary}\n\n${DIALOG_UNAVAILABLE_HINT} The goal was NOT created and drafting remains active; do not retry the dialog until the host supports it or the user explicitly restarts with PI_GOAL_AUTO_CONFIRM=1.`);
-			}
-			if (confirmation.decision !== "confirm") {
-				// Continue refining: preserve the user's auditor choice for the
-				// next proposal (memory and the durable session entry).
-				if (confirmation.auditorEnabled !== draft.auditorEnabled) setActiveDraft(core, { ...draft, auditorEnabled: confirmation.auditorEnabled });
-				return reply(`${summary}\n\nGoal draft refinement requested. The goal was not changed; ask what the user wants revised before proposing again.`);
-			}
-			const proposal: ConfirmedProposal = {
-				draft,
-				objective: extracted.objective,
-				verificationContract: extracted.verificationContract,
-				taskList: taskResult.value,
-				autoContinue: params.auto_continue !== false,
-				proposedBudget,
-				budgetProvided: params.token_budget !== undefined,
-				skipAuditor: confirmation.auditorEnabled === false,
-				summary,
+			const input: ProposalInput = {
+				objective: params.objective,
+				tasks: params.tasks as FlatTaskInput[] | undefined,
+				block_completion: params.block_completion,
+				token_budget: params.token_budget,
+				auto_continue: params.auto_continue,
 			};
-			if (draft.mode !== "tweak") return createGoalFromDraft(core, ctx, proposal);
-			if (!target) return reply(commandInstructions("The goal changed while drafting; review it and start /goal-tweak again.", core.loadedCommands));
-			return applyGoalTweak(core, ctx, proposal, target, proposalToken!, proposalRevision);
+			const prepared = prepareProposal(core, ctx, input);
+			if (!prepared.ok) return reply(prepared.message);
+			return applyProposal(core, ctx, draft, input, prepared.value);
 		},
 		renderCall(args, theme) { return renderProposalCall(core, args, theme); },
 		renderResult(result, _opts, theme) { return renderGoalResult(result, _opts, theme); },

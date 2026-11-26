@@ -5,6 +5,7 @@ export const SET_GOAL_TASKS_TOOL_NAME = "set_goal_tasks";
 export const UPDATE_GOAL_TASK_TOOL_NAME = "update_goal_task";
 export const QUESTIONNAIRE_TOOL_NAME = "goal_questionnaire";
 export const PROPOSE_DRAFT_TOOL_NAME = "propose_goal_draft";
+export const CONTROL_GOAL_TOOL_NAME = "goal_control";
 
 /** The stable core model surface: three tools, installed without phase-dependent sync. */
 export const CORE_GOAL_TOOL_NAMES = [CREATE_GOAL_TOOL_NAME, GET_GOAL_TOOL_NAME, UPDATE_GOAL_TOOL_NAME] as const;
@@ -21,8 +22,22 @@ export const DRAFTING_GOAL_TOOLS = [
 	PROPOSE_DRAFT_TOOL_NAME,
 ] as const;
 
+/**
+ * Lifecycle control for an existing goal. Always advertised for the same
+ * prompt-cache reason as the drafting tools; both actions refuse calls that do
+ * not fit the focused goal's state.
+ */
+export const CONTROL_GOAL_TOOLS = [CONTROL_GOAL_TOOL_NAME] as const;
+
 /** Every goal tool this extension registers (used by installGoalToolProfile). */
-export const ALL_REGISTERED_GOAL_TOOLS = [...FIVE_GOAL_TOOLS, ...DRAFTING_GOAL_TOOLS] as const;
+export const ALL_REGISTERED_GOAL_TOOLS = [...FIVE_GOAL_TOOLS, ...DRAFTING_GOAL_TOOLS, ...CONTROL_GOAL_TOOLS] as const;
+
+/**
+ * The goal tools a `tool_call` may not use while an unconfirmed draft is open.
+ * The list itself stays advertised (prompt-cache stability); the call is
+ * blocked instead, so no goal is touched before the user confirms.
+ */
+export const DRAFT_BLOCKED_GOAL_TOOLS = [...FIVE_GOAL_TOOLS, ...CONTROL_GOAL_TOOLS] as const;
 
 /**
  * Legacy work-tool classification plus the common host work tools. Scheduling
@@ -68,5 +83,5 @@ export const POST_STOP_ALLOWED_TOOLS = ["get_goal"] as const;
  * Each tool rejects calls that are wrong for the current state.
  */
 export function applicableGoalTools(tasksEnabled: boolean): string[] {
-	return [...(tasksEnabled ? FIVE_GOAL_TOOLS : CORE_GOAL_TOOL_NAMES), ...DRAFTING_GOAL_TOOLS];
+	return [...(tasksEnabled ? FIVE_GOAL_TOOLS : CORE_GOAL_TOOL_NAMES), ...DRAFTING_GOAL_TOOLS, ...CONTROL_GOAL_TOOLS];
 }

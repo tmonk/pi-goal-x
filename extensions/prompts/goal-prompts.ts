@@ -210,7 +210,7 @@ function lifecyclePolicyBlock(autonomous: boolean, strict: boolean, commands?: G
 		'- update_goal({status: "complete"}) only when every requirement is satisfied; the independent completion auditor checks actual evidence. Approval archives; rejection requires rework.',
 		'- update_goal({status: "blocked"}) only after the SAME blocker recurs on three consecutive goal turns; keep trying concrete steps before then.',
 		'- update_goal({status: "paused", reason: "…"}) pauses immediately. User controls: /goal-pause, /goal-resume, /goal-clear.',
-		'- The objective is immutable: never edit it yourself; ask the user to run /goal-tweak.',
+		'- The objective is immutable: never edit it yourself; call goal_control({action:"revise", change}) so the user confirms, or ask the user to run /goal-tweak.',
 		'- Use work tools directly. Do not call get_goal repeatedly when the needed state is already visible.',
 		'- Retrieve omitted requirements before acting on them. Re-read changed requirements and details lost after compaction. Full objective/contracts: get_goal(section="objective"); tasks: get_goal(section="tasks").',
 		].join("\n"), commands);

@@ -18,6 +18,7 @@ import { loadGoalSettings, effectiveSettingsReport } from "./settings/resolve.ts
 import { invalidateGoalPoolCache, readActiveGoalPool, refreshActiveGoalPool } from "./storage/goal-files.ts";
 import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
 import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "./goal-drafting.ts";
+import { archiveFocusedGoal } from "./goal-control-tools.ts";
 import { formatCheckpointHealthReport, readSessionCheckpointHealth } from "./goal-session-health.ts";
 import type {
 	GoalCommandInvoker,
@@ -405,37 +406,32 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 	async function handleGoalClear(ctx: ExtensionContext): Promise<void> {
 		core.reconcileFocusedGoalFromDisk(ctx);
 		if (await pickWhenUnfocused(ctx, t("Clear which open goal?")) === "cancelled") return;
-		if (!core.state.goal) {
+		const target = core.state.goal;
+		if (!target) {
 			ctx.ui.notify(clearGoalCommandMessage({ archived: false }), "warning");
 			return;
 		}
-		// Snapshot the selected goal id and focus revision before asking.
-		const target = core.state.goal;
-		const focusToken = core.state.focusToken(target.id);
-		// Headless behavior is explicit: guidance without mutation. Clearing
-		// requires an interactive confirmation (follow-up Stage 2).
-		if (!ctx.hasUI) {
-			ctx.ui.notify(t("Run {command} in an interactive session to confirm clearing: {summary}", { command: uiCommandHint("goal-clear", core.loadedCommands), summary: oneLineSummary(target) }), "warning");
-			return;
+		// The confirmation, the focus re-validation and the archive itself are
+		// shared with goal_control({action:"archive"}), so both paths clear a
+		// goal exactly the same way. Nothing changes when the user cancels.
+		const outcome = await archiveFocusedGoal(core, ctx);
+		switch (outcome.status) {
+			case "archived":
+				ctx.ui.notify(clearGoalCommandMessage({ archived: true }), "info");
+				return;
+			case "cancelled":
+				ctx.ui.notify(t("Goal clear cancelled."), "info");
+				return;
+			case "changed":
+				ctx.ui.notify(t("Goal changed while confirming; nothing was cleared."), "warning");
+				return;
+			case "no-ui":
+				// Headless behavior is explicit: guidance without mutation.
+				ctx.ui.notify(t("Run {command} in an interactive session to confirm clearing: {summary}", { command: uiCommandHint("goal-clear", core.loadedCommands), summary: oneLineSummary(target) }), "warning");
+				return;
+			default:
+				ctx.ui.notify(clearGoalCommandMessage({ archived: false }), "warning");
 		}
-		const confirmed = await ctx.ui.confirm(t("Clear goal?"), oneLineSummary(target));
-		if (!confirmed) {
-			ctx.ui.notify(t("Goal clear cancelled."), "info");
-			return;
-		}
-		// Reconcile and validate the same focus token after confirmation, then
-		// archive. Cancellation above changes no file, focus entry, ledger
-		// entry, or runtime state.
-		core.reconcileFocusedGoalFromDisk(ctx);
-		if (!core.state.isTokenCurrent(focusToken) || !core.state.goal || core.state.goal.id !== target.id) {
-			ctx.ui.notify(t("Goal changed while confirming; nothing was cleared."), "warning");
-			return;
-		}
-		const archived = core.lifecycle.archive(ctx, "user");
-		const didArchive = !!archived;
-		core.focus.setGoal(null, ctx, true, "cleared");
-		const msg = clearGoalCommandMessage({ archived: didArchive });
-		ctx.ui.notify(msg, didArchive ? "info" : "warning");
 	}
 
 	async function runGoalTweak(replacement: string, ctx: ExtensionContext): Promise<void> {

@@ -1,6 +1,6 @@
 import { goalStorageContext, type GoalStorageContext } from "./storage/goal-root.ts";
 import { commandHint, commandInstructions } from "./goal-controls.ts";
-import { FIVE_GOAL_TOOLS } from "./goal-tool-names.ts";
+import { DRAFT_BLOCKED_GOAL_TOOLS } from "./goal-tool-names.ts";
 import { cacheGoalHistory } from "./goal-prompt-cache.ts";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -265,7 +265,7 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		// The goal tools stay advertised during a draft so the cached prompt does
 		// not change. Block them here instead, so nothing touches a goal before
 		// the user confirms the draft.
-		if (hasActiveDraft(core) && (FIVE_GOAL_TOOLS as readonly string[]).includes(event.toolName)) {
+		if (hasActiveDraft(core) && (DRAFT_BLOCKED_GOAL_TOOLS as readonly string[]).includes(event.toolName)) {
 			return {
 				block: true,
 				reason: commandInstructions("A goal draft is in progress. Finish it with propose_goal_draft, or ask the user to run /goal-cancel.", core.loadedCommands),
