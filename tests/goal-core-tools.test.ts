@@ -24,6 +24,7 @@ import assert from "node:assert/strict";
 import { createGoal, goalFocusDetails, normalizeGoalRecord } from "../extensions/goal-record.ts";
 import { parseGoalFile, writeActiveGoalFile } from "../extensions/storage/goal-files.ts";
 import { STATE_ENTRY } from "../extensions/goal-format.ts";
+import { invalidateGoalSettingsCache } from "../extensions/settings/files.ts";
 import { activeGoalFiles, ledgerEvents, removeDir, tempDir } from "./support/fs.ts";
 
 interface HarnessOptions {
@@ -460,6 +461,33 @@ test("legacy paused record with autoContinue:true stays paused after session res
 		assert.equal(parsed?.autoContinue, true, "autoContinue flag survives as data");
 	} finally {
 		removeDir(cwd);
+	}
+});
+
+test("update_goal(complete) skips the audit when the auditor is disabled in the global settings file", async () => {
+	const f = makeFixture();
+	const globalFile = path.join(f.cwd, "global-settings.json");
+	const previous = process.env.PI_GOAL_GLOBAL_SETTINGS_FILE;
+	let auditorCalled = 0;
+	try {
+		writeFileSync(globalFile, JSON.stringify({ disabled: true }));
+		process.env.PI_GOAL_GLOBAL_SETTINGS_FILE = globalFile;
+		invalidateGoalSettingsCache();
+		const h = createHarness({
+			cwd: f.cwd,
+			sessionEntries: f.sessionEntries,
+			runCompletionAuditor: async () => { auditorCalled += 1; throw new Error("auditor must not run"); },
+		});
+		await start(h);
+		const update = h.tools.get("update_goal")!;
+		const result = await (update.execute as any)("update-global", { status: "complete" }, undefined, undefined, h.ctx);
+		assert.ok((result.content?.[0]?.text ?? "").includes("auditor disabled in settings"));
+		assert.equal(auditorCalled, 0, "a globally disabled auditor must not run");
+	} finally {
+		if (previous === undefined) delete process.env.PI_GOAL_GLOBAL_SETTINGS_FILE;
+		else process.env.PI_GOAL_GLOBAL_SETTINGS_FILE = previous;
+		invalidateGoalSettingsCache();
+		f.cleanup();
 	}
 });
 

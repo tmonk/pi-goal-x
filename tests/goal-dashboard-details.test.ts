@@ -56,6 +56,20 @@ describe("sisyphus step progress", () => {
 		assert.deepEqual(steps, { current: 2, total: 3 });
 	});
 
+	it("counts a skipped step as ended, so the next step becomes current", () => {
+		const goal = makeGoalRecord({ objective: "1. a\n2. b\n3. c", sisyphus: true });
+		goal.taskList = {
+			tasks: [
+				{ id: "t1", title: "a", status: "skipped" },
+				{ id: "t2", title: "b", status: "pending" },
+				{ id: "t3", title: "c", status: "pending" },
+			],
+			blockCompletion: false,
+			proposedAt: "2026-08-05T00:00:00.000Z",
+		};
+		assert.deepEqual(sisyphusStepProgress(goal), { current: 2, total: 3 });
+	});
+
 	it("returns null for non-sisyphus goals", () => {
 		const goal = makeGoalRecord({ objective: "1. a" });
 		assert.equal(sisyphusStepProgress(goal), null);

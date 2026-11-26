@@ -2,7 +2,6 @@ import {randomUUID} from "node:crypto";
 import {type AgentToolResult, type ExtensionContext} from "@earendil-works/pi-coding-agent";
 import {GOAL_AUDIT_ENTRY, detailedSummary, goalDetails} from "./goal-format.ts";
 import {buildCompletionReport, buildTaskSummary, taskCompletionBlockWarning, validateGoalCompletion} from "./goal-policy.ts";
-import { loadGoalSettingsFileConfig } from "./settings/files.ts";
 import { loadGoalSettings } from "./settings/resolve.ts";
 import {runGoalCompletionAuditor, type GoalAuditorResult} from "./goal-auditor.ts";
 import {nowIso, type GoalRecord} from "./goal-record.ts";
@@ -92,7 +91,8 @@ export async function runGoalCompletionFlow(core: GoalCompletionCore, ctx: Exten
 	const target = mergeGoalPromptFromDisk(ctx, core.state.goal);
 	const focus = core.state.focusToken(target.id);
 	const storage = goalStorageContext(ctx);
-	const config = loadGoalSettingsFileConfig(ctx.cwd);
+	// Effective settings (global, project and environment), the same ones the auditor itself runs with.
+	const config = settings;
 	const label = config.provider || config.model || config.thinkingLevel
 		? `${config.provider ?? "default"}/${config.model ?? "default"}${config.thinkingLevel ? `:${config.thinkingLevel}` : ""}` : "default";
 	const auditId = randomUUID();
