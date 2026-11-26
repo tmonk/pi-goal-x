@@ -4,6 +4,26 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- A goal that goes four automatic turns in a row without a tool call is now paused, with the reason shown. Before, a reply like "Standing by" was followed by another full request, again and again, until a run limit stopped it. Any tool call resets the count. Change it with `maxIdleTurns` (`0` turns it off). It stays off for people who turned on slow repeated idle replies.
+- Other extensions can hold continuation while background work runs, by sending `pi-goal:busy` with a job count. No turns are queued while jobs run, and one goes out when they finish, or after 60 minutes if a job never reports back. See `docs/advanced-usage.md` (#124).
+- A verification contract can name a command, such as ``Verify command: `npm test` ``. It runs before the auditor. If it fails, the completion is rejected without an audit; if it passes, the auditor gets its output. A command only runs after you have confirmed it in a draft, a tweak or `/goal-direct`, and the trust list is kept in your Pi agent folder, not the project.
+- An audit that runs longer than 20 minutes or makes more than 100 tool calls is stopped without a verdict, and the goal stays open. Change the time with `auditorTimeoutMinutes`.
+- `/goal-status verbose` shows how much of the prompt the provider read from its cache, and a warning appears if hits fall to nearly zero twice in a row after working well.
+- `maxGoalMinutes` pauses a goal after that many minutes of active time.
+- `draftStyle: "propose"` makes `/goal` and `/sisyphus` draft at once and list their assumptions, instead of asking questions first (#120).
+
+### Changed
+
+- The `Goal snapshot: …` usage line is only sent to the model when the goal has a token budget or `showContextUsage` is on. It changed on every request and could be read as context running out (#76). The goal policy block loses one sentence when there is no budget, so the first request after upgrading is uncached for that block.
+- After compaction, the resync text lists the evidence of the five most recently completed tasks, so what the agent already found out is not lost.
+- The draft prompt tells the agent about the verify command.
+
+### Removed
+
+- The `PI_GOAL_PROMPT_PROFILE=legacy-v1` fallback. It was meant to last one minor release.
+
 ## [0.35.2] — 2026-11-26
 
 Includes #179 to #181.

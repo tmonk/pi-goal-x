@@ -62,7 +62,9 @@ All files are in `extensions/`.
 |---|---|
 | `goal-core-tools.ts` | `create_goal`, `get_goal`, `update_goal` |
 | `goal-update-flows.ts` | The blocked flow (with Oracle) and the agent-pause flow |
-| `goal-completion.ts` | Completion transaction: audit, then `commitGoalCompletion` |
+| `goal-completion.ts` | Completion transaction: verify command, audit, then `commitGoalCompletion` |
+| `goal-verify-command.ts` | The verify command: read it from the contract, trust list, run it |
+| `goal-cache-stats.ts` | Provider cache hit rate from message usage, and the drop warning |
 | `goal-task-tools.ts` | `set_goal_tasks`, `update_goal_task` |
 | `goal-task-tree.ts` | Flat to tree conversion, id-stable merge, counting, rendering, tool schema |
 | `goal-task-confirmation.ts` | Task list confirmation dialog |
