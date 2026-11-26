@@ -24,6 +24,10 @@ All notable changes to pi-goal-x are documented here.
 
 - The `PI_GOAL_PROMPT_PROFILE=legacy-v1` fallback. It was meant to last one minor release.
 
+### Fixed
+
+- Saving a setting now waits up to 5 seconds for the settings lock instead of 1. On a busy machine a second writer could time out with "Timed out acquiring the settings lock" (seen as a flaky test in CI, noted by @selimerunkut on #184).
+
 ## [0.35.2] — 2026-11-26
 
 Includes #179 to #181.
