@@ -53,3 +53,24 @@ items × 240 chars), which adds +136 tool-schema bytes per request
 (7,262 → 7,398). This is the deliberate cost of the opt-in blocker Oracle's
 input surface; no other component changed. Steady-state non-Oracle requests
 carry this parameter only in the schema, never in prompt text.
+
+## 2026-11-26 — goal_control (revise/archive) baseline update — RATIONALE
+
+`baseline-main.json` regenerated for a new, always-advertised model tool.
+`goal_control({action: "revise" | "archive"})` lets an agent open the existing
+`/goal-tweak` and `/goal-clear` confirmations instead of editing goal files or
+creating a replacement goal. Two deliberate composed-request changes:
+
+1. Tool schemas: +1,056 chars in every request, tools enabled or not
+   (6,086 → 7,142; `tasks-disabled` 4,181 → 5,237). The schema is
+   `action` + `change` + `objective` + `token_budget`; task-plan changes stay
+   on `set_goal_tasks`, so no second task-tree schema is duplicated.
+2. Canonical goal policy: the immutable-objective line now names the confirmed
+   revision path (+72 chars) in requests that carry the active policy; the
+   paused block adds the archive hint (+65 chars on `paused-goal` and
+   `latest-auditor-rejection`). Blocked requests and the draft-only fixtures
+   carry the tool schema and no policy line.
+
+Nothing else moved: the objective, task list, snapshots, checkpoints and
+message layout are byte-identical, so the single-source invariants still hold
+exactly once per active request.

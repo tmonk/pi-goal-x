@@ -1371,11 +1371,15 @@ test("goal tools stay listed during a draft but are blocked until it ends", asyn
 		const blocked = await h.emit("tool_call", { toolName: "update_goal", input: { status: "complete" } }) as { block?: boolean; reason?: string } | undefined;
 		assert.equal(blocked?.block, true, "update_goal is blocked during a draft");
 		assert.match(blocked?.reason ?? "", /propose_goal_draft/);
+		const controlBlocked = await h.emit("tool_call", { toolName: "goal_control", input: { action: "archive" } }) as { block?: boolean; reason?: string } | undefined;
+		assert.equal(controlBlocked?.block, true, "goal_control cannot touch the goal before the draft is confirmed");
 		const hostTool = await h.emit("tool_call", { toolName: "read", input: { path: "x" } }) as { block?: boolean } | undefined;
 		assert.notEqual(hostTool?.block, true, "host tools are not blocked");
 		await h.commands.get("goal-cancel")!.handler("", h.ctx);
 		const after = await h.emit("tool_call", { toolName: "update_goal", input: { status: "complete" } }) as { block?: boolean } | undefined;
 		assert.notEqual(after?.block, true, "goal tools work again once the draft ends");
+		const controlAfter = await h.emit("tool_call", { toolName: "goal_control", input: { action: "archive" } }) as { block?: boolean } | undefined;
+		assert.notEqual(controlAfter?.block, true, "goal_control is usable again once the draft ends");
 		assert.deepEqual(h.activeTools(), before, "the tool list is the same after the draft");
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });

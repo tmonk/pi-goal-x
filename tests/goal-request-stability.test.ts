@@ -26,8 +26,9 @@ test("tool definitions are the same bytes in every session and stay small", () =
 		const second = toolDefinitions(b);
 		assert.deepEqual(second, first, "a second session registered different tool definitions");
 		const chars = first.reduce((sum, definition) => sum + definition.length, 0);
-		// About 1,900 tokens today, sent with every request. Raise the bound on purpose, not by accident.
-		assert.ok(chars <= 8_000, `tool definitions are ${chars} characters (bound 8000)`);
+		// About 2,100 tokens today, sent with every request. Raise the bound on
+		// purpose, not by accident (goal_control added ~1,100 characters).
+		assert.ok(chars <= 9_000, `tool definitions are ${chars} characters (bound 9000)`);
 	} finally {
 		removeDir(a);
 		removeDir(b);

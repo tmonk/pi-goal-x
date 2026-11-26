@@ -20,6 +20,7 @@
     "./tests/goal-context-isolation.test.ts",
     "./tests/goal-context-usage.test.ts",
     "./tests/goal-context.test.ts",
+    "./tests/goal-control-tools.test.ts",
     "./tests/goal-controls.test.ts",
     "./tests/goal-core-tools.test.ts",
     "./tests/goal-dashboard-details.test.ts",

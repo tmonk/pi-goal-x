@@ -18,6 +18,7 @@ import test from "node:test";
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
 	CORE_GOAL_TOOL_NAMES,
+	CONTROL_GOAL_TOOLS,
 	DRAFTING_GOAL_TOOLS,
 	FIVE_GOAL_TOOLS,
 } from "../extensions/goal-tool-names.ts";
@@ -45,6 +46,7 @@ const EXPECTED_REGISTERED_TOOLS = [
 	"update_goal_task",
 	"goal_questionnaire",
 	"propose_goal_draft",
+	"goal_control",
 ] as const;
 
 /**
@@ -92,7 +94,7 @@ test("baseline: no duplicate tool or command registrations", () => {
 	assert.equal(new Set(registeredCommands).size, registeredCommands.length);
 });
 
-test("baseline: execution profiles remain three/five tools and drafting is separate", () => {
+test("baseline: execution profiles remain three/five tools, drafting and control are separate", () => {
 	assert.deepEqual(FIVE_GOAL_TOOLS, [
 		"create_goal", "get_goal", "update_goal",
 		"set_goal_tasks", "update_goal_task",
@@ -103,6 +105,7 @@ test("baseline: execution profiles remain three/five tools and drafting is separ
 	assert.deepEqual(DRAFTING_GOAL_TOOLS, [
 		"goal_questionnaire", "propose_goal_draft",
 	]);
+	assert.deepEqual(CONTROL_GOAL_TOOLS, ["goal_control"]);
 });
 
 test("baseline: every registered tool name is referenced by goal-tool-names constants", () => {

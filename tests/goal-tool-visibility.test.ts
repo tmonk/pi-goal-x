@@ -55,9 +55,10 @@ function testFixture() {
 // The two possible lists. Goal status, focus and drafting never change them.
 const FIVE_GOAL_TOOLS = ["create_goal", "get_goal", "update_goal", "set_goal_tasks", "update_goal_task"];
 const DRAFTING_TOOLS = ["goal_questionnaire", "propose_goal_draft"];
-const ALL_GOAL_TOOLS = [...FIVE_GOAL_TOOLS, ...DRAFTING_TOOLS];
+const CONTROL_TOOLS = ["goal_control"];
+const ALL_GOAL_TOOLS = [...FIVE_GOAL_TOOLS, ...DRAFTING_TOOLS, ...CONTROL_TOOLS];
 const WITH_TASKS = ALL_GOAL_TOOLS;
-const WITHOUT_TASKS = ["create_goal", "get_goal", "update_goal", ...DRAFTING_TOOLS];
+const WITHOUT_TASKS = ["create_goal", "get_goal", "update_goal", ...DRAFTING_TOOLS, ...CONTROL_TOOLS];
 
 // Arbitrary host tool seeds: profile installation must never touch these.
 const HOST_SEED_A = ["read", "bash", "edit", "write"];
@@ -267,10 +268,10 @@ describe("Fixed goal tool list", () => {
 			assert.ok(tool, `Tool "${name}" must be registered`);
 			assert.ok(typeof tool!.execute === "function", `Tool "${name}" must have an execute handler`);
 		}
-		for (const name of ["goal_questionnaire", "propose_goal_draft"]) {
+		for (const name of ["goal_questionnaire", "propose_goal_draft", "goal_control"]) {
 			const tool = registeredTools.find((t) => t.name === name);
-			assert.ok(tool, `Drafting tool "${name}" must be registered`);
-			assert.ok(typeof tool!.execute === "function", `Drafting tool "${name}" must have an execute handler`);
+			assert.ok(tool, `Drafting or control tool "${name}" must be registered`);
+			assert.ok(typeof tool!.execute === "function", `Drafting or control tool "${name}" must have an execute handler`);
 		}
 		for (const removed of REMOVED_TOOLS) {
 			assert.equal(registeredTools.some((t) => t.name === removed), false, `${removed} must not be registered`);

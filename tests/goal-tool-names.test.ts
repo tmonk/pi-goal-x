@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
 	ALL_REGISTERED_GOAL_TOOLS,
+	CONTROL_GOAL_TOOL_NAME,
+	CONTROL_GOAL_TOOLS,
 	CORE_GOAL_TOOL_NAMES,
 	CREATE_GOAL_TOOL_NAME,
 	DRAFTING_GOAL_TOOLS,
@@ -25,6 +27,10 @@ const CORE = ["create_goal", "get_goal", "update_goal"];
 // never to the steady three/five execution surface.
 const DRAFTING = ["goal_questionnaire", "propose_goal_draft"];
 
+// The lifecycle control tool is always advertised and never part of the
+// execution surface either.
+const CONTROL = ["goal_control"];
+
 // Removed steady-state lifecycle tools — none may exist in the module.
 const REMOVED_STEADY = [
 	"propose_goal_tweak", "step_complete", "abort_goal", "propose_task_list", "goal_question",
@@ -44,17 +50,19 @@ test("fixed profiles: core three, task two, all five registered", () => {
 	assert.deepEqual(TASK_TOOL_NAMES, ["set_goal_tasks", "update_goal_task"]);
 	assert.deepEqual(FIVE_GOAL_TOOLS, [...CORE, ...TASK_TOOL_NAMES]);
 	assert.deepEqual(DRAFTING_GOAL_TOOLS, DRAFTING);
-	// The registry is the fixed five plus the transient drafting profile; the
-	// INSTALLED profile (installGoalToolProfile) still only ever installs the
-	// three/five execution set.
-	assert.deepEqual(ALL_REGISTERED_GOAL_TOOLS, [...FIVE_GOAL_TOOLS, ...DRAFTING_GOAL_TOOLS]);
+	assert.deepEqual(CONTROL_GOAL_TOOLS, CONTROL);
+	// The registry is the fixed five plus the transient drafting and control
+	// profiles; the INSTALLED profile (installGoalToolProfile) still only ever
+	// installs the three/five execution set plus those always-advertised tools.
+	assert.deepEqual(ALL_REGISTERED_GOAL_TOOLS, [...FIVE_GOAL_TOOLS, ...DRAFTING_GOAL_TOOLS, ...CONTROL_GOAL_TOOLS]);
 });
 
-test("the module declares drafting names only in the transient profile", () => {
+test("the module declares drafting and control names outside the execution profiles", () => {
 	assert.equal(QUESTIONNAIRE_TOOL_NAME, "goal_questionnaire");
 	assert.equal(PROPOSE_DRAFT_TOOL_NAME, "propose_goal_draft");
-	// Drafting tools must never leak into the fixed execution profiles.
-	for (const name of DRAFTING) {
+	assert.equal(CONTROL_GOAL_TOOL_NAME, "goal_control");
+	// Drafting and control tools must never leak into the fixed execution profiles.
+	for (const name of [...DRAFTING, ...CONTROL]) {
 		assert.equal(CORE_GOAL_TOOL_NAMES.includes(name as never), false, `${name} must not be a core tool`);
 		assert.equal(TASK_TOOL_NAMES.includes(name as never), false, `${name} must not be a task tool`);
 		assert.equal(GOAL_WORK_TOOL_NAMES.includes(name as never), false, `${name} must not be a work tool`);
