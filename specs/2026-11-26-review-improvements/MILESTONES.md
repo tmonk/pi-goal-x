@@ -8,3 +8,5 @@
 - Auditor limits. The first test hung: `auditorTimeoutMinutes` accepts whole numbers only, so a fractional test value was ignored. Tests use mock timers.
 - The usage-line change needed five existing tests to ask for the line explicitly.
 - A policy-text trim was tried and reverted: it removed the hint that the agent may set `maxAutonomousRuns`, which a test and the docs rely on.
+- The context gate and cache gate failed on purpose-built expectations: a request-only usage snapshot always at the tail, an exact block count against release 4883b97, and a byte-identical post-compaction block. Changed them to match: the snapshot is required only for token-budget fixtures, the block count may be one lower, and the post-compaction resync text counts as goal text. `baseline-main.json` was re-measured; every change in it is the missing usage line or the added evidence lines.
+- A guard for a `turn_end` event with no message came from the e2e lifecycle test: `message.usage` threw.

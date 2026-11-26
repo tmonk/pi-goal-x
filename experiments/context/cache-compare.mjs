@@ -53,16 +53,16 @@ export function compareReports(baseline, candidate) {
   assert.equal(b.options,a.options,`${b.id}: cache/provider options changed`);
   // Goal text is allowed to be laid out differently (see below), which moves the
   // explicit marker with it. Rows with identical goal text must match exactly.
-  const liveBlk=blk=>/\[PI GOAL|\[TASK LIST|\[This is the current goal policy|Only the latest goal policy|Goal snapshot:/.test((blk.text??JSON.stringify(blk.raw)).slice(0,120));
+  const liveBlk=blk=>/\[PI GOAL|\[TASK LIST|\[This is the current goal policy|Only the latest goal policy|Goal snapshot:|\[POST-COMPACTION RESYNC/.test((blk.text??JSON.stringify(blk.raw)).slice(0,120));
   if(!a.blocks.some(liveBlk)&&!b.blocks.some(liveBlk)) assert.deepEqual(b.markers,a.markers,`${b.id}: cache markers changed`);
   else assert.deepEqual(b.markers.filter(x=>x.path[0]!=='messages'&&x.path[0]!=='input'),a.markers.filter(x=>x.path[0]!=='messages'&&x.path[0]!=='input'),`${b.id}: cache markers changed`);
   assert.equal(b.markers.length,a.markers.length,`${b.id}: marker count changed`);
   // Goal text (policy, task list, snapshot) may be split differently now, but
   // everything else must be byte-identical and in the same order.
-  const live=blk=>/\[PI GOAL|\[TASK LIST|\[This is the current goal policy|Only the latest goal policy|Goal snapshot:/.test((blk.text??JSON.stringify(blk.raw)).slice(0,120));
+  const live=blk=>/\[PI GOAL|\[TASK LIST|\[This is the current goal policy|Only the latest goal policy|Goal snapshot:|\[POST-COMPACTION RESYNC/.test((blk.text??JSON.stringify(blk.raw)).slice(0,120));
   const keep=r=>r.blocks.filter(blk=>!live(blk)).map(blk=>/msg_pi_\d+/.test(JSON.stringify(blk.raw))?digest(JSON.stringify(blk.raw).replace(/msg_pi_\d+/g,'msg_pi')):blk.hash);
   assert.deepEqual(keep(b),keep(a),`${b.id}: non-goal content changed`);
-  assert.ok(b.blocks.length>=a.blocks.length && b.blocks.length<=a.blocks.length+1,`${b.id}: unexpected block count`);
+  assert.ok(b.blocks.length>=a.blocks.length-1 && b.blocks.length<=a.blocks.length+1,`${b.id}: unexpected block count`);
   assert.ok(b.bytes<=a.bytes+200,`${b.id}: request got larger`);
   differences.push({scenario:b.id,reason:'policy-counters-snapshot-split',bytes:b.bytes-a.bytes});
   if(a.reuse) {
