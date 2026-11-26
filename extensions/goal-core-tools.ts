@@ -33,7 +33,7 @@ import type { GoalUpdateFlowsCore } from "./goal-update-flows.ts";
  * What the goal tools read and change. The completion and update flows run
  * from `update_goal`, so their needs are part of it.
  */
-export type CoreToolsCore = GoalCompletionCore &
+type CoreToolsCore = GoalCompletionCore &
 	GoalUpdateFlowsCore &
 	GoalPoolAccess &
 	GoalDiskSync &

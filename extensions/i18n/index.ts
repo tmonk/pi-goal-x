@@ -16,7 +16,7 @@
  */
 
 /** Values that can fill a `{name}` placeholder. */
-export type Vars = Record<string, string | number>;
+type Vars = Record<string, string | number>;
 
 /** English text -> translation. Plural entries map the plural category to text. */
 export type Catalog = Record<string, string | Partial<Record<Intl.LDMLPluralRule, string>>>;

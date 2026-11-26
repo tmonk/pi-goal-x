@@ -10,13 +10,13 @@ import { goalDialogControls } from "../goal-dialog-controls.ts";
 import { truncateToWidth } from "./text-cache.ts";
 import { t } from "../i18n/index.ts";
 
-export interface ChoiceOption<T> {
+interface ChoiceOption<T> {
 	label: string;
 	value: T;
 	description: string;
 }
 
-export interface ChoiceDialog<T> {
+interface ChoiceDialog<T> {
 	/** Content above the options. Each group is separated by a rule. */
 	sections(theme: Theme, innerWidth: number): string[][];
 	options: readonly ChoiceOption<T>[];

@@ -72,7 +72,7 @@ export function declareWait(s: GoalSchedulerState, input: WaitDeclaration, stric
 }
 
 /** What a wait does to scheduling right now. */
-export type WaitHold =
+type WaitHold =
 	| { action: "proceed"; releaseAccounting: boolean }
 	| { action: "pause"; reason: string; releaseAccounting: boolean }
 	/** Arm a timer for `delay` ms and stop scheduling until it fires. */

@@ -33,7 +33,7 @@ import type {
 } from "./goal-core-types.ts";
 
 /** What the questionnaire and propose tools read and change. */
-export type DraftingToolsCore = HostSlice<"registerTool" | "appendEntry"> &
+type DraftingToolsCore = HostSlice<"registerTool" | "appendEntry"> &
 	GoalFocusedGoalAccess &
 	GoalOperationGuard &
 	GoalModalAccess &

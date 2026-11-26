@@ -18,7 +18,7 @@ import {
 import type { DialogControls } from "./types.ts";
 
 /** The embedded answer editor, as far as key handling needs it. */
-export interface EditorPort {
+interface EditorPort {
 	/** Show the editor with this text and give it focus. */
 	open(text: string): void;
 	/** Hide the editor and clear its text. */
@@ -27,7 +27,7 @@ export interface EditorPort {
 	handleInput(data: string): void;
 }
 
-export interface QuestionnaireKeyDeps {
+interface QuestionnaireKeyDeps {
 	state: QuestionnaireState;
 	controls: DialogControls;
 	editor: EditorPort;
@@ -39,7 +39,7 @@ export interface QuestionnaireKeyDeps {
 	refresh(): void;
 }
 
-export interface QuestionnaireKeys {
+interface QuestionnaireKeys {
 	handleInput(data: string): void;
 	/** Called by the editor when the user presses Enter. */
 	submitEditor(value: string): void;

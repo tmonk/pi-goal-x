@@ -11,7 +11,7 @@ export interface ActiveGoalAudit {
 }
 
 /** Identifies one focused goal at one focus revision, so late work can tell it went stale. */
-export interface FocusToken {
+interface FocusToken {
 	goalId: string;
 	revision: number;
 }
