@@ -34,9 +34,11 @@ export function extractVerificationContract(objective: string): { objective: str
 		}
 	}
 
+	// A verify command written inline ("... Verify command: `npm test`") has no contract line of its own. Keep it as the contract so it still runs.
+	const inline = contract ? undefined : /verify command:\s*`[^`\n]+`/i.exec(objective)?.[0];
 	return {
 		objective: filtered.join("\n"),
-		verificationContract: contract || undefined,
+		verificationContract: contract || inline || undefined,
 	};
 }
 

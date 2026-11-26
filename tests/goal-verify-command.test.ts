@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { extractVerifyCommand, isVerifyCommandTrusted, runVerifyCommand, trustVerifyCommand } from "../extensions/goal-verify-command.ts";
+import { extractVerificationContract } from "../extensions/goal-contract.ts";
 import { stabilizationHarness } from "./support/stabilization-utils.ts";
 
 function withAgentDir<T>(run: (dir: string) => Promise<T> | T): Promise<T> {
@@ -15,6 +16,12 @@ function withAgentDir<T>(run: (dir: string) => Promise<T> | T): Promise<T> {
 		rmSync(dir, { recursive: true, force: true });
 	});
 }
+
+test("verify command: kept when it is written inline on a one-line /goal-direct objective", () => {
+	const { verificationContract } = extractVerificationContract("Fix add.js. Verification contract: tests pass. Verify command: `npm test`");
+	assert.equal(extractVerifyCommand(verificationContract), "npm test");
+	assert.equal(extractVerificationContract("Fix add.js").verificationContract, undefined);
+});
 
 test("verify command: read from a backtick-quoted line in the contract", () => {
 	assert.equal(extractVerifyCommand("Tests pass. Verify command: `npm test`"), "npm test");
