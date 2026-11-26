@@ -255,6 +255,9 @@ function createAuditProgress(onProgress: AuditorProgressCallback | undefined) {
 	};
 }
 
+/** A confused auditor cannot loop on tools forever. */
+const AUDITOR_MAX_TOOL_CALLS = 100;
+
 export async function runGoalCompletionAuditor(args: {
 	ctx: ExtensionContext;
 	goal: GoalRecord;
@@ -298,7 +301,17 @@ export async function runGoalCompletionAuditor(args: {
 			settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
 			tools: ["read", "grep", "find", "ls", "bash"],
 		} as Parameters<typeof createAgentSession>[0]);
-		const unsubscribe = session.subscribe((event) => audit.onEvent(event));
+		// An audit cannot run forever: stop it at the time limit or after too many tool calls.
+		let limitHit: string | undefined;
+		let toolCalls = 0;
+		const stopForLimit = (why: string) => { if (!limitHit) { limitHit = why; session.abort(); } };
+		const timeoutMs = (config.auditorTimeoutMinutes ?? 20) * 60_000;
+		const limitTimer = timeoutMs > 0 ? setTimeout(() => stopForLimit(`ran longer than ${config.auditorTimeoutMinutes} minutes`), timeoutMs) : undefined;
+		limitTimer?.unref?.();
+		const unsubscribe = session.subscribe((event) => {
+			if (event.type === "tool_execution_start" && ++toolCalls > AUDITOR_MAX_TOOL_CALLS) stopForLimit(`used more than ${AUDITOR_MAX_TOOL_CALLS} tool calls`);
+			audit.onEvent(event);
+		});
 		// Wire the external AbortSignal to abort the running session when fired
 		// This is the mechanism that makes Esc-to-skip actually stop the auditor.
 		const abortSession = () => { session.abort(); };
@@ -310,6 +323,7 @@ export async function runGoalCompletionAuditor(args: {
 			await session.prompt(buildGoalAuditorPrompt(args));
 		} finally {
 			args.signal?.removeEventListener("abort", abortSession);
+			clearTimeout(limitTimer);
 			audit.finish();
 			unsubscribe();
 			session.dispose?.();
@@ -319,6 +333,7 @@ export async function runGoalCompletionAuditor(args: {
 		// prompt completes and treat any abort as auditor-aborted regardless of
 		// whether an exception propagated.
 		if (args.signal?.aborted) return failure(audit.outputText(), "Auditor aborted.");
+		if (limitHit) return failure(audit.outputText(), `Audit stopped: the auditor ${limitHit} without a verdict. Request completion again to retry.`);
 		const output = audit.outputText();
 		return { ...parseAuditorDecision(output), output, model: modelLabel(model), thinkingLevel };
 	} catch (error) {

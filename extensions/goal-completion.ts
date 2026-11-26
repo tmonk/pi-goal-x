@@ -7,6 +7,7 @@ import {runGoalCompletionAuditor, type GoalAuditorResult} from "./goal-auditor.t
 import {nowIso, type GoalRecord} from "./goal-record.ts";
 import {latestEventsForGoal, latestSettledAuditorResultForGoal, goalRuntimeEvents, type GoalLedgerEvent} from "./goal-ledger.ts";
 import {mergeGoalPromptFromDisk} from "./storage/goal-files.ts";
+import {extractVerifyCommand, isVerifyCommandTrusted, runVerifyCommand} from "./goal-verify-command.ts";
 import {isStaleExtensionContextError} from "./goal-session-safety.ts";
 import {goalStorageContext} from "./storage/goal-root.ts";
 import {showEscapeDialog} from "./widgets/goal-escape-dialog.ts";
@@ -103,6 +104,23 @@ export async function runGoalCompletionFlow(core: GoalCompletionCore, ctx: Exten
 	append({type: "completion_requested", goalId: target.id, at: nowIso()});
 	core.state.activeAudit?.cancel("A newer completion attempt replaced this audit.");
 
+	// A confirmed verify command runs first. A failure rejects the completion without spending an audit.
+	let verifyNote: string | undefined;
+	const verifyCommand = settings.disableContracts ? undefined : extractVerifyCommand(target.verificationContract);
+	if (verifyCommand) {
+		if (!isVerifyCommandTrusted(ctx.cwd, verifyCommand)) {
+			ctx.ui.notify(`The verify command in this goal was not confirmed on this machine, so it was not run: ${verifyCommand}`, "warning");
+		} else {
+			ctx.ui.notify(`Running verify command: ${verifyCommand}`, "info");
+			const result = await runVerifyCommand(ctx.cwd, verifyCommand);
+			if (!result.ok) {
+				const how = result.timedOut ? "timed out" : `exited with code ${result.exitCode}`;
+				return {content: [{type: "text", text: `Goal completion rejected: the verify command \`${verifyCommand}\` ${how}. Fix the problem and request completion again.\n\n${result.output || "(no output)"}`}], details: goalDetails(core.state.goal)};
+			}
+			verifyNote = `The verify command \`${verifyCommand}\` passed (exit 0). Output tail:\n${result.output || "(no output)"}`;
+		}
+	}
+
 	const skipReason = target.skipAuditor ? "per-goal auditor disabled" : config.disabled ? "auditor disabled in settings" : undefined;
 	if (skipReason) {
 		if (!append({type: "audit_skipped", auditId, goalId: target.id, reason: "disabled", provider: config.provider, model: config.model, thinkingLevel: config.thinkingLevel, at: nowIso()})) return persistenceError();
@@ -154,6 +172,7 @@ export async function runGoalCompletionFlow(core: GoalCompletionCore, ctx: Exten
 		const tail = latestEventsForGoal(ledger, target.id, 8);
 		const previous = latestSettledAuditorResultForGoal(ledger, target.id);
 		let warmContext = tail.length ? `Recent goal events (from the shared ledger):\n${tail.map(e => `- ${e.at} ${e.type}${"taskId" in e ? ` (task ${e.taskId})` : ""}${"evidence" in e && e.evidence ? ` evidence: ${e.evidence}` : ""}`).join("\n")}` : null;
+		if (verifyNote) warmContext = `${warmContext ?? ""}\n${verifyNote}`;
 		if (previous?.verdict === "disapproved") warmContext = `${warmContext ?? ""}\nPrevious rejection (verify whether resolved): ${previous.report.slice(0, 600)}`;
 		let auditor: GoalAuditorResult;
 		try {

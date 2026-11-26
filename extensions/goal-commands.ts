@@ -1,3 +1,4 @@
+import { trustVerifyCommand } from "./goal-verify-command.ts";
 import { t } from "./i18n/index.ts";
 import { GOAL_COMMANDS, uiCommandHint, commandPaths, commandProblems, commandRoutes, matchCommandRoute, type GoalCommandId } from "./goal-controls.ts";
 import { goalStoragePath, goalStorageRoot } from "./storage/goal-root.ts";
@@ -237,6 +238,7 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 		clearGoalDrafting(core, ctx);
 		core.clearContinuationState();
 		core.clearActiveAccounting();
+		trustVerifyCommand(ctx.cwd, verificationContract);
 		core.lifecycle.create({ objective, autoContinue: true, sisyphus: mode === "sisyphus" }, ctx, true, verificationContract);
 	}
 

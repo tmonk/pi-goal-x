@@ -14,6 +14,7 @@ import { loadGoalSettings } from "./settings/resolve.ts";
 import { DIALOG_UNAVAILABLE_HINT, proposalDialogFailureMessage, formatQuestionnaireAnswers, runGoalQuestionnaire, shouldAutoConfirmProposal, showProposalDialog, type GoalQuestionnaireQuestion, type ProposalDecision } from "./goal-questionnaire.ts";
 import { currentTaskIdIsPending, nowIso, validateTokenBudgetInput, type GoalRecord, type GoalTaskList } from "./goal-record.ts";
 import type { GoalLedgerEvent } from "./goal-ledger.ts";
+import { trustVerifyCommand } from "./goal-verify-command.ts";
 import type {
 	GoalClockReset,
 	GoalDiskSync,
@@ -125,6 +126,7 @@ function createGoalFromDraft(core: DraftingToolsCore, ctx: ExtensionContext, pro
 	// confirmed-goal report can include them reliably (E5).
 	const qaEcho = draft.questionnaireEcho;
 	core.lifecycle.create({ objective, autoContinue: proposal.autoContinue, sisyphus: draft.mode === "sisyphus", taskList: effectiveTaskList, skipAuditor: proposal.skipAuditor }, ctx, true, proposal.verificationContract, proposal.proposedBudget);
+	trustVerifyCommand(ctx.cwd, proposal.verificationContract);
 	clearGoalDrafting(core, ctx);
 	const created = core.state.goal;
 	return { ...goalTextResult(`${summary}\n\n${buildGoalCreatedReport({
@@ -175,6 +177,7 @@ async function applyGoalTweak(core: DraftingToolsCore, ctx: ExtensionContext, pr
 	// is set when the goal actually transitions out of paused/blocked so the
 	// post-apply glue can resume accounting, continuation, and the ledger event.
 	let resumed = false;
+	trustVerifyCommand(ctx.cwd, proposal.verificationContract);
 	const result = core.goalService.apply(ctx, {
 		reconcile: false, focusToken: token, refreshFromDisk: true,
 		mutate: (goal) => {
