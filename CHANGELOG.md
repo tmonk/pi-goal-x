@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+## [0.35.2] — 2026-11-26
+
+Includes #179 to #181.
+
 ### Fixed
 
 - `/goal-refresh` now picks up a goal file that was edited in place. It used to report "no changes" and keep serving the old copy, most visibly with a shared goals folder (#178, thanks to @selimerunkut). It also lists goals whose revision changed.
