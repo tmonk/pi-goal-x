@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+## [0.35.3] — 2026-11-26
+
+Includes #183 and #185.
+
 ### Added
 
 - A goal that goes four automatic turns in a row without a tool call is now paused, with the reason shown. Before, a reply like "Standing by" was followed by another full request, again and again, until a run limit stopped it. Any tool call resets the count. Change it with `maxIdleTurns` (`0` turns it off). It stays off for people who turned on slow repeated idle replies.
