@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createGoal } from "../extensions/goal-record.ts";
+import { createGoal, type GoalTask } from "../extensions/goal-record.ts";
 import {
 	CHECKPOINT_TRIGGER_MAX_CHARS,
 	checkpointTriggerPrompt,
@@ -461,4 +461,42 @@ test("a task update changes only the snapshot block, not the policy block (#108)
 	assert.equal(b.state, a.state, "the policy block is unchanged, so the cached prefix survives");
 	assert.notEqual(b.counters, a.counters);
 	assert.match(b.counters, /TASK LIST — 1\/2 tasks complete/);
+});
+
+// #176: finishing the last subtask clears the current task, so the open phase needs a pointer.
+function phaseGoal(currentTaskId?: string, first: GoalTask = { id: "p1", title: "Phase one", status: "pending", subtasks: [{ id: "p1a", title: "Step", status: "complete" }] }) {
+	const goal = createGoal({ objective: "Ship it", autoContinue: true, sisyphus: false });
+	goal.currentTaskId = currentTaskId;
+	goal.taskList = {
+		blockCompletion: false,
+		proposedAt: "2026-11-25T00:00:00.000Z",
+		tasks: [first, { id: "p2", title: "Phase two", status: "pending", subtasks: [{ id: "p2a", title: "Docs", status: "pending" }] }],
+	};
+	return goal;
+}
+
+test("taskListBlock names a phase whose subtasks all ended, above the pending list (#176)", () => {
+	const lines = taskListBlock(phaseGoal()).split("\n");
+	const wrap = lines.findIndex(line => line.includes("Wrap-up: every subtask of p1 has ended"));
+	assert.ok(wrap > 0 && wrap < lines.findIndex(line => line.includes("[ ] p1:")));
+	assert.match(lines[wrap]!, /update_goal_task\(\{task_id:"p1", status:"complete"\}\)/);
+});
+
+test("taskListBlock wrap-up counts skipped subtasks and waits for open or nested ones (#176)", () => {
+	const skipped = phaseGoal(undefined, { id: "p1", title: "Phase one", status: "pending", subtasks: [{ id: "p1a", title: "Step", status: "skipped" }] });
+	assert.match(taskListBlock(skipped), /Wrap-up: every subtask of p1/);
+	const open = phaseGoal(undefined, { id: "p1", title: "Phase one", status: "pending", subtasks: [{ id: "p1a", title: "Step", status: "pending" }] });
+	assert.doesNotMatch(taskListBlock(open), /Wrap-up/);
+	const nested = phaseGoal(undefined, {
+		id: "outer", title: "Outer", status: "pending",
+		subtasks: [{ id: "inner", title: "Inner", status: "pending", subtasks: [{ id: "leaf", title: "Leaf", status: "complete" }] }],
+	});
+	assert.match(taskListBlock(nested), /Wrap-up: every subtask of inner/);
+});
+
+test("taskListBlock has no wrap-up when a task is current, for checklists, or with tasks off (#176)", () => {
+	assert.doesNotMatch(taskListBlock(phaseGoal("p1")), /Wrap-up/);
+	const checklist = phaseGoal(undefined, { id: "p1", title: "Phase one", status: "pending", lightweightSubtasks: true, subtasks: [{ id: "p1a", title: "Step", status: "complete" }] });
+	assert.doesNotMatch(taskListBlock(checklist), /Wrap-up/);
+	assert.equal(taskListBlock(phaseGoal(), { disableTasks: true } as never), "");
 });

@@ -9,8 +9,10 @@ import {
 	activePathForGoal,
 	archiveGoalFile,
 	archivedPathForGoal,
+	invalidateGoalPoolCache,
 	parseGoalFile,
 	readActiveGoalPool,
+	refreshActiveGoalPool,
 	serializeGoalFile,
 	writeActiveGoalFile,
 } from "../extensions/storage/goal-files.ts";
@@ -215,5 +217,26 @@ test("parseGoalFile parses goal without taskList unchanged", () => {
 		assert.equal(parsed.taskList, undefined);
 	} finally {
 		rmSync(tmpDir, { recursive: true, force: true });
+	}
+});
+
+test("refreshActiveGoalPool sees an in-place edit that a plain cold read misses (#178)", () => {
+	const shared = mkdtempSync(path.join(tmpdir(), "pi-goal-shared-"));
+	const ctx = { cwd: mkdtempSync(path.join(tmpdir(), "pi-goal-cwd-")), goalStorageRoot: shared };
+	try {
+		const written = writeActiveGoalFile(ctx, createGoal({ objective: "Shared goal", autoContinue: false, sisyphus: false }));
+		const file = path.join(shared, written.activePath!.slice(".pi/goals/".length));
+		assert.equal(readActiveGoalPool(ctx).get(written.id)?.revision, written.revision, "primes the snapshot");
+
+		writeFileSync(file, serializeGoalFile({ ...written, revision: (written.revision ?? 0) + 3 }), "utf8");
+		invalidateGoalPoolCache();
+		assert.equal(readActiveGoalPool(ctx).get(written.id)?.revision, written.revision, "plain cold read serves the stale snapshot");
+
+		assert.equal(refreshActiveGoalPool(ctx).get(written.id)?.revision, (written.revision ?? 0) + 3);
+		invalidateGoalPoolCache();
+		assert.equal(readActiveGoalPool(ctx).get(written.id)?.revision, (written.revision ?? 0) + 3, "the snapshot was rewritten");
+	} finally {
+		rmSync(shared, { recursive: true, force: true });
+		cleanup(ctx);
 	}
 });

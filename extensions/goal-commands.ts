@@ -15,7 +15,7 @@ import { clearGoalCommandMessage } from "./goal-policy.ts";
 import { invalidateGoalLedgerCache, readGoalLedger } from "./goal-ledger.ts";
 import { invalidateGoalSettingsCache, loadGoalSettingsFileConfig } from "./settings/files.ts";
 import { loadGoalSettings, effectiveSettingsReport } from "./settings/resolve.ts";
-import { invalidateGoalPoolCache, readActiveGoalPool } from "./storage/goal-files.ts";
+import { invalidateGoalPoolCache, readActiveGoalPool, refreshActiveGoalPool } from "./storage/goal-files.ts";
 import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
 import { clearGoalDrafting, hasActiveDraft, startGoalDrafting } from "./goal-drafting.ts";
 import { formatCheckpointHealthReport, readSessionCheckpointHealth } from "./goal-session-health.ts";
@@ -42,7 +42,7 @@ import type { SettingsMenuCore } from "./goal-settings-menu.ts";
 import type { GoalDraftingCore } from "./goal-drafting.ts";
 
 /** What the slash commands read and change. */
-export type GoalCommandsCore = SettingsMenuCore &
+type GoalCommandsCore = SettingsMenuCore &
 	GoalDraftingCore &
 	GoalCommandInvoker &
 	GoalControlWarnings &
@@ -64,6 +64,8 @@ export type GoalCommandsCore = SettingsMenuCore &
 
 export interface GoalRefreshState {
 	poolIds: Iterable<string>;
+	/** Revision of each pool goal, to notice an edit that keeps the same ids. */
+	revisions?: ReadonlyMap<string, number>;
 	ledgerEvents: number;
 	ledgerMalformed: number;
 	/** Stable fingerprint of the effective settings (JSON of the parsed file). */
@@ -82,6 +84,10 @@ export function diffGoalRefreshState(before: GoalRefreshState, after: GoalRefres
 	const removed = [...beforeIds].filter((id) => !afterIds.has(id)).sort();
 	if (added.length > 0) changes.push(t("pool: {count} goal(s) added — {ids}", { count: added.length, ids: added.join(", ") }));
 	if (removed.length > 0) changes.push(t("pool: {count} goal(s) removed — {ids}", { count: removed.length, ids: removed.join(", ") }));
+	for (const [id, revision] of after.revisions ?? []) {
+		const old = before.revisions?.get(id);
+		if (old !== undefined && old !== revision) changes.push(t("pool: {id} changed on disk (revision {before} -> {after})", { id, before: old, after: revision }));
+	}
 	if (after.ledgerEvents !== before.ledgerEvents) {
 		changes.push(t("ledger: {before} -> {after} events", { before: before.ledgerEvents, after: after.ledgerEvents }));
 	}
@@ -92,6 +98,10 @@ export function diffGoalRefreshState(before: GoalRefreshState, after: GoalRefres
 		changes.push(t("settings: effective settings changed (external edit)"));
 	}
 	return changes;
+}
+
+function poolRevisions(pool: ReadonlyMap<string, GoalRecord>): Map<string, number> {
+	return new Map([...pool].map(([id, goal]) => [id, goal.revision ?? 0]));
 }
 
 function sessionFileOf(ctx: ExtensionContext): string | undefined {
@@ -276,17 +286,21 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 		invalidateGoalLedgerCache();
 		invalidateGoalSettingsCache();
 
-		const afterPool = readActiveGoalPool(ctx);
+		const afterPool = refreshActiveGoalPool(ctx);
+		// Pick up the new revision of the focused goal now, so a buffered in-turn goal is kept.
+		core.reconcileFocusedGoalFromDisk(ctx);
 		const afterLedger = readGoalLedger(ctx);
 		const afterSettings = settingsFingerprint(ctx);
 
 		const changes = diffGoalRefreshState({
 			poolIds: beforePool.keys(),
+			revisions: poolRevisions(beforePool),
 			ledgerEvents: beforeLedger.events.length,
 			ledgerMalformed: beforeLedger.malformed,
 			settings: beforeSettings,
 		}, {
 			poolIds: afterPool.keys(),
+			revisions: poolRevisions(afterPool),
 			ledgerEvents: afterLedger.events.length,
 			ledgerMalformed: afterLedger.malformed,
 			settings: afterSettings,
