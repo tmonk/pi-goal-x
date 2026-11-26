@@ -58,6 +58,7 @@ const settingRows = (): SettingRow[] => [
 	{ key: "model", label: "model", section: t("Completion auditor"), kind: "modelSelector" },
 	{ key: "thinkingLevel", label: "thinking_level", section: t("Completion auditor"), kind: "thinking" },
 	{ key: "auditorTimeoutMinutes", label: t("audit time limit (minutes, 0 = none)"), section: t("Completion auditor"), kind: "positiveInteger" },
+	{ key: "auditorMaxToolCalls", label: t("audit tool call limit (0 = none)"), section: t("Completion auditor"), kind: "positiveInteger" },
 	// Issue #26: opt-in blocker Oracle. Disabled by default; provider/model
 	// must BOTH be set explicitly — the executor model is never used silently.
 	{ key: "oracleEnabled", label: t("oracle enabled"), section: t("Blocker Oracle"), kind: "boolean", path: ["oracle", "enabled"] },
@@ -73,7 +74,7 @@ const BOOLEAN_KEYS = new Set<string>([
 ]);
 
 /** Integer settings whose minimum is 0; every other integer setting starts at 1. */
-const ZERO_ALLOWED_KEYS = new Set<string>(["stallTimeoutMinutes", "objectiveMaxChars", "maxAutonomousRuns", "maxIdleTurns", "maxGoalMinutes", "auditorTimeoutMinutes"]);
+const ZERO_ALLOWED_KEYS = new Set<string>(["stallTimeoutMinutes", "objectiveMaxChars", "maxAutonomousRuns", "maxIdleTurns", "maxGoalMinutes", "auditorTimeoutMinutes", "auditorMaxToolCalls"]);
 
 function settingsValue(config: GoalSettings, key: keyof GoalSettings | string): string {
 	if (BOOLEAN_KEYS.has(key)) return (config as Record<string, unknown>)[key] === true ? "true" : "false";
@@ -81,7 +82,8 @@ function settingsValue(config: GoalSettings, key: keyof GoalSettings | string): 
 	if (key === "maxAutonomousRuns") return config.maxAutonomousRuns === 0 ? t("0 (disabled)") : String(config.maxAutonomousRuns ?? t("unlimited (default)"));
 	if (key === "stallTimeoutMinutes") return config.stallTimeoutMinutes !== undefined ? String(config.stallTimeoutMinutes) : "0";
 	if (key === "maxIdleTurns") return String(config.maxIdleTurns ?? 4);
-	if (key === "auditorTimeoutMinutes") return String(config.auditorTimeoutMinutes ?? 20);
+	if (key === "auditorTimeoutMinutes") return String(config.auditorTimeoutMinutes ?? 0);
+	if (key === "auditorMaxToolCalls") return String(config.auditorMaxToolCalls ?? 0);
 	if (key === "maxGoalMinutes") return String(config.maxGoalMinutes ?? 0);
 	if (key === "draftStyle") return config.draftStyle ?? "ask";
 	if (key === "objectiveMaxChars") return config.objectiveMaxChars !== undefined ? String(config.objectiveMaxChars) : "0";

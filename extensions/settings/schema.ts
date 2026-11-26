@@ -102,8 +102,10 @@ export interface GoalSettingsLayer {
 	maxIdleTurns?: number;
 	/** Pause a goal after this many minutes of active time (0 or unset = no limit). */
 	maxGoalMinutes?: number;
-	/** Stop a completion audit that runs longer than this many minutes (default 20; 0 = no limit). */
+	/** Stop a completion audit that runs longer than this many minutes (0 or unset = no limit). */
 	auditorTimeoutMinutes?: number;
+	/** Stop a completion audit after this many auditor tool calls (0 or unset = no limit). */
+	auditorMaxToolCalls?: number;
 	/** How a guided draft starts: "ask" interviews you first (default), "propose" drafts at once and states its assumptions. */
 	draftStyle?: "ask" | "propose";
 	/** Optional extension-run limit per creation/resume; zero disables, absent inherits (default unlimited). */
@@ -407,6 +409,7 @@ export function parseSettingsLayer(
 			case "maxIdleTurns":
 			case "maxGoalMinutes":
 			case "auditorTimeoutMinutes":
+			case "auditorMaxToolCalls":
 			case "objectiveMaxChars": {
 				const parsed = asNonNegativeInt(value);
 				if (parsed === undefined) fail("invalid_value", `${key} must be an integer >= 0`, key);

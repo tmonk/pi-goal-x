@@ -82,7 +82,7 @@ A command only runs after you have seen it: confirming a draft or a tweak, or ty
 
 ## Audit limits
 
-An audit is stopped after `auditorTimeoutMinutes` (default 20; `0` for no limit) or 100 tool calls. It then ends without a verdict, the goal stays open, and requesting completion again starts a new audit.
+Audits have no limit by default. To stop a runaway audit, set `auditorTimeoutMinutes` (minutes) or `auditorMaxToolCalls`; `0` means no limit. An audit that goes past either ends without a verdict, the goal stays open, and requesting completion again starts a new audit.
 
 ## Draft style
 

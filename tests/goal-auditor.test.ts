@@ -449,6 +449,10 @@ test("runGoalCompletionAuditor stops an audit that runs past the time limit", as
 test("runGoalCompletionAuditor stops an audit that makes too many tool calls", async () => {
 	const cwd = tempDir("pi-goal-auditor-toolcap-");
 	try {
+		fs.mkdirSync(`${cwd}/.pi`, { recursive: true });
+		fs.writeFileSync(`${cwd}/.pi/pi-goal-x-settings.json`, JSON.stringify({ auditorMaxToolCalls: 100 }));
+		const { invalidateGoalSettingsCache } = await import("../extensions/settings/files.ts");
+		invalidateGoalSettingsCache();
 		let listener: ((event: unknown) => void) | undefined;
 		let release!: () => void;
 		let aborted = 0;
@@ -468,6 +472,32 @@ test("runGoalCompletionAuditor stops an audit that makes too many tool calls", a
 		});
 		assert.equal(aborted, 1, "aborts once, not once per extra call");
 		assert.match(result.error ?? "", /used more than 100 tool calls/);
+	} finally {
+		fs.rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("runGoalCompletionAuditor has no tool call or time limit unless one is set", async () => {
+	const cwd = tempDir("pi-goal-auditor-nolimit-");
+	try {
+		const { invalidateGoalSettingsCache } = await import("../extensions/settings/files.ts");
+		invalidateGoalSettingsCache();
+		let listener: ((event: unknown) => void) | undefined;
+		let aborted = 0;
+		const mockSession = {
+			abort: () => { aborted++; },
+			subscribe: (fn: (event: unknown) => void) => { listener = fn; return () => {}; },
+			prompt: async () => {
+				for (let i = 0; i < 300; i++) listener?.({ type: "tool_execution_start", toolName: "read", args: {} });
+			},
+		};
+		await runGoalCompletionAuditor({
+			ctx: { cwd, model: undefined } as any,
+			goal: goal(),
+			detailedSummary: "test",
+			createSession: async () => ({ session: mockSession }) as any,
+		});
+		assert.equal(aborted, 0);
 	} finally {
 		fs.rmSync(cwd, { recursive: true, force: true });
 	}

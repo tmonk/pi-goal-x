@@ -255,9 +255,6 @@ function createAuditProgress(onProgress: AuditorProgressCallback | undefined) {
 	};
 }
 
-/** A confused auditor cannot loop on tools forever. */
-const AUDITOR_MAX_TOOL_CALLS = 100;
-
 export async function runGoalCompletionAuditor(args: {
 	ctx: ExtensionContext;
 	goal: GoalRecord;
@@ -301,15 +298,16 @@ export async function runGoalCompletionAuditor(args: {
 			settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
 			tools: ["read", "grep", "find", "ls", "bash"],
 		} as Parameters<typeof createAgentSession>[0]);
-		// An audit cannot run forever: stop it at the time limit or after too many tool calls.
+		// Optional limits, both off by default: stop an audit at a time limit or after too many tool calls.
 		let limitHit: string | undefined;
 		let toolCalls = 0;
 		const stopForLimit = (why: string) => { if (!limitHit) { limitHit = why; session.abort(); } };
-		const timeoutMs = (config.auditorTimeoutMinutes ?? 20) * 60_000;
+		const timeoutMs = (config.auditorTimeoutMinutes ?? 0) * 60_000;
 		const limitTimer = timeoutMs > 0 ? setTimeout(() => stopForLimit(`ran longer than ${config.auditorTimeoutMinutes} minutes`), timeoutMs) : undefined;
 		limitTimer?.unref?.();
+		const maxToolCalls = config.auditorMaxToolCalls ?? 0;
 		const unsubscribe = session.subscribe((event) => {
-			if (event.type === "tool_execution_start" && ++toolCalls > AUDITOR_MAX_TOOL_CALLS) stopForLimit(`used more than ${AUDITOR_MAX_TOOL_CALLS} tool calls`);
+			if (event.type === "tool_execution_start" && maxToolCalls > 0 && ++toolCalls > maxToolCalls) stopForLimit(`used more than ${maxToolCalls} tool calls`);
 			audit.onEvent(event);
 		});
 		// Wire the external AbortSignal to abort the running session when fired

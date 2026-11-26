@@ -7,7 +7,7 @@ Source: the 26 Nov 2026 deep-dive review of the extension. Goal: stop wasted req
 - A goal pauses after `maxIdleTurns` (default 4) automatic turns with no tool call.
 - Other extensions can hold continuation with `pi-goal:busy` while their background jobs run.
 - A confirmed `Verify command` in the contract runs before the auditor.
-- Audits stop after `auditorTimeoutMinutes` (default 20) or 100 tool calls.
+- Optional audit limits, off by default: `auditorTimeoutMinutes` and `auditorMaxToolCalls`.
 - `/goal-status verbose` shows the provider's cache hit rate and a warning when it collapses.
 - `maxGoalMinutes` limits a goal's active time. `draftStyle` can skip the interview.
 - The usage line is sent only with a token budget or `showContextUsage`.
