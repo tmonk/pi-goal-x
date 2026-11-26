@@ -13,7 +13,7 @@ import {
 } from "./goal-pool.ts";
 import { clearGoalCommandMessage } from "./goal-policy.ts";
 import { invalidateGoalLedgerCache, readGoalLedger } from "./goal-ledger.ts";
-import { invalidateGoalSettingsCache, loadGoalSettingsFileConfig } from "./settings/files.ts";
+import { invalidateGoalSettingsCache } from "./settings/files.ts";
 import { loadGoalSettings, effectiveSettingsReport } from "./settings/resolve.ts";
 import { invalidateGoalPoolCache, readActiveGoalPool, refreshActiveGoalPool } from "./storage/goal-files.ts";
 import { nowIso, type GoalMode, type GoalRecord } from "./goal-record.ts";
@@ -316,7 +316,7 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 
 	/** Stable fingerprint of the effective settings (cache-served before invalidation). */
 	function settingsFingerprint(ctx: ExtensionContext): string {
-		return JSON.stringify(loadGoalSettingsFileConfig(ctx.cwd));
+		return JSON.stringify(loadGoalSettings(ctx.cwd));
 	}
 
 	async function showGoalStatus(rawArgs: string, ctx: ExtensionContext): Promise<void> {

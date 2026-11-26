@@ -8,6 +8,9 @@ All notable changes to pi-goal-x are documented here.
 
 - `/goal-refresh` now picks up a goal file that was edited in place. It used to report "no changes" and keep serving the old copy, most visibly with a shared goals folder (#178, thanks to @selimerunkut). It also lists goals whose revision changed.
 - A phase whose subtasks have all ended is now named in the task list, so the agent closes it instead of moving on to the next phase (#176, thanks to @yanhuojiyusheng for the report and PR #177).
+- Turning the auditor off in the global settings file (or by environment) now skips the audit. Completion only looked at the project file, so the audit still ran. The "audit started" message and ledger entry also show the auditor model you actually configured.
+- `/goal-refresh` now notices a change to the global settings file instead of saying "no changes".
+- A skipped Sisyphus step now counts as done, so the "step N of M" display moves on to the next step.
 
 ### Changed
 

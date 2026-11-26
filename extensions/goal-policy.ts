@@ -269,7 +269,7 @@ export function sisyphusStepProgress(goal: { sisyphus: boolean; objective: strin
 	let current = 1;
 	const tasks = goal.taskList?.tasks;
 	if (tasks && tasks.length > 0) {
-		const completedTop = tasks.filter((t) => t.status === "complete").length;
+		const completedTop = tasks.filter((t) => t.status === "complete" || t.status === "skipped").length;
 		current = Math.min(total, completedTop + 1);
 	}
 	return { current, total };
