@@ -53,3 +53,11 @@ test("diffGoalRefreshState: combined changes are reported in order", () => {
 		"settings: effective settings changed (external edit)",
 	]);
 });
+
+test("diffGoalRefreshState: an edit that keeps the same ids is reported by revision", () => {
+	const changes = diffGoalRefreshState(
+		state({ revisions: new Map([["g1", 1], ["g2", 1]]) }),
+		state({ revisions: new Map([["g1", 4], ["g2", 1]]) }),
+	);
+	assert.deepEqual(changes, ["pool: g1 changed on disk (revision 1 -> 4)"]);
+});

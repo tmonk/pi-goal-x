@@ -16,6 +16,13 @@ commands:
   finish: /spec-finish [spec-id-or-path]
   settings: /specs-settings
 specs:
+  - id: 2026-11-26-refresh-and-wrap-up
+    path: specs/2026-11-26-refresh-and-wrap-up
+    title: Fix /goal-refresh staleness and name finished phases
+    status: completed
+    focused: false
+    last_audit: 2026-11-26
+    updated: 2026-11-26
   - id: 2026-10-27-post-release-bug-stabilization
     path: specs/2026-10-27-post-release-bug-stabilization
     title: Stabilize post-0.34.0 bugs and protect prompt-cache reuse

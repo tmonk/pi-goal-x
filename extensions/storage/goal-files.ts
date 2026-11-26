@@ -7,6 +7,7 @@
  * listings and the zero-op pool).
  */
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { writeFileAtomicSync } from "./atomic-rename.ts";
 import { parseGoalFileContent, serializeGoalFile } from "./goal-file-format.ts";
 import {
@@ -332,6 +333,25 @@ export function readActiveGoalPoolView(ctx: GoalFileContext): ReadonlyMap<string
 
 export function readActiveGoalPool(ctx: GoalFileContext): Map<string, GoalRecord> {
 	return new Map(readActiveGoalPoolView(ctx));
+}
+
+/**
+ * Forced rescan for /goal-refresh. A plain cold read can serve the persisted
+ * snapshot when the goals folder looks unchanged, which hides an in-place edit
+ * to a goal file. This drops the caches for this root, rescans every file,
+ * rewrites the snapshot, and fills the pool cache.
+ */
+export function refreshActiveGoalPool(ctx: GoalFileContext): Map<string, GoalRecord> {
+	const root = goalStoragePath(ctx, GOALS_DIR);
+	goalPoolCache.delete(root);
+	goalDirListingCache.delete(root);
+	for (const cachedPath of [...goalFileParseCache.keys()]) {
+		if (cachedPath === root || cachedPath.startsWith(root + path.sep)) goalFileParseCache.delete(cachedPath);
+	}
+	const pool = scanActiveGoalFiles(ctx, root);
+	writePoolSnapshotSync(ctx, root, Array.from(pool.values()));
+	goalPoolCache.set(root, pool);
+	return new Map(pool);
 }
 
 /**

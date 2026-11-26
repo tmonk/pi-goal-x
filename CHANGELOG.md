@@ -4,6 +4,11 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- `/goal-refresh` now picks up a goal file that was edited in place. It used to report "no changes" and keep serving the old copy, most visibly with a shared goals folder (#178, thanks to @selimerunkut). It also lists goals whose revision changed.
+- A phase whose subtasks have all ended is now named in the task list, so the agent closes it instead of moving on to the next phase (#176, thanks to @yanhuojiyusheng for the report and PR #177).
+
 ### Changed
 
 - Goal turns are faster and gentler on slow disks, with no change to prompts or behavior. Checking the history on every request no longer gets slower as a session grows (a goal turn at 2.8 MiB of history went from 32 ms to 7 ms). A turn saves the goal file once instead of twice, so file operations per turn fall from 44 to 22. Locks and goal writes skip needless folder checks. `/goal-settings`, `/goal-status` and `/goal-recovery` load when first used. Prompt-cache results are identical.

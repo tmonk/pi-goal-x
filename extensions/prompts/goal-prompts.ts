@@ -93,6 +93,19 @@ function renderPendingTasks(tasks: GoalTask[], indent: number, rendered: { count
 }
 
 /**
+ * The first pending task, in tree order, whose subtasks have all ended. A parent
+ * only qualifies once its nested phases are closed, so phases wrap up inside out.
+ * Lightweight subtasks are a checklist, not a phase to close.
+ */
+function phaseToWrapUp(tasks: GoalTask[]): GoalTask | undefined {
+	return tasks.find(task =>
+		task.status === "pending"
+		&& !task.lightweightSubtasks
+		&& !!task.subtasks?.length
+		&& task.subtasks.every(child => child.status === "complete" || child.status === "skipped"));
+}
+
+/**
  * Bounded, trimmed task-list block (P1-4): pending tasks first with depth-aware
  * indentation and contract snippets; completed/skipped are collapsed to the
  * header counts. Previously the ENTIRE tree (up to 50 tasks + subtrees) was
@@ -116,6 +129,13 @@ export function taskListBlock(goal: GoalRecord, settings?: GoalSettings): string
 			const contract = current.verificationContract ? ` (contract: ${excerpt(current.verificationContract, 600, "tasks")})` : "";
 			lines.push(`  Current: ${excerpt(current.id, 80, "tasks")} · ${excerpt(current.title, 180, "tasks")}${contract}`);
 		}
+	}
+	// Finishing a phase's last subtask clears the current task, so nothing would
+	// point at the phase that is still open. Name it, but only when no task is current.
+	const wrapUp = goal.currentTaskId ? undefined : phaseToWrapUp(index.ordered.map(entry => entry.task));
+	if (wrapUp) {
+		const id = excerpt(wrapUp.id, 80, "tasks");
+		lines.push(`  Wrap-up: every subtask of ${id} has ended but ${id} is still pending. Close it with update_goal_task({task_id:"${id}", status:"complete"}) once its own acceptance is met, before moving on to the next phase.`);
 	}
 	const legacy = promptProfile() === "legacy-v1";
 	if (legacy) {
