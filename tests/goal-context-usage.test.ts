@@ -25,8 +25,9 @@ test("context display defaults off and explicit true preserves the existing coun
 			for (const value of [undefined, false]) {
 				const hidden = goalPromptParts(goal, {showContextUsage: value, maxAutonomousRuns, showAutonomousRuns}, usage);
 				assert.equal(hidden.state, enabled.state);
-				assert.equal(hidden.ephemeral, enabled.ephemeral.replace(`\n${contextUsageLine(usage)}`, ""));
-				assert.doesNotMatch(hidden.ephemeral, /Context snapshot:|\n\n/);
+				// Without a budget or showContextUsage, the usage line is not sent at all.
+				assert.doesNotMatch(hidden.ephemeral, /Goal snapshot|Context snapshot:|\n\n/);
+				assert.equal(hidden.ephemeral, enabled.ephemeral.replace(/Goal snapshot:[^\n]*\n[^\n]*Context snapshot:[^\n]*\n?/, "").replace(/^\n/, "").trim());
 			}
 		}
 	}

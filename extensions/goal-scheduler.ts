@@ -410,6 +410,11 @@ export class GoalScheduler {
 			}
 			if (!["ready", "waiting"].includes(s.phase)) return;
 			if (budgetReached(g)) { this.pause(ctx, "Goal token budget exhausted.", t("Goal token budget exhausted.")); return; }
+			const minutesLimit = loadGoalSettings(ctx.cwd).maxGoalMinutes ?? 0;
+			if (minutesLimit > 0 && g.usage.activeSeconds >= minutesLimit * 60) {
+				this.pause(ctx, commandInstructions(`Goal time limit of ${minutesLimit} minutes reached. Raise maxGoalMinutes in /goal-settings, then use /goal-resume.`, this.core.loadedCommands), commandInstructions(t("Goal time limit of {n} minutes reached. Raise it in /goal-settings, then use /goal-resume.", { n: minutesLimit }), this.core.loadedCommands));
+				return;
+			}
 			if (!this.available(ctx, s)) { this.pauseForAllowance(ctx); return; }
 			if (this.holdForWait(ctx, s)) return;
 			const pacedDelay = idleDelay(s, Date.now());

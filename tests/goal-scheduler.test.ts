@@ -49,6 +49,13 @@ async function fixture(t: TestContext, limit?: number, owner = "owner", existing
 	return Object.assign(harness, { cwd, events, handlers: Object.fromEntries(harness.handlers) as Record<string, Function>, sent: harness.sentMessages, begin, admit, ready, wait, aborts: () => harness.abortCount });
 }
 
+/** The usage line only goes out with a token budget or showContextUsage, so these tests ask for it. */
+function showUsageLine(cwd: string): void {
+	const file = path.join(cwd, ".pi", "pi-goal-x-settings.json");
+	writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), showContextUsage: true }));
+	invalidateGoalSettingsCache();
+}
+
 test("explicit zero means no automatic model runs, even for missing disposition", async t => {
 	const h = await fixture(t, 0);
 	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
@@ -790,6 +797,7 @@ test("a goal saved with decision.nextAction loads and strips the field", () => {
 
 test("prompt cache: normal and custom runs preserve history while refreshing all live goal state", async t => {
 	const h = await fixture(t);
+	showUsageLine(h.cwd);
 	const history: any[] = [{role: "user", content: "Work on the goal", timestamp: 1}];
 	const original = structuredClone(history);
 	const request = async () => (await h.handlers.context_with_system!({messages: history}, h.ctx)).messages;
@@ -848,6 +856,7 @@ test("prompt cache: normal and custom runs preserve history while refreshing all
 
 test("prompt cache: interleaved sessions keep per-session transient sets", async t => {
 	const h = await fixture(t);
+	showUsageLine(h.cwd);
 	const history: any[] = [{role: "user", content: "Work on the goal", timestamp: 1}];
 	const ctxB = {...h.ctx, sessionManager: {...h.ctx.sessionManager, getSessionId: () => "owner-B"}} as unknown as ExtensionContext;
 	const first: any[] = (await h.handlers.context_with_system!({messages: history}, h.ctx)).messages;
@@ -879,6 +888,7 @@ test("prompt cache: cleared scheduling instructions vanish from retained history
 
 test("prompt cache: model changes and missing identities cannot replay another request's counters", async t => {
 	const h = await fixture(t);
+	showUsageLine(h.cwd);
 	await h.handlers.session_start!({}, h.ctx);
 	const history = [{role: "user", content: "inspect", timestamp: 1}];
 	const request = async (ctx: ExtensionContext) => (await h.handlers.context_with_system!({messages: history}, ctx)).messages as any[];
@@ -1086,4 +1096,18 @@ test("busy hold: bad payloads are ignored and two sources must both drain", asyn
 	h.events.emit("pi-goal:busy", { source: "b", count: 0 });
 	t.mock.timers.tick(1);
 	assert.equal(h.sent.length, 2);
+});
+
+test("goal time limit: an automatic turn is not queued once the goal has used its minutes", async t => {
+	const h = await fixture(t, undefined, "owner", undefined, false);
+	writeProjectSettings(h.cwd, { strictExecutionContract: false, maxGoalMinutes: 30 });
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	h.core.scheduler.resume(h.ctx); t.mock.timers.tick(1);
+	assert.equal(h.sent.length, 1, "under the limit, work goes on");
+	h.admit(); h.core.scheduler.noteTool();
+	h.core.goalService.apply(h.ctx, { reconcile: false, mutate: g => ({ ...g, usage: { ...g.usage, activeSeconds: 30 * 60 } }) });
+	h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1000);
+	assert.equal(h.sent.length, 1, "no turn after the limit");
+	assert.equal(h.core.state.goal?.status, "paused");
+	assert.match(h.core.state.goal?.pauseReason ?? "", /time limit of 30 minutes/);
 });

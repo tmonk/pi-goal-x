@@ -259,10 +259,13 @@ export function goalPromptParts(goal: GoalRecord, settings?: GoalSettings, conte
 	const fixed = cachedPrompt(goal, settings, "goal", () => buildGoalPrompt(goal, settings));
 	const { runs, instructions } = schedulerSummaryParts(goal.scheduler, settings?.maxAutonomousRuns, settings?.showAutonomousRuns, settings?.idleContinuationBackoff === true, settings?.commands);
 	const limits = `Limits: lifetime tokens=${goal.tokenBudget ?? "none"}; runs=${settings?.maxAutonomousRuns ?? "unlimited"}.`;
-	const state = [fixed, limits, "Usage spans goal turns, not context. The latest snapshot, including its task list, supersedes earlier ones."].join("\n");
+	const state = [fixed, limits, goal.tokenBudget !== undefined ? "Usage spans goal turns, not context. The latest snapshot, including its task list, supersedes earlier ones." : "The latest snapshot, including its task list, supersedes earlier ones."].join("\n");
 	const context = settings?.showContextUsage === true ? `\n${contextUsageLine(contextUsage)}` : "";
 	const counters = taskListBlock(goal, settings);
-	const ephemeral = [instructions, `Goal snapshot: ${formatUsage(goal)}${context}\n${runs}`].filter(Boolean).join("\n");
+	// Usage changes every request and is never cached, and a bare running total
+	// reads like context exhaustion (#76). Say it only when the model can act on it.
+	const showUsage = goal.tokenBudget !== undefined || settings?.showContextUsage === true;
+	const ephemeral = [instructions, showUsage ? `Goal snapshot: ${formatUsage(goal)}${context}` : "", runs].filter(Boolean).join("\n");
 	return { state, counters, ephemeral };
 }
 

@@ -169,3 +169,16 @@ test("compaction resync bounds oversized task text and points to lossless requir
 		const detail=goalDetailPage(goal,{section:"tasks",task_id:"task"}); assert.ok(detail.ok && detail.nextCursor && detail.totalChars>goal.taskList.tasks[0]!.verificationContract.length);
 	} finally {f.cleanup();}
 });
+
+test("post-compaction delta carries the evidence of recently completed tasks, newest first and bounded", () => {
+	const goal = createGoal({ objective: "Ship it", autoContinue: true, sisyphus: false });
+	const tasks = Array.from({ length: 8 }, (_, i) => ({ id: `t${i}`, title: `Task ${i}`, status: "complete" as const, completedAt: `2026-11-26T10:0${i}:00.000Z`, evidence: `Ran suite ${i}: green. ${"x".repeat(i === 7 ? 400 : 0)}` }));
+	tasks.push({ id: "pending-one", title: "Later", status: "pending" as never, completedAt: undefined as never, evidence: undefined as never });
+	goal.taskList = { tasks, blockCompletion: false, proposedAt: "2026-11-26T09:00:00.000Z" };
+	const delta = buildPostCompactionGoalDelta({ goal, ledgerEvents: [], otherOpenCount: 0 });
+	assert.match(delta, /Recently completed, with the evidence recorded:/);
+	assert.ok(delta.indexOf("t7:") < delta.indexOf("t6:"), "newest first");
+	assert.doesNotMatch(delta, /t2:/, "only five");
+	assert.doesNotMatch(delta, /pending-one/);
+	assert.ok(!delta.includes("x".repeat(250)), "evidence is cut");
+});

@@ -26,6 +26,17 @@ export function buildPostCompactionGoalDelta(args: {
 			if (current.id.length > 80 || current.title.length > 180 || (current.verificationContract?.length ?? 0) > 600) lines.push('Retrieve omitted task requirements with get_goal(section="tasks") before continuing.');
 		}
 	}
+	// What the agent already found out. Compaction drops it, and finished tasks no longer appear in the task list.
+	const finished = goal.taskList
+		? taskIndex(goal.taskList.tasks).ordered.map(entry => entry.task)
+			.filter(task => task.status === "complete" && task.evidence?.trim())
+			.sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""))
+			.slice(0, 5)
+		: [];
+	if (finished.length > 0) {
+		lines.push("Recently completed, with the evidence recorded:");
+		for (const task of finished) lines.push(`  ${truncateText(task.id, 80)}: ${truncateText(task.evidence!.trim(), 200)}`);
+	}
 	// Bounded recent-event tail.
 	const recent = latestEventsForGoal(ledgerEvents, goal.id, 5);
 	if (recent.length > 0) {

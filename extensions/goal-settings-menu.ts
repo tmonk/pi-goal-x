@@ -44,7 +44,6 @@ const settingRows = (): SettingRow[] => [
 	{ key: "stallTimeoutMinutes", label: t("stall timeout (minutes)"), section: t("Goal behavior"), kind: "positiveInteger" },
 	{ key: "maxIdleTurns", label: t("pause after idle turns (0 = never)"), section: t("Goal behavior"), kind: "positiveInteger" },
 	{ key: "maxGoalMinutes", label: t("goal time limit (minutes, 0 = none)"), section: t("Goal behavior"), kind: "positiveInteger" },
-	{ key: "auditorTimeoutMinutes", label: t("audit time limit (minutes, 0 = none)"), section: t("Completion auditor"), kind: "positiveInteger" },
 	{ key: "objectiveMaxChars", label: t("max objective length (0 = none)"), section: t("Goal behavior"), kind: "positiveInteger" },
 	{ key: "idleContinuationBackoff", label: t("slow repeated idle replies (opt-in)"), section: t("Advanced execution"), kind: "boolean",
 		help: t("Slows repeated replies without recognized work. May delay reasoning or custom tools. For a hard stop, set an autonomous run allowance.") },
@@ -54,6 +53,7 @@ const settingRows = (): SettingRow[] => [
 	{ key: "provider", label: "provider", section: t("Completion auditor"), kind: "modelSelector" },
 	{ key: "model", label: "model", section: t("Completion auditor"), kind: "modelSelector" },
 	{ key: "thinkingLevel", label: "thinking_level", section: t("Completion auditor"), kind: "thinking" },
+	{ key: "auditorTimeoutMinutes", label: t("audit time limit (minutes, 0 = none)"), section: t("Completion auditor"), kind: "positiveInteger" },
 	// Issue #26: opt-in blocker Oracle. Disabled by default; provider/model
 	// must BOTH be set explicitly — the executor model is never used silently.
 	{ key: "oracleEnabled", label: t("oracle enabled"), section: t("Blocker Oracle"), kind: "boolean", path: ["oracle", "enabled"] },
