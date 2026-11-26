@@ -28,6 +28,14 @@ test("cache stats: warns once when hits drop to nearly zero twice in a row after
 	assert.equal(stats.record(usage(10000, 0)), undefined, "warns once");
 });
 
+test("cache stats: a new goal starts fresh, so its first misses do not warn", () => {
+	const stats = new CacheStats();
+	assert.equal(stats.record(usage(500, 9500), "goal-a"), undefined);
+	assert.equal(stats.record(usage(10000, 0), "goal-b"), undefined);
+	assert.equal(stats.record(usage(10000, 0), "goal-b"), undefined, "no good hit yet on goal-b, so nothing to fall from");
+	assert.match(stats.line() ?? "", /3 requests/, "the session totals keep counting");
+});
+
 test("cache stats: a provider that never reports cache reads never warns", () => {
 	const stats = new CacheStats();
 	for (let i = 0; i < 6; i++) assert.equal(stats.record(usage(10000, 0)), undefined);

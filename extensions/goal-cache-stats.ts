@@ -23,11 +23,21 @@ export class CacheStats {
 	private hadGoodHit = false;
 	private badStreak = 0;
 	private warned = false;
+	private key: string | undefined;
 
-	/** Returns a one-time warning when hits drop to nearly zero twice in a row after working well. */
-	record(usage: unknown): string | undefined {
+	/**
+	 * Returns a one-time warning when hits drop to nearly zero twice in a row after working well.
+	 * `key` names the goal. A new goal starts a new prompt, so the first misses after a change are expected.
+	 */
+	record(usage: unknown, key?: string): string | undefined {
 		const raw = asRecord(usage);
 		if (!raw) return undefined;
+		if (key !== this.key) {
+			this.key = key;
+			this.hadGoodHit = false;
+			this.badStreak = 0;
+			this.warned = false;
+		}
 		const read = tokens(raw.cacheRead);
 		const prompt = tokens(raw.input) + read + tokens(raw.cacheWrite);
 		if (prompt < MIN_PROMPT_TOKENS) return undefined;

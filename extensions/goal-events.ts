@@ -314,7 +314,7 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		core.watch.touchActivity(); // F5
 		core.progress.charge(ctx, { completedTurnTokens: tokens });
 		if (!isAbortedAssistantMessage(message) && !isErrorAssistantMessage(message)) {
-			const warning = core.state.cacheStats.record((message as { usage?: unknown } | undefined)?.usage);
+			const warning = core.state.cacheStats.record((message as { usage?: unknown } | undefined)?.usage, core.state.goal?.id);
 			if (warning) ctx.ui.notify(warning, "warning");
 		}
 		core.interruption.finishTurn(ctx);
