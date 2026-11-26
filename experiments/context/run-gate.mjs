@@ -83,8 +83,9 @@ for (const fixtureId of expectedFixtureIds) {
 	const liveState = captured.messages.filter(m => m.customType === "pi-goal-live-context");
 	const active = liveState[0]?.content?.includes("[PI GOAL ACTIVE goalId=");
 	// Layout: policy block, optional task list, request-only snapshot last.
-	if (liveState.length && (liveState.length > 3 || liveState.some((m, i) => captured.messages.at(-liveState.length + i) !== m))) failures.push(`${fixtureId}: current policy, optional task list and request-only snapshot must occur once at the tail`);
-	if (active && !liveState.at(-1)?.content?.includes("Goal snapshot:")) failures.push(`${fixtureId}: request-only snapshot missing`);
+	if (liveState.length && (liveState.length > 3 || liveState.some((m, i) => captured.messages.at(-liveState.length + i) !== m))) failures.push(`${fixtureId}: current policy, optional task list and request-only snapshot (when sent) must occur once at the tail`);
+	// The usage snapshot is request-only and only sent with a token budget or showContextUsage.
+	if (active && /budget/.test(fixtureId) && !liveState.at(-1)?.content?.includes("Goal snapshot:")) failures.push(`${fixtureId}: request-only snapshot missing`);
 	const liveText = liveState[0]?.content ?? "";
 
 	// Required single-source markers on active-goal fixtures whose turn was

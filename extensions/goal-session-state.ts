@@ -1,3 +1,4 @@
+import { CacheStats } from "./goal-cache-stats.ts";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { goalDetails } from "./goal-format.ts";
 import { focusedGoalFromPool, openGoalsFromPool } from "./goal-pool.ts";
@@ -36,6 +37,8 @@ export class GoalSessionState {
 	/** Whether the task tools are advertised; decided at session start from settings. */
 	tasksEnabled = true;
 	goalWorkToolCalledThisTurn = false;
+	/** What the provider reported it cached, this session. */
+	readonly cacheStats = new CacheStats();
 	activeAudit: ActiveGoalAudit | null = null;
 
 	get goal(): GoalRecord | null {

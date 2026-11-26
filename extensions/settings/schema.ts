@@ -98,6 +98,16 @@ export interface GoalSettingsLayer {
 	auditorProjectResources?: boolean;
 	/** F5: stall detector timeout in minutes (0 = off). */
 	stallTimeoutMinutes?: number;
+	/** Pause after this many automatic turns in a row with no tool call (default 4; 0 = never). */
+	maxIdleTurns?: number;
+	/** Pause a goal after this many minutes of active time (0 or unset = no limit). */
+	maxGoalMinutes?: number;
+	/** Stop a completion audit that runs longer than this many minutes (0 or unset = no limit). */
+	auditorTimeoutMinutes?: number;
+	/** Stop a completion audit after this many auditor tool calls (0 or unset = no limit). */
+	auditorMaxToolCalls?: number;
+	/** How a guided draft starts: "ask" interviews you first (default), "propose" drafts at once and states its assumptions. */
+	draftStyle?: "ask" | "propose";
 	/** Optional extension-run limit per creation/resume; zero disables, absent inherits (default unlimited). */
 	maxAutonomousRuns?: number;
 	/**
@@ -396,10 +406,19 @@ export function parseSettingsLayer(
 				break;
 			}
 			case "stallTimeoutMinutes":
+			case "maxIdleTurns":
+			case "maxGoalMinutes":
+			case "auditorTimeoutMinutes":
+			case "auditorMaxToolCalls":
 			case "objectiveMaxChars": {
 				const parsed = asNonNegativeInt(value);
 				if (parsed === undefined) fail("invalid_value", `${key} must be an integer >= 0`, key);
 				else layer[key] = parsed;
+				break;
+			}
+			case "draftStyle": {
+				if (value === "ask" || value === "propose") layer.draftStyle = value;
+				else fail("invalid_value", `${key} must be "ask" or "propose"`, key);
 				break;
 			}
 			case "goalsRoot":

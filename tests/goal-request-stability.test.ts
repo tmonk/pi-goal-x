@@ -47,6 +47,7 @@ function goalWithTasks(count: number) {
 
 test("the goal policy and task list do not change with the clock, usage or revision", () => {
 	const goal = goalWithTasks(10);
+	goal.tokenBudget = 5_000_000; // usage is only sent when there is a budget to watch
 	const first = goalPromptParts(goal, { maxAutonomousRuns: 5 });
 	const later = structuredClone(goal);
 	later.updatedAt = "2027-01-01T00:00:00.000Z";

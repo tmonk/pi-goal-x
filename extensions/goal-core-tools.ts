@@ -43,7 +43,6 @@ type CoreToolsCore = GoalCompletionCore &
 	LifecycleSlice<"create" | "syncPromptFromDisk"> &
 	SchedulerSlice<"declare"> &
 	ViewSlice<"goalForDisplay">;
-import { promptProfile } from "./prompts/goal-prompts.ts";
 import { runGoalAgentPauseFlow, runGoalBlockedFlow } from "./goal-update-flows.ts";
 
 /** Current + first-pending (excluding current) task pointers for concise get_goal. */
@@ -162,10 +161,8 @@ export function registerCoreTools(
 			const view = core.view.goalForDisplay() ?? core.state.goal;
 			const params = (_params ?? {}) as { verbose?: boolean; include_history?: boolean; section?: "summary" | GoalDetailSection; task_id?: string; cursor?: string };
 			const taskId = params.task_id?.trim() || undefined;
-			// PR E profile: legacy-v1 keeps pre-optimization verbose-by-default output;
-			// compact-v2 (default) returns a concise state line set because the full
-			// policy already lives in the injected active-goal system block.
-			const verbose = promptProfile() === "legacy-v1" || params.verbose === true;
+			// Concise by default: the full policy already lives in the injected goal block.
+			const verbose = params.verbose === true;
 			if (!view) {
 				const unfocusedCount = otherOpenGoalCount(core.state.goalsById, null);
 				const text = unfocusedCount > 0

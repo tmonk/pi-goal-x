@@ -4,7 +4,7 @@ For installation, goal workflows, commands and the settings overview, see the [R
 
 ## Automatic continuation and optional execution contracts
 
-Active goals continue automatically after successful executions, including reasoning-only responses and final-task verification. No tool call, task update, or scheduling declaration is required.
+Active goals continue automatically after successful executions, including reasoning-only responses and final-task verification. No tool call, task update, or scheduling declaration is required, but a goal that goes `maxIdleTurns` automatic turns in a row without a single tool call is paused (see below).
 
 Default continuation is immediate. To slow repeated replies without recognized work, enable **slow repeated idle replies (opt-in)** under Advanced execution in `/goal-settings` (`idleContinuationBackoff: true`). Use the scope switch to choose a global default or a project override. An explicit project `false` overrides global `true`; removing the override restores inheritance.
 
@@ -44,6 +44,49 @@ update_goal({ continuation: {
 Use a future deadline appropriate to the task. Omit `polling` for an event-only wait. Successful declarations terminate the execution segment. On a scheduled check, reuse the returned `wait_id` and original deadline, omitting `polling`; remaining checks cannot be reset. A ready decision ends the wait. Time spent waiting is not active execution time.
 
 The dashboard, `/goal-status`, and `get_goal` show scheduling state, timing, checks, and allowance consumption. Expired waits and exhausted checks or allowance pause without another model call. Waits survive reopening the same session, without replaying missed checks; Pi must remain open for timers to execute. Another session requires explicit resume to take ownership. An ambiguous interrupted dispatch requires resume instead of automatic replay.
+
+## Stopping a goal that has gone quiet
+
+If the agent only talks for four automatic turns in a row (no tool call at all, `get_goal` aside), the goal pauses and says why. Any tool call resets the count. Use `/goal-resume` to carry on.
+
+Change the number with `maxIdleTurns` in `/goal-settings` or a settings file. `0` turns this off. It is also off when **slow repeated idle replies** is on, because that option already slows idle turns instead of stopping them.
+
+```json
+{ "maxIdleTurns": 6 }
+```
+
+`maxGoalMinutes` pauses a goal once it has used that many minutes of active time (default `0`, no limit). The check runs between automatic turns, so a single long turn can finish first. Raise the value, then `/goal-resume`.
+
+## Holding while background work runs
+
+Other extensions can tell pi-goal-x that background work is running, so it does not queue continuation turns that have nothing to do:
+
+```js
+pi.events.emit("pi-goal:busy", { source: "my-subagents", count: 2 });  // two jobs running
+pi.events.emit("pi-goal:busy", { source: "my-subagents", count: 0 });  // all done
+```
+
+While any source reports a count above zero, no continuation is queued. The goal stays active and spends no run allowance or active time. When every source reports zero, one continuation goes out. If a source never reports back, one normal continuation goes out after 60 minutes. A host that does not send these events behaves as before. A job's own completion message still starts a turn as usual.
+
+## Verify command
+
+A goal can name a command that must pass before the auditor runs. Put it in the verification contract, in backticks:
+
+```text
+Verification contract: the export tests pass. Verify command: `npm test`
+```
+
+When the agent asks to complete, pi-goal-x runs the command in the project folder (5 minute limit). If it fails, the completion is rejected with the end of its output and no audit is spent. If it passes, the output is given to the auditor as evidence.
+
+A command only runs after you have seen it: confirming a draft or a tweak, or typing `/goal-direct`, trusts that exact command for that project. The trust list is `pi-goal-x-trusted-verify.json` in your Pi agent folder, not in the project, so a goal file that arrives with a repository cannot run commands on its own. A command that has not been confirmed is skipped, and you are told.
+
+## Audit limits
+
+Audits have no limit by default. To stop a runaway audit, set `auditorTimeoutMinutes` (minutes) or `auditorMaxToolCalls`; `0` means no limit. An audit that goes past either ends without a verdict, the goal stays open, and requesting completion again starts a new audit.
+
+## Draft style
+
+`draftStyle` controls how `/goal` and `/sisyphus` begin. `"ask"` (the default) lets the agent ask questions first. `"propose"` makes it draft at once and list its guesses on an `Assumptions:` line, which you can correct before confirming. Set it in a settings file.
 
 ## Background producer integration
 

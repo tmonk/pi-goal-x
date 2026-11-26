@@ -25,8 +25,9 @@ test("context display defaults off and explicit true preserves the existing coun
 			for (const value of [undefined, false]) {
 				const hidden = goalPromptParts(goal, {showContextUsage: value, maxAutonomousRuns, showAutonomousRuns}, usage);
 				assert.equal(hidden.state, enabled.state);
-				assert.equal(hidden.ephemeral, enabled.ephemeral.replace(`\n${contextUsageLine(usage)}`, ""));
-				assert.doesNotMatch(hidden.ephemeral, /Context snapshot:|\n\n/);
+				// Without a budget or showContextUsage, the usage line is not sent at all.
+				assert.doesNotMatch(hidden.ephemeral, /Goal snapshot|Context snapshot:|\n\n/);
+				assert.equal(hidden.ephemeral, enabled.ephemeral.replace(/Goal snapshot:[^\n]*\n[^\n]*Context snapshot:[^\n]*\n?/, "").replace(/^\n/, "").trim());
 			}
 		}
 	}
@@ -129,6 +130,34 @@ test("the registered settings menu edits and resets context display in both scop
 		assert.equal(h.toolInstalls, installs);
 		assert.deepEqual(h.core.state.goal, before);
 		assert.equal(h.sent.length, 0);
+	} finally {
+		if (previousGlobal === undefined) delete process.env.PI_GOAL_GLOBAL_SETTINGS_FILE;
+			else process.env.PI_GOAL_GLOBAL_SETTINGS_FILE = previousGlobal;
+		await h.cleanup();
+	}
+});
+
+test("the settings menu has a draft style row and shows the oracle model as text", async () => {
+	const h = stabilizationHarness(), previousGlobal = process.env.PI_GOAL_GLOBAL_SETTINGS_FILE;
+	process.env.PI_GOAL_GLOBAL_SETTINGS_FILE = path.join(h.cwd, "global.json");
+	const menus: string[][] = [];
+	try {
+		h.ctx.hasUI = true;
+		const choices = ["row", "Set project override to propose", "Done"];
+		h.ctx.ui.select = async (title: string, options: string[]) => {
+			if (title === "Goal settings") menus.push(options);
+			const next = choices.shift();
+			if (next === "row") return options.find(option => option.startsWith("  draft style:"));
+			assert.ok(next && options.includes(next), `${next} not in ${options.join(" | ")}`);
+			return next;
+		};
+		await h.start();
+		await h.commands.get("goal-settings").handler("", h.ctx);
+		assert.equal(choices.length, 0);
+		assert.ok(menus[0]!.some(option => option.startsWith("  draft style: ask (default)")));
+		assert.ok(menus[1]!.some(option => option.startsWith("  draft style: propose (project override)")));
+		assert.equal(loadGoalSettings(h.cwd).draftStyle, "propose");
+		assert.ok(!menus[0]!.some(option => option.includes("[object Object]")));
 	} finally {
 		if (previousGlobal === undefined) delete process.env.PI_GOAL_GLOBAL_SETTINGS_FILE;
 			else process.env.PI_GOAL_GLOBAL_SETTINGS_FILE = previousGlobal;

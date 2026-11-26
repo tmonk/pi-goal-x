@@ -50,16 +50,6 @@ export const MAX_OBJECTIVE_BLOCK_CHARS = 1_500;
 /** Cap on pending tasks rendered inline in the prompt (P1-4 trim). */
 const MAX_PENDING_RENDERED = 3;
 
-/**
- * PR E prompt profile: compact-v2 (default) removes duplicate renderings;
- * legacy-v1 is the emergency A/B fallback for one minor release. It restores
- * ONLY pre-optimization active-prompt wording — never full checkpoint
- * persistence (issue #30 stays fixed in both profiles).
- */
-export function promptProfile(env: NodeJS.ProcessEnv = process.env): "compact-v2" | "legacy-v1" {
-	return env.PI_GOAL_PROMPT_PROFILE === "legacy-v1" ? "legacy-v1" : "compact-v2";
-}
-
 /** Render only PENDING nodes (depth-aware); completed/skipped collapse to counts. */
 function renderPendingTasks(tasks: GoalTask[], indent: number, rendered: { count: number; stop: boolean; skipId?: string }): string[] {
 	if (rendered.stop) return [];
@@ -137,30 +127,18 @@ export function taskListBlock(goal: GoalRecord, settings?: GoalSettings): string
 		const id = excerpt(wrapUp.id, 80, "tasks");
 		lines.push(`  Wrap-up: every subtask of ${id} has ended but ${id} is still pending. Close it with update_goal_task({task_id:"${id}", status:"complete"}) once its own acceptance is met, before moving on to the next phase.`);
 	}
-	const legacy = promptProfile() === "legacy-v1";
-	if (legacy) {
-		// legacy-v1: pre-PR-E wording (current task also appears as a generic
-		// pending item; UI shortcut hint included).
-		const rendered = { count: 0, stop: false };
-		lines.push(...renderPendingTasks(goal.taskList.tasks, 0, rendered));
-		const hiddenPending = Math.max(0, (pending ?? 0) - rendered.count - (goal.currentTaskId && pendingTasks?.some(t => t.id === goal.currentTaskId) ? 1 : 0));
-		if (hiddenPending > 0) {
-			lines.push(`  (+${hiddenPending} more pending — expand the dashboard with Ctrl+Shift+T)`);
-		}
-	} else {
-		// compact-v2: the current task appears ONCE (in the Current line above);
-		// visible pending items exclude it.
-		const rendered = { count: 0, stop: false, skipId: goal.currentTaskId };
-		lines.push(...renderPendingTasks(goal.taskList.tasks, 0, rendered));
-		const hiddenPending = Math.max(0, (pending ?? 0) - rendered.count - (goal.currentTaskId && pendingTasks?.some(t => t.id === goal.currentTaskId) ? 1 : 0));
-		if (hiddenPending > 0 && rendered.count === 0) {
-			// Nothing visible at all: point at the next actionable task instead.
-			const next = pendingTasks?.find((t) => t.id !== goal.currentTaskId);
-			if (next) lines.push(`  Next pending: ${next.id} — ${next.title}`);
-		}
-		if (hiddenPending > 0) {
-			lines.push(`  ${hiddenPending} additional pending tasks omitted; retrieve with get_goal(section="tasks").`);
-		}
+	// The current task appears once (in the Current line above); the visible
+	// pending items exclude it.
+	const rendered = { count: 0, stop: false, skipId: goal.currentTaskId };
+	lines.push(...renderPendingTasks(goal.taskList.tasks, 0, rendered));
+	const hiddenPending = Math.max(0, (pending ?? 0) - rendered.count - (goal.currentTaskId && pendingTasks?.some(t => t.id === goal.currentTaskId) ? 1 : 0));
+	if (hiddenPending > 0 && rendered.count === 0) {
+		// Nothing visible at all: point at the next actionable task instead.
+		const next = pendingTasks?.find((t) => t.id !== goal.currentTaskId);
+		if (next) lines.push(`  Next pending: ${next.id} — ${next.title}`);
+	}
+	if (hiddenPending > 0) {
+		lines.push(`  ${hiddenPending} additional pending tasks omitted; retrieve with get_goal(section="tasks").`);
 	}
 	if (goal.taskList.blockCompletion && pending! > 0) {
 		lines.push("  TASK GATE: do not request completion while tasks remain in [ ] pending state");
@@ -226,7 +204,7 @@ let promptCacheChars = 0;
 function cachedPrompt(goal: GoalRecord, settings: GoalSettings | undefined, kind: "goal" | "continuation", build: () => string): string {
 	const key = [kind, goal.id, goal.status, goal.autoContinue, goal.sisyphus, goal.objective,
 		goal.verificationContract, settings?.disableTasks ? undefined : taskIndex(goal.taskList?.tasks),
-		goal.taskList?.blockCompletion, promptProfile(), goal.currentTaskId, settings?.disableTasks, settings?.disableContracts, settings?.maxAutonomousRuns !== 0, settings?.strictExecutionContract === true, !!goal.scheduler?.wait, settings?.commands ? JSON.stringify(settings.commands) : undefined];
+		goal.taskList?.blockCompletion, goal.currentTaskId, settings?.disableTasks, settings?.disableContracts, settings?.maxAutonomousRuns !== 0, settings?.strictExecutionContract === true, !!goal.scheduler?.wait, settings?.commands ? JSON.stringify(settings.commands) : undefined];
 	for (let i = promptFragmentCache.length - 1; i >= 0; i--) {
 		const entry = promptFragmentCache[i]!;
 		if (key.every((part, j) => part === entry.key[j])) return entry.value;
@@ -259,10 +237,13 @@ export function goalPromptParts(goal: GoalRecord, settings?: GoalSettings, conte
 	const fixed = cachedPrompt(goal, settings, "goal", () => buildGoalPrompt(goal, settings));
 	const { runs, instructions } = schedulerSummaryParts(goal.scheduler, settings?.maxAutonomousRuns, settings?.showAutonomousRuns, settings?.idleContinuationBackoff === true, settings?.commands);
 	const limits = `Limits: lifetime tokens=${goal.tokenBudget ?? "none"}; runs=${settings?.maxAutonomousRuns ?? "unlimited"}.`;
-	const state = [fixed, limits, "Usage spans goal turns, not context. The latest snapshot, including its task list, supersedes earlier ones."].join("\n");
+	const state = [fixed, limits, goal.tokenBudget !== undefined ? "Usage spans goal turns, not context. The latest snapshot, including its task list, supersedes earlier ones." : "The latest snapshot, including its task list, supersedes earlier ones."].join("\n");
 	const context = settings?.showContextUsage === true ? `\n${contextUsageLine(contextUsage)}` : "";
 	const counters = taskListBlock(goal, settings);
-	const ephemeral = [instructions, `Goal snapshot: ${formatUsage(goal)}${context}\n${runs}`].filter(Boolean).join("\n");
+	// Usage changes every request and is never cached, and a bare running total
+	// reads like context exhaustion (#76). Say it only when the model can act on it.
+	const showUsage = goal.tokenBudget !== undefined || settings?.showContextUsage === true;
+	const ephemeral = [instructions, showUsage ? `Goal snapshot: ${formatUsage(goal)}${context}` : "", runs].filter(Boolean).join("\n");
 	return { state, counters, ephemeral };
 }
 

@@ -414,3 +414,91 @@ test("resolveAuditorModel resolves explicit provider/model and falls back to the
 	} as never, {} as never);
 	assert.equal(unset.model, session);
 });
+
+test("runGoalCompletionAuditor stops an audit that runs past the time limit", async t => {
+	const cwd = tempDir("pi-goal-auditor-limit-");
+	try {
+		fs.mkdirSync(`${cwd}/.pi`, { recursive: true });
+		fs.writeFileSync(`${cwd}/.pi/pi-goal-x-settings.json`, JSON.stringify({ auditorTimeoutMinutes: 2 }));
+		const { invalidateGoalSettingsCache } = await import("../extensions/settings/files.ts");
+		invalidateGoalSettingsCache();
+		let release!: () => void;
+		let aborted = 0;
+		const mockSession = {
+			abort: () => { aborted++; release(); },
+			subscribe: () => () => {},
+			prompt: () => new Promise<void>(resolve => { release = resolve; }),
+		};
+		t.mock.timers.enable({ apis: ["setTimeout"] });
+		const pending = runGoalCompletionAuditor({
+			ctx: { cwd, model: undefined } as any,
+			goal: goal(),
+			detailedSummary: "test",
+			createSession: async () => ({ session: mockSession }) as any,
+		});
+		for (let i = 0; i < 20 && aborted === 0; i++) { await new Promise<void>(r => setImmediate(r)); t.mock.timers.tick(60_000); }
+		const result = await pending;
+		assert.equal(aborted, 1);
+		assert.equal(result.approved, false);
+		assert.match(result.error ?? "", /Audit stopped: the auditor ran longer than/);
+	} finally {
+		fs.rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("runGoalCompletionAuditor stops an audit that makes too many tool calls", async () => {
+	const cwd = tempDir("pi-goal-auditor-toolcap-");
+	try {
+		fs.mkdirSync(`${cwd}/.pi`, { recursive: true });
+		fs.writeFileSync(`${cwd}/.pi/pi-goal-x-settings.json`, JSON.stringify({ auditorMaxToolCalls: 100 }));
+		const { invalidateGoalSettingsCache } = await import("../extensions/settings/files.ts");
+		invalidateGoalSettingsCache();
+		let listener: ((event: unknown) => void) | undefined;
+		let release!: () => void;
+		let aborted = 0;
+		const mockSession = {
+			abort: () => { aborted++; release(); },
+			subscribe: (fn: (event: unknown) => void) => { listener = fn; return () => {}; },
+			prompt: () => new Promise<void>(resolve => {
+				release = resolve;
+				for (let i = 0; i < 150; i++) listener?.({ type: "tool_execution_start", toolName: "read", args: {} });
+			}),
+		};
+		const result = await runGoalCompletionAuditor({
+			ctx: { cwd, model: undefined } as any,
+			goal: goal(),
+			detailedSummary: "test",
+			createSession: async () => ({ session: mockSession }) as any,
+		});
+		assert.equal(aborted, 1, "aborts once, not once per extra call");
+		assert.match(result.error ?? "", /used more than 100 tool calls/);
+	} finally {
+		fs.rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("runGoalCompletionAuditor has no tool call or time limit unless one is set", async () => {
+	const cwd = tempDir("pi-goal-auditor-nolimit-");
+	try {
+		const { invalidateGoalSettingsCache } = await import("../extensions/settings/files.ts");
+		invalidateGoalSettingsCache();
+		let listener: ((event: unknown) => void) | undefined;
+		let aborted = 0;
+		const mockSession = {
+			abort: () => { aborted++; },
+			subscribe: (fn: (event: unknown) => void) => { listener = fn; return () => {}; },
+			prompt: async () => {
+				for (let i = 0; i < 300; i++) listener?.({ type: "tool_execution_start", toolName: "read", args: {} });
+			},
+		};
+		await runGoalCompletionAuditor({
+			ctx: { cwd, model: undefined } as any,
+			goal: goal(),
+			detailedSummary: "test",
+			createSession: async () => ({ session: mockSession }) as any,
+		});
+		assert.equal(aborted, 0);
+	} finally {
+		fs.rmSync(cwd, { recursive: true, force: true });
+	}
+});

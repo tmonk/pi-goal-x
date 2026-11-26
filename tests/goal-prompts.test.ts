@@ -5,7 +5,6 @@ import { createGoal, type GoalTask } from "../extensions/goal-record.ts";
 import {
 	CHECKPOINT_TRIGGER_MAX_CHARS,
 	checkpointTriggerPrompt,
-	promptProfile,
 	goalPrompt,
 	goalPromptParts,
 	staleContinuationPrompt,
@@ -383,52 +382,6 @@ test("compact-v2 renders the current task exactly once in the task block", () =>
 	assert.match(block, /\[ \] t3:/, "other pending items still render");
 });
 
-test("promptProfile defaults to compact-v2; legacy-v1 is opt-in via env", () => {
-	assert.equal(promptProfile({}), "compact-v2");
-	assert.equal(promptProfile({ PI_GOAL_PROMPT_PROFILE: "legacy-v1" }), "legacy-v1");
-	assert.equal(promptProfile({ PI_GOAL_PROMPT_PROFILE: "bogus" }), "compact-v2", "unknown values fall back to compact-v2");
-});
-
-test("legacy-v1 restores pre-PR-E wording but never full checkpoint persistence", async () => {
-	const prompts = await import("../extensions/prompts/goal-prompts.ts");
-	const g = goal({ id: "legacy-goal" });
-	g.currentTaskId = "t2";
-	g.taskList = {
-		tasks: [
-			{ id: "t2", title: "Current task", status: "pending" },
-			{ id: "t3", title: "Later task", status: "pending" },
-			{ id: "t4", title: "Hidden task", status: "pending" },
-			{ id: "t5", title: "Hidden too", status: "pending" },
-			{ id: "t6", title: "Also hidden", status: "pending" },
-			{ id: "t7", title: "More hidden", status: "pending" },
-			{ id: "t8", title: "Even more hidden", status: "pending" },
-			{ id: "t9", title: "Yet more hidden", status: "pending" },
-			{ id: "t10", title: "Still hidden", status: "pending" },
-			{ id: "t11", title: "Beyond cap", status: "pending" },
-			{ id: "t12", title: "Well beyond cap", status: "pending" },
-		],
-		blockCompletion: false,
-		proposedAt: "2026-05-27T00:00:00.000Z",
-	};
-	const originalEnv = process.env.PI_GOAL_PROMPT_PROFILE;
-	process.env.PI_GOAL_PROMPT_PROFILE = "legacy-v1";
-	try {
-		const legacyBlock = prompts.taskListBlock(g);
-		assert.match(legacyBlock, /expand the dashboard with Ctrl\+Shift\+T/, "legacy wording restored");
-		assert.match(legacyBlock, /\[ \] t2:/, "legacy duplicates current as generic pending");
-		// Issue #30 stays fixed under BOTH profiles:
-		assert.equal(
-			prompts.checkpointTriggerPrompt(g.id),
-			'<pi_goal_continuation goal_id="legacy-goal" kind="checkpoint" v="2"/>',
-			"continuation marker unchanged under legacy-v1",
-		);
-	} finally {
-		if (originalEnv === undefined) delete process.env.PI_GOAL_PROMPT_PROFILE;
-		else process.env.PI_GOAL_PROMPT_PROFILE = originalEnv;
-	}
-});
-
-
 test("allowance configuration refreshes cached guidance without bloating disabled prompts", () => {
 	const current = goal();
 	const off = goalPrompt(current, { maxAutonomousRuns: 0 });
@@ -499,4 +452,18 @@ test("taskListBlock has no wrap-up when a task is current, for checklists, or wi
 	const checklist = phaseGoal(undefined, { id: "p1", title: "Phase one", status: "pending", lightweightSubtasks: true, subtasks: [{ id: "p1a", title: "Step", status: "complete" }] });
 	assert.doesNotMatch(taskListBlock(checklist), /Wrap-up/);
 	assert.equal(taskListBlock(phaseGoal(), { disableTasks: true } as never), "");
+});
+
+test("draft style: ask interviews first, propose drafts at once with stated assumptions", async () => {
+	const { goalDraftingPrompt } = await import("../extensions/prompts/goal-draft-prompts.ts");
+	const ask = goalDraftingPrompt("add csv export", "goal");
+	assert.match(ask, /ask a focused question/);
+	assert.doesNotMatch(ask, /Do not interview the user/);
+	for (const focus of ["goal", "sisyphus"] as const) {
+		const propose = goalDraftingPrompt("add csv export", focus, undefined, "propose");
+		assert.match(propose, /Do not interview the user/);
+		assert.match(propose, /Assumptions:/);
+		assert.doesNotMatch(propose, /ask a focused question/);
+		assert.match(propose, /Verify command: `npm test`/, "the draft prompt tells the agent about the verify command");
+	}
 });

@@ -49,3 +49,9 @@ Pi hands the extension a fresh copy of the history on every request. To tell whe
 Explicit-marker relocation skips all retained live text and tolerates Pi's trailing effort-only messages. Another extension's content-bearing suffix is left alone. Changing models/providers starts a separate retention identity. Unknown session identities do not retain history between requests.
 
 Validation now includes advancing SDK request chains, combined effort-marker/retention regressions, 1,000-turn growth bounds and a 64 KiB–4 MiB history-cost gate. These are request-construction and CPU measurements, not live provider hit-rate claims.
+
+## Seeing the real hit rate
+
+`/goal-status verbose` shows how much of each request the provider read from its cache this session, taken from the usage record on every assistant message (requests under 2,000 tokens are ignored). If the rate falls to nearly zero on two requests in a row after working well, a warning says so. Something early in the prompt changed: another extension, a model or provider switch, compaction, or the cache expired. Providers that do not report cache reads show nothing.
+
+The usage line (`Goal snapshot: …`) is only sent with a token budget or when `showContextUsage` is on. It changes every request and is never cached, and a bare running total can read like context exhaustion.

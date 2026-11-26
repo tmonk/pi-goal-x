@@ -16,6 +16,13 @@ commands:
   finish: /spec-finish [spec-id-or-path]
   settings: /specs-settings
 specs:
+  - id: 2026-11-26-review-improvements
+    path: specs/2026-11-26-review-improvements
+    title: Review improvements
+    status: validating
+    focused: false
+    last_audit: null
+    updated: 2026-11-26
   - id: 2026-11-26-refresh-and-wrap-up
     path: specs/2026-11-26-refresh-and-wrap-up
     title: Fix /goal-refresh staleness and name finished phases
