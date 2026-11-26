@@ -90,15 +90,18 @@ The tool list is fixed, because it sits at the start of the cached prompt:
 | `set_goal_tasks` | Create or replace the task tree, after confirmation |
 | `update_goal_task` | Start, complete, skip or reopen one task, or a batch |
 | `goal_questionnaire`, `propose_goal_draft` | Drafting only |
+| `goal_control` | `revise` (the confirmed `/goal-tweak` revision of the same goal) and `archive` (the confirmed `/goal-clear`), both only after the user confirms |
 
-Only `disableTasks` removes the two task tools. Pause, resume, clear, focus and
-settings are user commands, not tools. A wrong call, such as `blocked` from a
-paused goal, is rejected with a short explanation instead of hiding the tool.
+Only `disableTasks` removes the two task tools. Pause, resume, focus and
+settings are user commands, not tools; revising and clearing are user commands
+that `goal_control` can also start, always behind the same confirmation. A
+wrong call, such as `blocked` from a paused goal, is rejected with a short
+explanation instead of hiding the tool.
 
 The `tool_call` handler:
 
-- blocks the goal tools while a draft is open, and refuses the drafting tools
-  when no draft is open;
+- blocks the goal tools and `goal_control` while a draft is open, and refuses
+  the drafting tools when no draft is open;
 - blocks work tools after a stop tool in the same turn (only `get_goal` is
   allowed);
 - blocks work tools when the checkpoint behind the turn is stale;

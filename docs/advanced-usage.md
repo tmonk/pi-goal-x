@@ -67,6 +67,15 @@ Use the existing tweak flow: `/goal-tweak remove the token budget` or `/goal-twe
 
 After confirmation, a goal stopped only by its budget can continue if the revised limit allows it and scheduling permits. A still-exhausted budget keeps it stopped. Other-session ownership, interrupted execution and exhausted autonomous-run allowances still require their existing recovery steps. Creation and tweak results always show the effective budget.
 
+## Revising or archiving from chat
+
+The agent can start the same two flows itself with the `goal_control` tool, when you ask it to change or drop the goal in conversation:
+
+- `goal_control({action: "revise", change: "raise the budget to 50000"})` opens the `/goal-tweak` confirmation. On confirm the SAME goal is revised, so its plan, progress and usage stay.
+- `goal_control({action: "archive"})` opens the `/goal-clear` confirmation and files the goal out of the active pool.
+
+Neither action writes anything before you confirm, and both refuse a host that cannot show the dialog. A cancelled confirmation leaves the goal untouched; choosing *Continue chatting* keeps the revision draft open so you can refine it with the agent before proposing again. Task plans are changed with the ordinary task tools, not through this one.
+
 ## Optional arguments on Responses-compatible providers
 
 Some Pi `openai-responses` configurations omit the wire-level `strict` flag. OpenAI Responses may normalize schemas into strict mode when that flag is omitted. This can conflict with optional goal arguments; it is separate from pi-goal-x's `strictExecutionContract` scheduling setting.

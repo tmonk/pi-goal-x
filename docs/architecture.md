@@ -71,6 +71,7 @@ All files are in `extensions/`.
 | `goal-tool-names.ts` | Tool names, the fixed tool list, work/progress classification |
 | `goal-drafting.ts` | Guided draft state, stored as `pi-goal-draft` session entries |
 | `goal-drafting-tools.ts` | `goal_questionnaire`, `propose_goal_draft`, goal creation and tweak from a draft |
+| `goal-control-tools.ts` | `goal_control` (`revise`, `archive`) and the shared clear confirmation and archive flow |
 | `goal-commands.ts` | Command routing and handlers for the sixteen actions |
 | `goal-controls.ts` | Action ids, key actions, command and key settings |
 | `goal-settings-menu.ts` | The `/goal-settings` editor |
