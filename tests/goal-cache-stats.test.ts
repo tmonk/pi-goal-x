@@ -44,3 +44,19 @@ test("cache stats: recovery re-arms the warning, and missing or junk usage is ig
 	assert.equal(stats.record(undefined), undefined);
 	assert.equal(stats.record({ input: "x", cacheRead: NaN }), undefined);
 });
+
+test("cache stats reach the user: turn_end feeds them, /goal-status verbose shows them, a collapse warns", async () => {
+	const { stabilizationHarness } = await import("./support/stabilization-utils.ts");
+	const h = stabilizationHarness();
+	try {
+		await h.start();
+		const turn = (input: number, cacheRead: number) => h.event("turn_end", { message: { role: "assistant", content: [], usage: { input, cacheRead, cacheWrite: 0, output: 5 } } });
+		await turn(500, 9500);
+		await turn(10000, 0);
+		assert.equal(h.notices.some(n => /cache hits fell/i.test(n)), false, "one bad request is not a warning");
+		await turn(10000, 0);
+		assert.equal(h.notices.filter(n => /cache hits fell to 0%/i.test(n)).length, 1);
+		await h.commands.get("goal-status").handler("verbose", h.ctx);
+		assert.ok(h.notices.some(n => /Prompt cache this session: \d+% of input read from cache over 3 requests/.test(n)), "verbose status shows the hit rate");
+	} finally { await h.cleanup(); }
+});
