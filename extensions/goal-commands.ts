@@ -54,7 +54,7 @@ type GoalCommandsCore = SettingsMenuCore &
 	GoalRecordWriter &
 	GoalTurnStopMarker &
 	HostSlice<"registerCommand"> &
-	StateSlice<"activeAudit" | "openGoals"> &
+	StateSlice<"activeAudit" | "cacheStats" | "openGoals"> &
 	FocusSlice<"setFocus" | "setGoal"> &
 	LifecycleSlice<"archive" | "create" | "syncPromptFromDisk"> &
 	InterruptionSlice<"reset"> &
@@ -349,6 +349,7 @@ export function registerGoalCommands(core: GoalCommandsCore): void {
 				: null,
 			checkpointSessionFile: sessionFileOf(ctx),
 			// Settings and their provenance are shown only in verbose mode.
+			cacheLine: verbose ? core.state.cacheStats.line() : undefined,
 			settingsReport: verbose ? [...effectiveSettingsReport(ctx.cwd), t("effective goal pool: {path}", { path: goalStorageRoot(ctx) })] : [],
 		});
 		ctx.ui.notify(text, "info");

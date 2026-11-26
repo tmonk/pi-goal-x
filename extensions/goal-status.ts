@@ -52,6 +52,8 @@ interface GoalStatusTextOptions {
 	checkpointSessionFile?: string;
 	/** Effective settings lines with provenance (verbose only). */
 	settingsReport?: string[];
+	/** Prompt-cache hit line (verbose only). */
+	cacheLine?: string;
 	width?: number;
 }
 
@@ -88,7 +90,7 @@ export function buildGoalStatusText(options: GoalStatusTextOptions): string {
 	if (!model) return t("No goal is set.");
 
 	if (options.verbose) {
-		return buildVerboseStatus(options.goal, model, events, options.settingsReport ?? [], width);
+		return buildVerboseStatus(options.goal, model, events, options.settingsReport ?? [], width, options.cacheLine);
 	}
 
 	const parts: string[] = [];
@@ -227,7 +229,7 @@ function visibleLen(value: string): number {
 
 // ── Verbose (§13.2) ─────────────────────────────────────────────────────────
 
-function buildVerboseStatus(goal: GoalRecord, model: ReturnType<typeof deriveGoalDashboardModel>, events: GoalLedgerEvent[], settingsReport: string[], _width: number): string {
+function buildVerboseStatus(goal: GoalRecord, model: ReturnType<typeof deriveGoalDashboardModel>, events: GoalLedgerEvent[], settingsReport: string[], _width: number, cacheLine?: string): string {
 	const lines: string[] = [];
 	lines.push(t("Goal id: {id}", { id: goal.id }));
 	lines.push(...(model?.scheduling ?? []));
@@ -235,6 +237,7 @@ function buildVerboseStatus(goal: GoalRecord, model: ReturnType<typeof deriveGoa
 	lines.push(model?.focused ? t("Status: {status} (focused)", { status: String(model?.status.label) }) : t("Status: {status} (not focused)", { status: String(model?.status.label) }));
 	lines.push(t("Mode: {mode} · auto-continue: {state}", { mode: goal.sisyphus ? t("sisyphus") : t("goal"), state: goal.autoContinue ? t("on") : t("off") }));
 	lines.push(t("Usage: {duration} · {tokens} tokens", { duration: formatDashboardDuration(goal.usage.activeSeconds), tokens: formatCompactTokens(goal.usage.tokensUsed) }));
+	if (cacheLine) lines.push(cacheLine);
 	if (model?.budget) {
 		lines.push(t("Budget: {used} / {total} · {percent}% used · {remaining} remaining", { used: formatCompactTokens(model.budget.used), total: formatCompactTokens(model.budget.total), percent: model.budget.percentage, remaining: formatCompactTokens(model.budget.remaining) }));
 	}

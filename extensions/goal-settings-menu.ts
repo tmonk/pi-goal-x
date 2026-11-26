@@ -42,6 +42,9 @@ const settingRows = (): SettingRow[] => [
 	{ key: "showAutonomousRuns", label: t("show autonomous runs line"), section: t("Goal behavior"), kind: "boolean" },
 	{ key: "showContextUsage", label: t("show context usage line"), section: t("Goal behavior"), kind: "boolean" },
 	{ key: "stallTimeoutMinutes", label: t("stall timeout (minutes)"), section: t("Goal behavior"), kind: "positiveInteger" },
+	{ key: "maxIdleTurns", label: t("pause after idle turns (0 = never)"), section: t("Goal behavior"), kind: "positiveInteger" },
+	{ key: "maxGoalMinutes", label: t("goal time limit (minutes, 0 = none)"), section: t("Goal behavior"), kind: "positiveInteger" },
+	{ key: "auditorTimeoutMinutes", label: t("audit time limit (minutes, 0 = none)"), section: t("Completion auditor"), kind: "positiveInteger" },
 	{ key: "objectiveMaxChars", label: t("max objective length (0 = none)"), section: t("Goal behavior"), kind: "positiveInteger" },
 	{ key: "idleContinuationBackoff", label: t("slow repeated idle replies (opt-in)"), section: t("Advanced execution"), kind: "boolean",
 		help: t("Slows repeated replies without recognized work. May delay reasoning or custom tools. For a hard stop, set an autonomous run allowance.") },
@@ -66,13 +69,16 @@ const BOOLEAN_KEYS = new Set<string>([
 ]);
 
 /** Integer settings whose minimum is 0; every other integer setting starts at 1. */
-const ZERO_ALLOWED_KEYS = new Set<string>(["stallTimeoutMinutes", "objectiveMaxChars", "maxAutonomousRuns"]);
+const ZERO_ALLOWED_KEYS = new Set<string>(["stallTimeoutMinutes", "objectiveMaxChars", "maxAutonomousRuns", "maxIdleTurns", "maxGoalMinutes", "auditorTimeoutMinutes"]);
 
 function settingsValue(config: GoalSettings, key: keyof GoalSettings | string): string {
 	if (BOOLEAN_KEYS.has(key)) return (config as Record<string, unknown>)[key] === true ? "true" : "false";
 	if (key === "subtaskDepth") return config.subtaskDepth !== undefined ? String(config.subtaskDepth) : "1";
 	if (key === "maxAutonomousRuns") return config.maxAutonomousRuns === 0 ? t("0 (disabled)") : String(config.maxAutonomousRuns ?? t("unlimited (default)"));
 	if (key === "stallTimeoutMinutes") return config.stallTimeoutMinutes !== undefined ? String(config.stallTimeoutMinutes) : "0";
+	if (key === "maxIdleTurns") return String(config.maxIdleTurns ?? 4);
+	if (key === "auditorTimeoutMinutes") return String(config.auditorTimeoutMinutes ?? 20);
+	if (key === "maxGoalMinutes") return String(config.maxGoalMinutes ?? 0);
 	if (key === "objectiveMaxChars") return config.objectiveMaxChars !== undefined ? String(config.objectiveMaxChars) : "0";
 	if (key === "keybindings") return config.keybindings ? `${config.keybindings.dashboard.toggleExpand}, ${config.keybindings.dashboard.scrollUp}, ${config.keybindings.dashboard.scrollDown}` : "(default)";
 	const value = (config as Record<string, unknown>)[key];

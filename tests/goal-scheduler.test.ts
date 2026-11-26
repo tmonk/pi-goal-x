@@ -997,3 +997,93 @@ test("no automatic continuation is sent while a draft is in progress", async t =
 	t.mock.timers.tick(10000);
 	assert.ok(h.sent.length > 0, "continuations resume once the draft ends");
 });
+
+test("idle-turn breaker: automatic turns with no tool call pause the goal after maxIdleTurns", async t => {
+	const h = await fixture(t, undefined, "owner", undefined, false);
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	assert.equal(h.core.scheduler.resume(h.ctx), true);
+	t.mock.timers.tick(1);
+	for (let turn = 1; turn <= 3; turn++) {
+		assert.equal(h.sent.length, turn);
+		h.admit(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
+		assert.equal(h.core.state.goal?.status, "active", `still active after idle turn ${turn}`);
+	}
+	assert.equal(h.sent.length, 4);
+	h.admit(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1000);
+	assert.equal(h.sent.length, 4, "no fifth request is queued");
+	assert.equal(h.core.state.goal?.status, "paused");
+	assert.match(h.core.state.goal?.pauseReason ?? "", /no tool call in 4 automatic turns/);
+});
+
+test("idle-turn breaker: a tool call resets the streak, and get_goal-free turns do not count as work", async t => {
+	const h = await fixture(t, undefined, "owner", undefined, false);
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	h.core.scheduler.resume(h.ctx); t.mock.timers.tick(1);
+	for (let turn = 0; turn < 12; turn++) {
+		h.admit();
+		if (turn % 3 === 2) h.core.scheduler.noteTool();
+		h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1);
+	}
+	assert.equal(h.core.state.goal?.status, "active");
+	assert.equal(h.sent.length, 13);
+});
+
+test("idle-turn breaker: maxIdleTurns 0 never pauses", async t => {
+	const h = await fixture(t, undefined, "owner", undefined, false);
+	writeProjectSettings(h.cwd, { strictExecutionContract: false, maxIdleTurns: 0 });
+	invalidateGoalSettingsCache();
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	h.core.scheduler.resume(h.ctx); t.mock.timers.tick(1);
+	for (let turn = 0; turn < 10; turn++) { h.admit(); h.core.scheduler.settled(h.ctx); t.mock.timers.tick(1); }
+	assert.equal(h.core.state.goal?.status, "active");
+});
+
+test("busy hold: no continuation is queued while background work runs, and one goes out when it drains", async t => {
+	const h = await fixture(t, undefined, "owner", undefined, false);
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	h.events.emit("pi-goal:busy", { source: "subagents", count: 2 });
+	h.core.scheduler.resume(h.ctx); t.mock.timers.tick(1000);
+	assert.equal(h.sent.length, 0, "held while busy");
+	assert.equal(h.core.state.goal?.status, "active");
+	assert.equal(h.core.state.goal?.scheduler?.used, 0, "a hold spends no run allowance");
+	h.events.emit("pi-goal:busy", { source: "subagents", count: 1 });
+	t.mock.timers.tick(1000);
+	assert.equal(h.sent.length, 0);
+	h.events.emit("pi-goal:busy", { source: "subagents", count: 0 });
+	t.mock.timers.tick(1);
+	assert.equal(h.sent.length, 1, "released exactly once");
+	h.events.emit("pi-goal:busy", { source: "subagents", count: 0 });
+	t.mock.timers.tick(1000);
+	assert.equal(h.sent.length, 1, "a repeated release does not queue a second turn");
+});
+
+test("busy hold: a job that never reports idle cannot hold the goal past the fallback", async t => {
+	const h = await fixture(t, undefined, "owner", undefined, false);
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	h.events.emit("pi-goal:busy", { source: "stuck", count: 1 });
+	h.core.scheduler.resume(h.ctx);
+	t.mock.timers.tick(59 * 60_000);
+	assert.equal(h.sent.length, 0);
+	t.mock.timers.tick(2 * 60_000);
+	assert.equal(h.sent.length, 1);
+});
+
+test("busy hold: bad payloads are ignored and two sources must both drain", async t => {
+	const h = await fixture(t, undefined, "owner", undefined, false);
+	t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	h.events.emit("pi-goal:busy", null);
+	h.events.emit("pi-goal:busy", { source: 5, count: "x" });
+	h.core.scheduler.resume(h.ctx); t.mock.timers.tick(1);
+	assert.equal(h.sent.length, 1, "nonsense payloads never hold");
+	h.admit(); h.core.scheduler.noteTool();
+	h.events.emit("pi-goal:busy", { source: "a", count: 1 });
+	h.events.emit("pi-goal:busy", { source: "b", count: 1 });
+	h.core.scheduler.settled(h.ctx);
+	t.mock.timers.tick(1000);
+	h.events.emit("pi-goal:busy", { source: "a", count: 0 });
+	t.mock.timers.tick(1000);
+	assert.equal(h.sent.length, 1);
+	h.events.emit("pi-goal:busy", { source: "b", count: 0 });
+	t.mock.timers.tick(1);
+	assert.equal(h.sent.length, 2);
+});

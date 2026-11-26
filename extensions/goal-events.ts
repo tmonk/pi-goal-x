@@ -70,7 +70,7 @@ export type GoalEventsCore = GoalContextCore &
 	GoalToolProfile &
 	GoalUiRefresh &
 	HostSlice<"on" | "appendEntry" | "sendMessage"> &
-	StateSlice<"assignFocusedGoalId" | "goalWorkToolCalledThisTurn" | "hasExplicitSessionFocus" | "invalidate"> &
+	StateSlice<"assignFocusedGoalId" | "cacheStats" | "goalWorkToolCalledThisTurn" | "hasExplicitSessionFocus" | "invalidate"> &
 	FocusSlice<"appendEntry" | "load" | "setFocus"> &
 	ServiceSlice<"appendEvents" | "apply" | "beginTurn" | "endSession" | "endTurn" | "flushTurn" | "persist"> &
 	InterruptionSlice<"continueWithUser" | "finishTurn" | "ignoreAbort" | "isHeld" | "reset" | "settled"> &
@@ -86,7 +86,7 @@ export type GoalEventsCore = GoalContextCore &
 		| "scheduleNetworkErrorRetry"
 		| "setCheckpoint"
 	> &
-	SchedulerSlice<"begin" | "isDenied" | "message" | "pauseForError" | "recordWork" | "rejectCheckpoint" | "restore" | "resume" | "schedule" | "settled" | "shutdown" | "turn"> &
+	SchedulerSlice<"begin" | "isDenied" | "message" | "noteTool" | "pauseForError" | "recordWork" | "rejectCheckpoint" | "restore" | "resume" | "schedule" | "settled" | "shutdown" | "turn"> &
 	ViewSlice<"clear" | "clearAuditResult" | "stopAuditAnimation"> &
 	WatchSlice<"touchActivity">;
 import { filterGoalSessionContext, isStaleExtensionContextError } from "./goal-session-safety.ts";
@@ -271,6 +271,7 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 				reason: commandInstructions("A goal draft is in progress. Finish it with propose_goal_draft, or ask the user to run /goal-cancel.", core.loadedCommands),
 			};
 		}
+		if (event.toolName !== "get_goal") core.scheduler.noteTool();
 		// Track Oracle work attempts; this does not authorize scheduling.
 		if (isMeaningfulProgressToolCall(event.toolName, event.input)) {
 			core.state.goalWorkToolCalledThisTurn = true;
@@ -312,6 +313,10 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		const tokens = assistantTurnTokens(message);
 		core.watch.touchActivity(); // F5
 		core.progress.charge(ctx, { completedTurnTokens: tokens });
+		if (!isAbortedAssistantMessage(message) && !isErrorAssistantMessage(message)) {
+			const warning = core.state.cacheStats.record((message as { usage?: unknown }).usage);
+			if (warning) ctx.ui.notify(warning, "warning");
+		}
 		core.interruption.finishTurn(ctx);
 
 		if (isAbortedAssistantMessage(message)) {

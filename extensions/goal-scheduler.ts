@@ -14,6 +14,9 @@ import type { SchedulerHost } from "./goal-scheduler-host.ts";
 import { WakeTimer } from "./goal-wake-timer.ts";
 import { t } from "./i18n/index.ts";
 
+/** The longest background work can hold continuation before one normal turn goes out anyway. */
+const BUSY_HOLD_FALLBACK_MS = 60 * 60_000;
+
 /**
  * Scheduling intent is durable; timers only arrange an opportunity to claim it.
  * The decisions themselves are pure functions in goal-scheduler-rules.ts; this
@@ -29,8 +32,16 @@ export class GoalScheduler {
 	private runGoalId: string | undefined;
 	private runGoalContent: string | undefined;
 	private runHadWork = false;
+	// Idle-turn breaker: tool calls in this run, whether the scheduler started it, and the streak of idle ones.
+	private runTools = 0;
+	private runWasDispatch = false;
+	private idleStreak = 0;
 	private runPacingEnabled = false;
 	private denied = false;
+	// Background work that other extensions report with "pi-goal:busy", by source. While any is running, no continuation is queued.
+	private busy = new Map<string, number>();
+	private busySince = 0;
+	private unsubscribeBusy: (() => void) | undefined;
 	private unsubscribe: (() => void) | undefined;
 	private core: SchedulerHost;
 	constructor(core: SchedulerHost) { this.core = core; }
@@ -116,15 +127,32 @@ export class GoalScheduler {
 	attach(ctx: ExtensionContext): void {
 		this.ctx = ctx;
 		this.unsubscribe?.();
+		this.unsubscribeBusy?.();
+		this.unsubscribeBusy = this.core.pi.events?.on("pi-goal:busy", (event: unknown) => {
+			const raw = asRecord(event);
+			if (raw) this.setBusy(raw.source, raw.count);
+		});
 		this.unsubscribe = this.core.pi.events?.on("pi-goal:wake", (event: unknown) => {
 			const raw = asRecord(event);
 			if (raw && this.ctx) this.signal(this.ctx, raw.goalId, raw.waitToken);
 		});
 	}
-	shutdown(): void { this.cancelTimer(); this.unsubscribe?.(); this.unsubscribe = undefined; this.ctx = undefined; this.denied = false; }
+	/** A source reports how many background jobs it has running. Zero from every source releases the hold. */
+	private setBusy(source: unknown, count: unknown): void {
+		const key = typeof source === "string" && source ? source : "unknown";
+		const n = typeof count === "number" && Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
+		const was = this.busyTotal();
+		if (n > 0) this.busy.set(key, n); else this.busy.delete(key);
+		if (was === 0 && this.busyTotal() > 0) this.busySince = Date.now();
+		const ctx = this.ctx;
+		if (ctx && was > 0 && this.busyTotal() === 0 && !this.inRun) this.schedule(ctx);
+	}
+	private busyTotal(): number { let total = 0; for (const n of this.busy.values()) total += n; return total; }
+	shutdown(): void { this.cancelTimer(); this.unsubscribe?.(); this.unsubscribeBusy?.(); this.unsubscribeBusy = undefined; this.busy.clear(); this.unsubscribe = undefined; this.ctx = undefined; this.denied = false; }
 
 	restore(ctx: ExtensionContext): void {
 		this.attach(ctx);
+		this.idleStreak = 0;
 		this.inRun = false; this.declared = false; this.runGoalId = undefined; this.denied = false;
 		this.cancelTimer();
 		this.safe(ctx, () => {
@@ -158,6 +186,7 @@ export class GoalScheduler {
 
 	/** Only explicit user resume resets spent allowance, including while already active/waiting. */
 	resume(ctx: ExtensionContext): boolean {
+		this.idleStreak = 0;
 		invalidateGoalSettingsCache();
 		if (this.limit(ctx) === 0) { ctx.ui.notify(this.allowanceReason(ctx).notice, "warning"); return false; }
 		try {
@@ -177,6 +206,7 @@ export class GoalScheduler {
 		} catch (error) { ctx.ui.notify(String(error), "warning"); return false; }
 	}
 	kickoff(ctx: ExtensionContext): void {
+		this.idleStreak = 0;
 		// A goal created in ordinary user work can finish in that run. Replacing
 		// another run's goal needs its own saved kickoff and fresh attribution.
 		if (this.inRun && (!this.runGoalId || this.runGoalId === this.core.state.goal?.id)) return;
@@ -233,10 +263,13 @@ export class GoalScheduler {
 		this.runPacingEnabled = loadGoalSettings(ctx.cwd).idleContinuationBackoff === true;
 		this.runGoalContent = this.runPacingEnabled ? this.goalContent(this.core.state.goal) : undefined;
 		this.runHadWork = false;
+		this.runTools = 0; this.runWasDispatch = false;
 		this.cancelTimer(); this.core.runtime.clearContinuationTimer();
 		this.core.runningGoalId = this.core.state.goal?.id ?? null;
 	}
 	/** Work in any tool turn counts until the entire logical execution settles. */
+	/** Any tool call except get_goal means the turn did something. Counts toward the idle-turn breaker. */
+	noteTool(): void { if (this.inRun) this.runTools++; }
 	recordWork(): void { if (this.inRun && this.runPacingEnabled) this.runHadWork = true; }
 	turn(ctx: ExtensionContext): void {
 		if (!this.declared) return;
@@ -256,6 +289,7 @@ export class GoalScheduler {
 					if (d.version !== 3 || s.phase !== "claimed" || g.id !== d.goalId || s.generation !== d.generation || s.dispatch?.id !== d.dispatchId || g.status !== "active" || !g.autoContinue) throw new Error("Stale or unclaimed goal checkpoint.");
 					// Retain the admitted action as context; phase prevents reusing its authorization.
 					s.phase = "running";
+					this.runWasDispatch = true;
 				});
 			} catch (error) {
 				this.rejectCheckpoint(ctx);
@@ -268,6 +302,7 @@ export class GoalScheduler {
 		this.takeover(ctx);
 	}
 	takeover(ctx: ExtensionContext): void {
+		this.idleStreak = 0;
 		this.cancelTimer(); this.core.runtime.clearContinuationState();
 		this.declared = false;
 		const s = this.core.state.goal?.scheduler;
@@ -295,6 +330,17 @@ export class GoalScheduler {
 				if (strict || (s.decision.kind === "ready" && s.decision.purpose !== "ready")) { this.schedule(ctx); return; }
 			}
 			if (!strict) {
+				// Idle-turn breaker: an automatic turn with no tool call is idle. A few in a row means the agent is only talking.
+				this.idleStreak = this.runWasDispatch && this.runTools === 0 ? this.idleStreak + 1 : 0;
+				// Users who opted into idle backoff chose to slow idle turns, not stop them.
+				const settings = loadGoalSettings(ctx.cwd);
+				const maxIdle = settings.idleContinuationBackoff ? 0 : settings.maxIdleTurns ?? 4;
+				if (maxIdle > 0 && this.idleStreak >= maxIdle) {
+					this.idleStreak = 0;
+					const reason = commandInstructions(`The agent made no tool call in ${maxIdle} automatic turns in a row, so the goal was paused. Use /goal-resume to continue.`, this.core.loadedCommands);
+					this.pause(ctx, reason, commandInstructions(t("The agent made no tool call in {n} automatic turns in a row. Goal paused. Use /goal-resume to continue.", { n: maxIdle }), this.core.loadedCommands));
+					return;
+				}
 				this.update(ctx, (state, current) => { markImplicitReady(state); if (loadGoalSettings(ctx.cwd).idleContinuationBackoff && this.runPacingEnabled) this.paceIdle(state, current); else state.idle = undefined; });
 				this.schedule(ctx); return;
 			}
@@ -372,6 +418,14 @@ export class GoalScheduler {
 				this.core.clearActiveAccounting();
 				this.later(ctx, pacedDelay, () => this.schedule(ctx)); return;
 			}
+			// Hold while background work runs. A hung job cannot hold the goal forever: after the fallback, one normal turn goes out.
+			const heldFor = Date.now() - this.busySince;
+			if (this.busyTotal() > 0 && heldFor < BUSY_HOLD_FALLBACK_MS) {
+				this.core.runtime.clearContinuationTimer();
+				this.core.clearActiveAccounting();
+				this.later(ctx, BUSY_HOLD_FALLBACK_MS - heldFor, () => this.schedule(ctx)); return;
+			}
+			if (this.busyTotal() > 0) this.busySince = Date.now();
 			this.cancelTimer();
 			// Runtime readiness polling cannot authorize: claim() is called again at delivery.
 			this.armedGeneration = s.generation;
