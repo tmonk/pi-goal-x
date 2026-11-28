@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { LiveTailRetention, MAX_RETAINED_COUNTER_BYTES, MAX_RETAINED_LIVE_TAILS, MAX_RETAINED_POLICY_BLOCKS, POLICY_RECENCY_NOTE, POLICY_SUPERSEDED_NOTE } from "../extensions/goal-live-retention.ts";
+import { LiveTailRetention, MAX_RETAINED_COUNTER_BYTES, MAX_RETAINED_LIVE_TAILS, MAX_RETAINED_POLICY_BLOCKS, POLICY_RECENCY_NOTE, POLICY_SUPERSEDED_NOTE, TASK_LIST_NONE } from "../extensions/goal-live-retention.ts";
 
 const msg = (role: string, content: string, timestamp: number): any => ({ role, content, timestamp });
 const contents = (messages: any[]): string[] => messages.map(message => message.content);
@@ -76,12 +76,25 @@ test("request-only text is sent every time, never retained, and still counts as 
 	assert.deepEqual(repeat.messages, second.messages);
 });
 
-test("a different goal or a changed objective starts a fresh prefix", () => {
+test("a different goal or a changed objective keeps the prefix and appends", () => {
 	const retention = new LiveTailRetention();
 	const base = [msg("user", "h", 1)];
-	retention.apply("s", base, { state: "S1", counters: "V1", scope: "goal-a:1" });
-	const edited = retention.apply("s", base, { state: "S2", counters: "V1", scope: "goal-a:2" });
-	assert.deepEqual(contents(edited.messages), ["h", "S2", "V1"]);
+	const first = retention.apply("s", base, { state: "S1", counters: "V1", scope: "goal-a:1" });
+	const edited = retention.apply("s", base, { state: "S2", counters: "V2", scope: "goal-a:2" });
+	assert.deepEqual(contents(edited.messages.slice(0, first.stableLength)), contents(first.messages.slice(0, first.stableLength)));
+	assert.ok(contents(edited.messages).some(text => text.includes("S2")));
+	assert.ok(contents(edited.messages).includes("V2"));
+});
+
+test("a new goal without a task list says the earlier list no longer counts", () => {
+	const retention = new LiveTailRetention();
+	const base = [msg("user", "h", 1)];
+	retention.apply("s", base, { state: "S1", counters: "V1", scope: "a" });
+	const out = contents(retention.apply("s", base, { state: "S2", scope: "b" }).messages);
+	assert.ok(out.includes(TASK_LIST_NONE));
+	assert.equal(out.indexOf(TASK_LIST_NONE) > out.indexOf("V1"), true);
+	// Same goal again sends nothing new.
+	assert.deepEqual(contents(retention.apply("s", base, { state: "S2", scope: "b" }).messages), out);
 });
 
 test("policy blocks are bounded: past the limit one reset removes the superseded ones", () => {

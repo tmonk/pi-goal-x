@@ -8,6 +8,8 @@ All notable changes to pi-goal-x are documented here.
 
 - Pause and resume cycles no longer reset the prompt cache every sixth time. Each cycle repeated the full policy block, and at 12 blocks the retained blocks were dropped, so the whole conversation went uncached once. A policy that returns to an earlier text now adds a one-line pointer to the block already in history.
 - A `/reload` no longer drops the retained goal blocks. The next request keeps the cached prefix when the conversation is unchanged.
+- A process restart or `/resume` no longer drops the retained goal blocks. They are saved in the session file and checked against the history before reuse.
+- Switching straight to another goal, or changing a goal's objective, verification contract or sisyphus mode, no longer resets the prompt cache. The new policy block and task list are added at the end.
 - Ending a goal no longer makes the next request a full prompt-cache miss. The goal blocks already sent used to be dropped when the goal completed, which moved everything after them. They now stay, and one short block says no goal is active. The same goes for an open goal draft (the goal is put on hold), a stale checkpoint and a pool of unfocused goals. Starting a new goal after one ended no longer resets them either (#187).
 - A message that could not be copied for the history check (a class instance in a tool result, for example) made every request look rewritten and reset the goal blocks each time. It is now compared by a hash of its JSON.
 - A host that gives no session id now gets the same retained blocks as one that does, keyed by its session object. Before, nothing was kept and each request broke the prefix.

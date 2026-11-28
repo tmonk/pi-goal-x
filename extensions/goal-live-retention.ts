@@ -70,6 +70,9 @@ export const POLICY_SUPERSEDED_NOTE = "[This is the current goal policy. It supe
 export const GOAL_ENDED_STATE = "[PI GOAL ENDED]\nNo goal is active now. Ignore every earlier [PI GOAL …] block and task list above; they belong to goals that are over.";
 
 /** Sent with every request while superseded policy blocks remain in history. */
+/** Sent when a new goal has no task list, so the earlier goal's list above stops counting. */
+export const TASK_LIST_NONE = "[PI TASK LIST: none for the current goal. Ignore every task list above.]";
+
 export const POLICY_RECENCY_NOTE = "Only the latest goal policy block above applies; earlier goal policy blocks are superseded.";
 
 /** Upper bound on concurrently tracked sessions (parent plus isolated runs). */
@@ -287,12 +290,16 @@ export class LiveTailRetention {
 		// Not after a stand-in (no goal, a draft, a stale checkpoint): the policy
 		// block of the goal that follows says it supersedes everything above.
 		const scope = fresh.scope ?? session.lastFresh?.scope;
+		let switchedGoal = false;
 		if (session.lastFresh !== undefined) {
 			if (session.interim && !fresh.interim) {
 				// A stand-in may have told the model to ignore the task list above. Send it again.
 				session.lastFresh = { ...session.lastFresh, counters: undefined, countersState: undefined };
 			} else if (session.lastFresh.scope !== scope) {
-				reset();
+				// Another goal: its policy block says it supersedes the earlier ones, so
+				// nothing is dropped. Its task list is sent again, or marked empty below.
+				switchedGoal = true;
+				session.lastFresh = { ...session.lastFresh, counters: undefined, countersState: undefined };
 			}
 		}
 		// A task list that disappears under the same policy it was sent with
@@ -378,6 +385,7 @@ export class LiveTailRetention {
 			else append(session.tails.some(tail => tail.kind !== "goal-counters") ? `${POLICY_SUPERSEDED_NOTE}\n${fresh.state}` : fresh.state, "goal-state", fresh.state);
 		}
 		if (changed.counters) append(fresh.counters!, "goal-counters");
+		else if (switchedGoal && session.tails.some(tail => tail.kind === "goal-counters")) append(TASK_LIST_NONE, "goal-counters");
 		// Request-only text goes last and is never retained. While superseded
 		// policy blocks remain in history, say once per request which one counts.
 		const superseded = session.tails.filter(tail => tail.kind !== "goal-counters").length > 1;

@@ -14,3 +14,8 @@
 - Checked and already fine: tool list and order (same bytes across sessions), request-only text (usage, run counts, waits, stall notes) only in the last block, wait cycles, task updates, settings changes, compaction (one reset, then stable), Pi 1.4.0 and 1.7.0.
 - Left alone on purpose: toggling `disableTasks` changes the tool list, so it is one miss that the user caused. A goal switching straight to another goal resets.
 - Not done: the retained blocks are not saved with the session, so a process restart or `/resume` in a new process starts without them.
+
+## Round 3
+- Done: goal blocks are saved with the session (`goal-live-persist.ts`), so restart and /resume keep the cache; a mismatch with the history starts clean.
+- Done: a goal switch or objective edit appends a new policy block and task list instead of resetting.
+- Kept: toggling `disableTasks` changes the tool list, which is part of the cached prefix. Keeping the task tools always listed would add about 700 tokens to every request for everyone who turned them off, so one miss on a deliberate toggle is the better trade.

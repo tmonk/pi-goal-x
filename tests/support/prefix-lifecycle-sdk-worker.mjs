@@ -47,7 +47,7 @@ async function openSession(sessionManager) {
 	await session.bindExtensions({});
 }
 await openSession(manager);
-const steps = ['Please start a persistent goal.', '@wait', '@pause', '@wait', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@settings:{"maxAutonomousRuns":9,"disabled":true}', '@wait', '@compact', '@wait', 'one more question after compaction', '@wait', '@complete', '@wait', 'Thanks, what was in the file?', '@wait', '@new:Second goal.', '@wait'];
+const steps = ['Please start a persistent goal.', '@wait', '@pause', '@wait', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@settings:{"maxAutonomousRuns":9,"disabled":true}', '@wait', '@compact', '@wait', 'one more question after compaction', '@wait', '@complete', '@wait', 'Thanks, what was in the file?', '@wait', '@new:Second goal.', '@wait', 'work on second goal', '@new:Third goal, changed course.', '@wait', 'work on third goal'];
 for (const step of steps) {
 	if (step === '@pause') { core.lifecycle.pause(session.extensionRunner.createContext()); continue; }
 	if (step === '@resume') { core.scheduler.resume(session.extensionRunner.createContext()); await delay(300); continue; }
@@ -93,6 +93,7 @@ for (const [i, r] of requests.entries()) {
 const text = JSON.stringify(requests.at(-1).messages);
 assert.ok(text.includes('PI GOAL ENDED'), 'the end of the first goal is stated');
 assert.ok(text.includes('Second goal.'), 'the second goal reached the model');
+if (!String(core.state.goal?.objective).includes("Third goal")) throw new Error("goal switch did not happen: " + core.state.goal?.objective);
 console.log(JSON.stringify({ passed: true, requests: requests.length, breaks }));
 await session.dispose?.();
 server.close();
