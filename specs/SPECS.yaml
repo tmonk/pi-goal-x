@@ -16,6 +16,13 @@ commands:
   finish: /spec-finish [spec-id-or-path]
   settings: /specs-settings
 specs:
+  - id: 2026-11-28-cache-lifecycle
+    path: specs/2026-11-28-cache-lifecycle
+    title: Keep the prompt cache through the goal lifecycle
+    status: validating
+    focused: false
+    last_audit: null
+    updated: 2026-11-28
   - id: 2026-11-26-review-improvements
     path: specs/2026-11-26-review-improvements
     title: Review improvements

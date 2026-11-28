@@ -30,7 +30,9 @@ Active requests split goal text by how often it changes.
 - **Task list**: kept as snapshots. A change appends a new snapshot; an unchanged list adds nothing.
 - **Request-only text**: usage, run counts, scheduling waits, stall notes and one-shot reminders go at the very end of each request and are never kept. They clear by simply not being sent again, so nothing stale is left in history.
 
-Retention starts over (one uncached request) only when the goal's scope changes (a different goal, or a changed objective, verification contract or sisyphus mode), history is rewritten (compaction, session-tree moves), a tool-result boundary is unsafe, or a bound is hit: at most 12 policy blocks, 48 tails and 24 KiB of task-list snapshots per session, across at most 16 session/model identities. No full-state tails are persisted. Older snapshots are historical, and the current policy takes precedence over cache reuse.
+When a goal ends, a draft is open, a checkpoint goes stale or only unfocused goals remain, the blocks already sent stay where they are and one short block says the goal blocks no longer apply (`[PI GOAL ENDED]` or `[PI GOAL ON HOLD]`). Dropping them would shift everything after them and miss the cache once. A goal that starts after one of these needs no reset either: its policy block supersedes the rest, and its task list is sent again.
+
+Retention starts over (one uncached request) only when one goal's scope changes straight into another (a different goal, or a changed objective, verification contract or sisyphus mode), history is rewritten (compaction, session-tree moves, a reload), a tool-result boundary is unsafe, or a bound is hit: at most 12 policy blocks, 48 tails and 24 KiB of task-list snapshots per session, across at most 16 session/model identities. No full-state tails are persisted. Older snapshots are historical, and the current policy takes precedence over cache reuse.
 
 Measured with `experiments/prompt-cache/simulate.ts` (request construction only, not live provider hit rates; 128-token blocks, cached reads priced at a tenth). Uncached input tokens, 0.35.0 against this layout:
 
@@ -46,7 +48,7 @@ Big prefix breaks in these sessions went from one or two to none. The floor with
 
 Pi hands the extension a fresh copy of the history on every request. To tell whether anything earlier changed, the extension compares each request with a snapshot of the last one (text up to 4,096 characters as it is, longer text as a SHA-256). Only new messages are copied, so the check stays cheap as a session grows: about 7 ms of a goal turn at 2.8 MiB of history, where hashing every message took 27 ms.
 
-Explicit-marker relocation skips all retained live text and tolerates Pi's trailing effort-only messages. Another extension's content-bearing suffix is left alone. Changing models/providers starts a separate retention identity. Unknown session identities do not retain history between requests.
+Explicit-marker relocation skips all retained live text and tolerates Pi's trailing effort-only messages. Another extension's content-bearing suffix is left alone. Changing models/providers starts a separate retention identity. A host that gives no session id is keyed by its session object. Only a request with no session at all retains nothing.
 
 Validation now includes advancing SDK request chains, combined effort-marker/retention regressions, 1,000-turn growth bounds and a 64 KiB–4 MiB history-cost gate. These are request-construction and CPU measurements, not live provider hit-rate claims.
 

@@ -63,6 +63,9 @@ export const MAX_RETAINED_POLICY_BLOCKS = 12;
 /** Said once at the top of every policy block that follows an earlier one. */
 export const POLICY_SUPERSEDED_NOTE = "[This is the current goal policy. It supersedes every earlier [PI GOAL …] block above; follow only this one.]";
 
+/** Sent when no goal is in force, so the blocks already sent stay in place. */
+export const GOAL_ENDED_STATE = "[PI GOAL ENDED]\nNo goal is active now. Ignore every earlier [PI GOAL …] block and task list above; they belong to goals that are over.";
+
 /** Sent with every request while superseded policy blocks remain in history. */
 export const POLICY_RECENCY_NOTE = "Only the latest goal policy block above applies; earlier goal policy blocks are superseded.";
 
@@ -85,6 +88,14 @@ interface FreshLiveTails {
 	ephemeral?: string | undefined;
 	/** What the goal is about (usually the goal id). A different scope starts over. */
 	scope?: string | undefined;
+	/**
+	 * `state` stands in for a goal for now: no goal, a draft, an unfocused pool or
+	 * a stale checkpoint. It has no scope of its own, and a goal that follows it
+	 * needs no reset, because its policy block supersedes the rest.
+	 */
+	interim?: boolean | undefined;
+	/** With `interim`: send nothing unless goal blocks were already sent. */
+	onlyIfSent?: boolean | undefined;
 }
 
 interface RetainedTail {
@@ -102,6 +113,8 @@ interface SessionRetention {
 	lastEphemeral: string | undefined;
 	/** Every base message as it was at the last apply; any earlier rewrite resets. */
 	baseSnapshots: Array<Snapshot | null>;
+	/** The last block sent stood in for a goal (see `interim`). */
+	interim: boolean;
 }
 
 
@@ -145,15 +158,41 @@ function copyForComparison(value: unknown, depth: number): Snapshot {
 	return copy;
 }
 
-function snapshotMessage(message: unknown): Snapshot | null {
+/** What a message looks like once serialized, or null when it cannot be serialized. */
+function serialize(message: unknown): string | null {
 	try {
-		return copyForComparison(message, 0);
+		return JSON.stringify(message) ?? null;
 	} catch {
 		return null;
 	}
 }
 
+/**
+ * A message the plain copy cannot hold (a class instance, a Date, a Map) is
+ * compared by the hash of its JSON instead. A message that matched nothing would
+ * make every request look like a rewrite and reset the retained blocks each time.
+ */
+class SerializedMessage {
+	readonly hash: string;
+	constructor(hash: string) {
+		this.hash = hash;
+	}
+}
+
+function snapshotMessage(message: unknown): Snapshot | null {
+	try {
+		return copyForComparison(message, 0);
+	} catch {
+		const text = serialize(message);
+		return text === null ? null : new SerializedMessage(hashText(text));
+	}
+}
+
 function sameAsSnapshot(snapshot: Snapshot, value: unknown, depth = 0): boolean {
+	if (snapshot instanceof SerializedMessage) {
+		const text = serialize(value);
+		return text !== null && hashText(text) === snapshot.hash;
+	}
 	if (typeof snapshot === "string") return snapshot === value;
 	if (snapshot instanceof LongString) return typeof value === "string" && value.length === snapshot.length && hashText(value) === snapshot.hash;
 	if (snapshot === null || typeof snapshot !== "object") return Object.is(snapshot, value);
@@ -219,8 +258,12 @@ export class LiveTailRetention {
 			return { messages: [...base], transientContents: [], stableLength: base.length };
 		}
 		let session = this.sessions.get(sessionKey);
+		if (fresh.onlyIfSent && !session?.tails.length) return this.forget(sessionKey, base);
+		// Map order is insertion order, so move a session to the end each time it is
+		// used. Otherwise the busiest session is the oldest one and gets evicted first.
+		if (session) { this.sessions.delete(sessionKey); this.sessions.set(sessionKey, session); }
 		if (!session) {
-			session = { tails: [], lastFresh: undefined, lastEphemeral: undefined, baseSnapshots: [] };
+			session = { tails: [], lastFresh: undefined, lastEphemeral: undefined, baseSnapshots: [], interim: false };
 			if (this.sessions.size >= MAX_TRACKED_SESSIONS) {
 				const oldest = this.sessions.keys().next();
 				if (!oldest.done) this.sessions.delete(oldest.value);
@@ -231,10 +274,20 @@ export class LiveTailRetention {
 			session!.tails = [];
 			session!.lastFresh = undefined;
 			session!.baseSnapshots = [];
+			session!.interim = false;
 		};
-		// A different goal (or a stale-checkpoint or unfocused state) shares
-		// nothing with the earlier blocks, so start over.
-		if (session.lastFresh !== undefined && session.lastFresh.scope !== fresh.scope) reset();
+		// A different goal shares nothing with the earlier blocks, so start over.
+		// Not after a stand-in (no goal, a draft, a stale checkpoint): the policy
+		// block of the goal that follows says it supersedes everything above.
+		const scope = fresh.scope ?? session.lastFresh?.scope;
+		if (session.lastFresh !== undefined) {
+			if (session.interim && !fresh.interim) {
+				// A stand-in may have told the model to ignore the task list above. Send it again.
+				session.lastFresh = { ...session.lastFresh, counters: undefined, countersState: undefined };
+			} else if (session.lastFresh.scope !== scope) {
+				reset();
+			}
+		}
 		// A task list that disappears under the same policy it was sent with
 		// would leave the old list in history with nothing to supersede it. Under
 		// a different policy (paused, blocked) the new block takes over.
@@ -273,6 +326,8 @@ export class LiveTailRetention {
 			valid++;
 		}
 		if (valid < session.tails.length) reset();
+		// Nothing was sent before, so there is nothing to retire.
+		if (fresh.onlyIfSent && session.tails.length === 0) return this.forget(sessionKey, base);
 		// Append only what differs from the last emitted blocks, so unchanged
 		// content across repeats, tool loops, and history advances adds zero
 		// blocks while keeping the prefix literal. Overflow is measured against
@@ -292,6 +347,7 @@ export class LiveTailRetention {
 			|| (changed.policy && policyBlocks >= MAX_RETAINED_POLICY_BLOCKS)
 			|| (changed.counters && counterBytes() + Buffer.byteLength(fresh.counters!) > MAX_RETAINED_COUNTER_BYTES)) {
 			reset();
+			if (fresh.onlyIfSent) return this.forget(sessionKey, base);
 			changed = changes();
 		}
 		const messages: Array<T | LiveMessage> = [...base];
@@ -315,10 +371,16 @@ export class LiveTailRetention {
 		session.baseSnapshots = snapshots;
 		const previous = session.lastFresh;
 		session.lastFresh = fresh.counters === undefined
-			? { state: fresh.state, counters: previous?.counters, countersState: previous?.countersState, scope: fresh.scope }
-			: { state: fresh.state, counters: fresh.counters, countersState: fresh.state, scope: fresh.scope };
+			? { state: fresh.state, counters: previous?.counters, countersState: previous?.countersState, scope }
+			: { state: fresh.state, counters: fresh.counters, countersState: fresh.state, scope };
 		session.lastEphemeral = ephemeral || undefined;
+		session.interim = fresh.interim === true;
 		return { messages, stableLength, transientContents: [...new Set([...session.tails.map(tail => tail.content), ...(ephemeral ? [ephemeral] : [])])] };
+	}
+
+	private forget<T>(sessionKey: string, base: readonly T[]): { messages: Array<T | LiveMessage>; transientContents: string[]; stableLength: number } {
+		this.sessions.delete(sessionKey);
+		return { messages: [...base], transientContents: [], stableLength: base.length };
 	}
 
 	contents(sessionKey: string): string[] | undefined {

@@ -171,8 +171,20 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 	// Transients are keyed per session: the context hook of session B must never
 	// overwrite the set that session A's provider request will consume.
 	const liveRetention = new LiveTailRetention();
-	const sessionKeyFor = (ctx?: ExtensionContext): string =>
-		ctx?.sessionManager?.getSessionId?.() ? JSON.stringify([ctx.sessionManager.getSessionId(), ctx.model?.provider, ctx.model?.id]) : "unidentified";
+	const managerNumbers = new WeakMap<object, number>();
+	let managersSeen = 0;
+	const managerNumber = (manager: object): number => {
+		let number = managerNumbers.get(manager);
+		if (number === undefined) managerNumbers.set(manager, number = ++managersSeen);
+		return number;
+	};
+	const sessionKeyFor = (ctx?: ExtensionContext): string => {
+		const manager = ctx?.sessionManager;
+		// A host that gives no session id still gives the same manager object for
+		// the whole session, so use that rather than retaining nothing.
+		const id = manager?.getSessionId?.() || (manager && typeof manager === "object" ? `manager-${managerNumber(manager)}` : undefined);
+		return id ? JSON.stringify([id, ctx?.model?.provider, ctx?.model?.id]) : "unidentified";
+	};
 	type SessionOwner = {ctx: ExtensionContext; manager: ExtensionContext["sessionManager"]; storage: GoalStorageContext; keys: Set<string>};
 	let session: SessionOwner | undefined;
 	const contexts = new WeakMap<object, SessionOwner>();
@@ -203,7 +215,9 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		if (session) contexts.set(ctx, session);
 		const sessionKey = sessionKeyFor(ctx);
 		if (session) {
+			leases.delete(sessionKey);
 			leases.set(sessionKey, session);
+			session.keys.delete(sessionKey);
 			session.keys.add(sessionKey);
 			if (leases.size > 16) leases.delete(leases.keys().next().value!);
 			if (session.keys.size > 16) session.keys.delete(session.keys.values().next().value!);
@@ -218,6 +232,7 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 			const { messages: retained } = liveRetention.apply(sessionKey, base, parts);
 			return retained;
 		}
+		// A draft or a hidden reminder leaves no goal text: drop what was sent.
 		liveRetention.clear(sessionKey);
 		return messages;
 	});
