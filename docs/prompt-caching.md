@@ -26,7 +26,7 @@ Provider references: [Anthropic prompt caching](https://platform.claude.com/docs
 
 Active requests split goal text by how often it changes.
 
-- **Policy block**: rules, objective, contract, limits and status. When it changes (pause, resume, settings, budget or run limits), the new block is appended with a line saying it supersedes the earlier ones. Nothing before it moves, so the cached prefix survives. Every request that still has older policy blocks in history ends with a line saying only the latest one applies.
+- **Policy block**: rules, objective, contract, limits and status. When it changes (pause, resume, settings, budget or run limits), the new block is appended with a line saying it supersedes the earlier ones. Nothing before it moves, so the cached prefix survives. When the policy goes back to a text already in history (pause, then resume), a one-line pointer to that block is appended instead of the full text, so long goals with many pauses never hit the block limit. Every request that still has older policy blocks in history ends with a line saying only the latest one applies.
 - **Task list**: kept as snapshots. A change appends a new snapshot; an unchanged list adds nothing.
 - **Request-only text**: usage, run counts, scheduling waits, stall notes and one-shot reminders go at the very end of each request and are never kept. They clear by simply not being sent again, so nothing stale is left in history.
 

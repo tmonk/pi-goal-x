@@ -185,3 +185,52 @@ test("starting a draft after a goal ended keeps the request prefix", async () =>
 		rmSync(cwd, { recursive: true, force: true });
 	}
 });
+
+test("a reload keeps the retained blocks, any other start begins clean", async () => {
+	const cwd = tempDir("goal-cache-reload-");
+	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
+	try {
+		const first = createExtensionHarness({ cwd, hasUI: false, sessionId: "reload-session" });
+		await first.sessionStart();
+		await first.callTool("create_goal", { objective: "Survive a reload" });
+		const ask = async (h: typeof first, messages: any[]) => (await h.emit("context_with_system", { messages })).messages as any[];
+		const base = [msg("user", "work on it", 1), msg("assistant", "started", 2)];
+		const before = await ask(first, base);
+		assert.ok(contents(before).some(text => String(text).includes("PI GOAL ACTIVE")));
+		base.push(msg("assistant", "more", 3));
+
+		// The same conversation under a new extension instance, as after /reload.
+		const reloaded = createExtensionHarness({ cwd, hasUI: false, sessionId: "reload-session", sessionEntries: () => first.entries as any });
+		await reloaded.sessionStart("reload");
+		const afterReload = await ask(reloaded, base);
+		assert.equal(afterReload.filter(m => String(m.content).includes("PI GOAL ACTIVE")).length, 1, "the goal is focused again");
+		assertPrefixKept(before, afterReload, "reload");
+
+		// A fresh start of the same session id does not reuse anything.
+		const fresh = createExtensionHarness({ cwd, hasUI: false, sessionId: "reload-session", sessionEntries: () => first.entries as any });
+		await fresh.sessionStart("startup");
+		const again = await ask(fresh, base);
+		assert.equal(again.findIndex(m => String(m.content).includes("[PI GOAL ")), base.length, "a fresh start puts the block at the end again");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("pause and resume cycles point back to the policy instead of repeating it, so they never hit the block limit", () => {
+	const retention = new LiveTailRetention();
+	const base = [msg("user", "h", 1)];
+	let previous = retention.apply("s", base, { state: "[PI GOAL ACTIVE goalId=g]\nBIG POLICY", counters: "TASKS", scope: "g" }).messages;
+	for (let cycle = 0; cycle < 40; cycle++) {
+		for (const state of ["[PI GOAL PAUSED goalId=g]\nPAUSED POLICY", "[PI GOAL ACTIVE goalId=g]\nBIG POLICY"]) {
+			base.push(msg("assistant", `a${cycle}`, 2 + cycle));
+			const next = retention.apply("s", base, { state, counters: "TASKS", scope: "g" }).messages;
+			assertPrefixKept(previous, next, `cycle ${cycle}`);
+			previous = next;
+		}
+	}
+	const text = contents(previous).join("\n");
+	assert.equal(text.split("BIG POLICY").length - 1, 1, "the full policy was sent once");
+	assert.equal(text.split("PAUSED POLICY").length - 1, 1, "and so was the paused one");
+	assert.match(text, /\[PI GOAL RESTORED\] The goal policy above that begins "\[PI GOAL ACTIVE goalId=g\]" is in force again/);
+	assert.equal(contents(previous).filter(c => String(c).includes("TASKS")).length, 1, "the task list was not repeated either");
+});

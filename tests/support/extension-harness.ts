@@ -160,7 +160,7 @@ export function createExtensionHarness(options: ExtensionHarnessOptions) {
 	return Object.assign(host, {
 		core,
 		emit,
-		sessionStart: () => emit("session_start", { reason: "start" }),
+		sessionStart: (reason = "start") => emit("session_start", { reason }),
 		callTool: (name: string, params: unknown, id = "call", context: ExtensionContext = ctx) =>
 			tools.get(name).execute(id, params, new AbortController().signal, undefined, context),
 		runCommand: (name: string, args = "", context: ExtensionContext = ctx) => commands.get(name).handler(args, context),
