@@ -13,6 +13,9 @@ import { stabilizationHarness } from "./support/stabilization-utils.ts";
 import { createExtensionHarness } from "./support/extension-harness.ts";
 import { tempDir } from "./support/fs.ts";
 import { hasActiveDraft } from "../extensions/goal-drafting.ts";
+
+/** What a new process starts with: nothing retained in memory. */
+const forgetSharedRetention = () => { delete (globalThis as any)[Symbol.for("pi-goal-x.liveRetention")]; };
 import { GOAL_ENDED_STATE, LiveTailRetention, MAX_RETAINED_LIVE_TAILS } from "../extensions/goal-live-retention.ts";
 
 const ENDED = { state: GOAL_ENDED_STATE, interim: true, onlyIfSent: true };
@@ -184,4 +187,65 @@ test("starting a draft after a goal ended keeps the request prefix", async () =>
 	} finally {
 		rmSync(cwd, { recursive: true, force: true });
 	}
+});
+
+test("a reload keeps the retained blocks, and so does a restart that finds them saved with the session", async () => {
+	const cwd = tempDir("goal-cache-reload-");
+	mkdirSync(path.join(cwd, ".pi", "goals", "archived"), { recursive: true });
+	try {
+		const first = createExtensionHarness({ cwd, hasUI: false, sessionId: "reload-session" });
+		await first.sessionStart();
+		await first.callTool("create_goal", { objective: "Survive a reload" });
+		const ask = async (h: typeof first, messages: any[]) => (await h.emit("context_with_system", { messages })).messages as any[];
+		const base = [msg("user", "work on it", 1), msg("assistant", "started", 2)];
+		const before = await ask(first, base);
+		assert.ok(contents(before).some(text => String(text).includes("PI GOAL ACTIVE")));
+		assert.ok(first.entries.some(entry => entry.customType === "pi-goal-live-tails"), "the blocks were saved with the session");
+		base.push(msg("assistant", "more", 3));
+		const options = { cwd, hasUI: false, sessionId: "reload-session", sessionEntries: () => first.entries as any };
+
+		// The same conversation under a new extension instance, as after /reload.
+		const reloaded = createExtensionHarness(options);
+		await reloaded.sessionStart("reload");
+		const afterReload = await ask(reloaded, base);
+		assert.equal(afterReload.filter(m => String(m.content).includes("PI GOAL ACTIVE")).length, 1, "the goal is focused again");
+		assertPrefixKept(before, afterReload, "reload");
+
+		// A new process: nothing in memory, so the blocks come from the session entries.
+		forgetSharedRetention();
+		const restarted = createExtensionHarness(options);
+		await restarted.sessionStart("resume");
+		const afterRestart = await ask(restarted, base);
+		assertPrefixKept(before, afterRestart, "restart");
+		assert.equal(afterRestart.filter(m => String(m.content).startsWith("[PI GOAL")).length, 1, "the saved block was reused, not sent again");
+
+		// Another conversation under the same id must not pick the blocks up.
+		forgetSharedRetention();
+		const other = createExtensionHarness(options);
+		await other.sessionStart("resume");
+		const rewritten = [msg("user", "something else", 1), msg("assistant", "started", 2), msg("assistant", "more", 3)];
+		const clean = await ask(other, rewritten);
+		assert.equal(clean.findIndex(m => String(m.content).includes("[PI GOAL ")), rewritten.length, "changed history starts clean");
+	} finally {
+		rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
+test("pause and resume cycles point back to the policy instead of repeating it, so they never hit the block limit", () => {
+	const retention = new LiveTailRetention();
+	const base = [msg("user", "h", 1)];
+	let previous = retention.apply("s", base, { state: "[PI GOAL ACTIVE goalId=g]\nBIG POLICY", counters: "TASKS", scope: "g" }).messages;
+	for (let cycle = 0; cycle < 40; cycle++) {
+		for (const state of ["[PI GOAL PAUSED goalId=g]\nPAUSED POLICY", "[PI GOAL ACTIVE goalId=g]\nBIG POLICY"]) {
+			base.push(msg("assistant", `a${cycle}`, 2 + cycle));
+			const next = retention.apply("s", base, { state, counters: "TASKS", scope: "g" }).messages;
+			assertPrefixKept(previous, next, `cycle ${cycle}`);
+			previous = next;
+		}
+	}
+	const text = contents(previous).join("\n");
+	assert.equal(text.split("BIG POLICY").length - 1, 1, "the full policy was sent once");
+	assert.equal(text.split("PAUSED POLICY").length - 1, 1, "and so was the paused one");
+	assert.match(text, /\[PI GOAL RESTORED\] The goal policy above that begins "\[PI GOAL ACTIVE goalId=g\]" is in force again/);
+	assert.equal(contents(previous).filter(c => String(c).includes("TASKS")).length, 1, "the task list was not repeated either");
 });

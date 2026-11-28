@@ -184,5 +184,5 @@ test("code only used by commands and dialogs is not loaded at startup", () => {
 		assert.ok(!names.has(lazy), `${lazy} loads at startup; load it from the command that needs it`);
 	}
 	const bytes = [...loaded.values()].reduce((sum, size) => sum + size, 0);
-	assert.ok(bytes < 810_000, `${(bytes / 1024).toFixed(0)} KiB of source loads at startup (bound 791 KiB)`);
+	assert.ok(bytes < 830_000, `${(bytes / 1024).toFixed(0)} KiB of source loads at startup (bound 810 KiB)`);
 });

@@ -26,8 +26,9 @@ import { goalSelectorLabel, otherOpenGoalCount } from "./goal-pool.ts";
 import { invalidateGoalPoolCache } from "./storage/goal-files.ts";
 import { checkpointTriggerPrompt } from "./prompts/goal-prompts.ts";
 import { consumeOracleFollowupMarker, hasPendingOracleAdviceForFocusedGoal } from "./goal-oracle.ts";
-import { LiveTailRetention } from "./goal-live-retention.ts";
+import { sharedLiveRetention } from "./goal-live-retention.ts";
 import { goalContextParts } from "./goal-context-parts.ts";
+import { restoreLiveTails, saveLiveTails } from "./goal-live-persist.ts";
 import { hasActiveDraft, rehydrateDraft } from "./goal-drafting.ts";
 import { syncTerminalInputPause } from "./goal-terminal-input.ts";
 import type { GoalContextCore } from "./goal-context-parts.ts";
@@ -170,9 +171,11 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 	const { pi } = core;
 	// Transients are keyed per session: the context hook of session B must never
 	// overwrite the set that session A's provider request will consume.
-	const liveRetention = new LiveTailRetention();
+	const liveRetention = sharedLiveRetention();
 	const managerNumbers = new WeakMap<object, number>();
 	let managersSeen = 0;
+	/** Conversations already looked up in the session's saved blocks. */
+	const checkedForSaved = new Set<string>();
 	const managerNumber = (manager: object): number => {
 		let number = managerNumbers.get(manager);
 		if (number === undefined) managerNumbers.set(manager, number = ++managersSeen);
@@ -185,10 +188,9 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		const id = manager?.getSessionId?.() || (manager && typeof manager === "object" ? `manager-${managerNumber(manager)}` : undefined);
 		return id ? JSON.stringify([id, ctx?.model?.provider, ctx?.model?.id]) : "unidentified";
 	};
-	type SessionOwner = {ctx: ExtensionContext; manager: ExtensionContext["sessionManager"]; storage: GoalStorageContext; keys: Set<string>};
+	type SessionOwner = {ctx: ExtensionContext; manager: ExtensionContext["sessionManager"]; storage: GoalStorageContext};
 	let session: SessionOwner | undefined;
 	const contexts = new WeakMap<object, SessionOwner>();
-	const leases = new Map<string, SessionOwner>();
 	/** A context already seen under an earlier session owner must not touch its successor. */
 	const isSupersededContext = (ctx: object): boolean => contexts.has(ctx) && contexts.get(ctx) !== session;
 	pi.on("before_provider_request", (event, ctx) => {
@@ -214,27 +216,33 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		if (core.scheduler.isDenied()) ctx.abort?.();
 		if (session) contexts.set(ctx, session);
 		const sessionKey = sessionKeyFor(ctx);
-		if (session) {
-			leases.delete(sessionKey);
-			leases.set(sessionKey, session);
-			session.keys.delete(sessionKey);
-			session.keys.add(sessionKey);
-			if (leases.size > 16) leases.delete(leases.keys().next().value!);
-			if (session.keys.size > 16) session.keys.delete(session.keys.values().next().value!);
-		}
 		if (sessionKey === "unidentified") liveRetention.clear(sessionKey);
+		const identified = sessionKey !== "unidentified";
+		const model = `${ctx.model?.provider}/${ctx.model?.id}`;
+		// First request of a conversation in this process: pick up what the last process saved.
+		if (identified && !checkedForSaved.has(sessionKey)) {
+			checkedForSaved.add(sessionKey);
+			if (!liveRetention.has(sessionKey)) {
+				try { restoreLiveTails(liveRetention, sessionKey, model, ctx.sessionManager.getBranch(), base); } catch { /* start clean */ }
+			}
+		}
+		const done = <R>(result: R): R => {
+			if (identified) {
+				try { saveLiveTails(liveRetention, sessionKey, model, base, (type, data) => pi.appendEntry(type, data)); } catch { /* saving is best effort */ }
+			}
+			return result;
+		};
 		const parts = goalContextParts(core, ctx);
 		if (parts) {
 			// Retain previously sent tails verbatim at their anchors so this
 			// request extends the previous one instead of displacing its tail.
 			// Only genuinely new policy and task-list content is appended; usage
 			// and notes ride at the end of this request only.
-			const { messages: retained } = liveRetention.apply(sessionKey, base, parts);
-			return retained;
+			return done(liveRetention.apply(sessionKey, base, parts).messages);
 		}
 		// A draft or a hidden reminder leaves no goal text: drop what was sent.
 		liveRetention.clear(sessionKey);
-		return messages;
+		return done(messages);
 	});
 
 	pi.on("agent_start", async (_event, ctx) => { core.scheduler.begin(ctx); });
@@ -402,19 +410,17 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		run(() => unsubscribe?.());
 		if (outgoing && core.state.goal) run(() => {core.goalService.persist(outgoing.storage);});
 		run(() => core.view.clear(outgoing?.ctx ?? ctx));
-		if (outgoing) for (const key of outgoing.keys) {
-			if (leases.get(key) !== outgoing) continue;
-			liveRetention.clear(key);
-			leases.delete(key);
-		}
 		if (failure) throw failure;
 	}
 
 	async function startSession(event: {reason?: string}, ctx: ExtensionContext): Promise<void> {
 		teardown(ctx);
+		// Only a reload keeps the retained blocks: it is the same conversation, and the
+		// history check drops them if anything changed. Any other start begins clean.
+		if (event.reason !== "reload") { liveRetention.clear(); checkedForSaved.clear(); }
 		try {
 			configureLocale(loadGoalSettings(ctx.cwd).locale);
-			const owner: SessionOwner = {ctx, manager: ctx.sessionManager, storage: goalStorageContext(ctx), keys: new Set()};
+			const owner: SessionOwner = {ctx, manager: ctx.sessionManager, storage: goalStorageContext(ctx)};
 			session = owner;
 			core.sessionOwner = owner;
 			contexts.set(ctx, owner);

@@ -35,7 +35,7 @@ import { asRecord } from "./goal-record.ts";
 
 const LIVE_CONTEXT_TYPE = "pi-goal-live-context";
 
-type LiveTailKind = "goal-state" | "goal-counters";
+type LiveTailKind = "goal-state" | "goal-pointer" | "goal-counters";
 
 /** A request-only tail message. Never persisted; the hook replays it per request. */
 interface LiveMessage {
@@ -60,6 +60,9 @@ export const MAX_RETAINED_LIVE_TAILS = 48;
  */
 export const MAX_RETAINED_POLICY_BLOCKS = 12;
 
+/** Upper bound on one-line "restored" pointers kept in history. Each is about 50 tokens. */
+export const MAX_RETAINED_POINTERS = 200;
+
 /** Said once at the top of every policy block that follows an earlier one. */
 export const POLICY_SUPERSEDED_NOTE = "[This is the current goal policy. It supersedes every earlier [PI GOAL …] block above; follow only this one.]";
 
@@ -67,6 +70,9 @@ export const POLICY_SUPERSEDED_NOTE = "[This is the current goal policy. It supe
 export const GOAL_ENDED_STATE = "[PI GOAL ENDED]\nNo goal is active now. Ignore every earlier [PI GOAL …] block and task list above; they belong to goals that are over.";
 
 /** Sent with every request while superseded policy blocks remain in history. */
+/** Sent when a new goal has no task list, so the earlier goal's list above stops counting. */
+export const TASK_LIST_NONE = "[PI TASK LIST: none for the current goal. Ignore every task list above.]";
+
 export const POLICY_RECENCY_NOTE = "Only the latest goal policy block above applies; earlier goal policy blocks are superseded.";
 
 /** Upper bound on concurrently tracked sessions (parent plus isolated runs). */
@@ -104,6 +110,15 @@ interface RetainedTail {
 	anchorSnapshot: Snapshot | null;
 	content: string;
 	kind: LiveTailKind;
+	/** For a full policy block: the text it came from, so a return to it can point back. */
+	state?: string;
+}
+
+/** The retained blocks without the copies used for comparing, so they can be saved. */
+export interface RetainedState {
+	tails: Array<{ anchorIndex: number; content: string; kind: LiveTailKind; state?: string }>;
+	lastFresh: { state: string; counters: string | undefined; countersState: string | undefined; scope: string | undefined };
+	interim: boolean;
 }
 
 interface SessionRetention {
@@ -251,6 +266,8 @@ function makeLiveMessage(content: string): LiveMessage {
 
 export class LiveTailRetention {
 	private readonly sessions = new Map<string, SessionRetention>();
+	/** What was last saved with the session, by key (see goal-live-persist.ts). */
+	readonly saved = new Map<string, string>();
 
 	apply<T>(sessionKey: string, base: readonly T[], fresh: FreshLiveTails | null): { messages: Array<T | LiveMessage>; transientContents: string[]; stableLength: number } {
 		if (fresh === null) {
@@ -262,14 +279,7 @@ export class LiveTailRetention {
 		// Map order is insertion order, so move a session to the end each time it is
 		// used. Otherwise the busiest session is the oldest one and gets evicted first.
 		if (session) { this.sessions.delete(sessionKey); this.sessions.set(sessionKey, session); }
-		if (!session) {
-			session = { tails: [], lastFresh: undefined, lastEphemeral: undefined, baseSnapshots: [], interim: false };
-			if (this.sessions.size >= MAX_TRACKED_SESSIONS) {
-				const oldest = this.sessions.keys().next();
-				if (!oldest.done) this.sessions.delete(oldest.value);
-			}
-			this.sessions.set(sessionKey, session);
-		}
+		if (!session) this.track(sessionKey, session = { tails: [], lastFresh: undefined, lastEphemeral: undefined, baseSnapshots: [], interim: false });
 		const reset = () => {
 			session!.tails = [];
 			session!.lastFresh = undefined;
@@ -280,12 +290,16 @@ export class LiveTailRetention {
 		// Not after a stand-in (no goal, a draft, a stale checkpoint): the policy
 		// block of the goal that follows says it supersedes everything above.
 		const scope = fresh.scope ?? session.lastFresh?.scope;
+		let switchedGoal = false;
 		if (session.lastFresh !== undefined) {
 			if (session.interim && !fresh.interim) {
 				// A stand-in may have told the model to ignore the task list above. Send it again.
 				session.lastFresh = { ...session.lastFresh, counters: undefined, countersState: undefined };
 			} else if (session.lastFresh.scope !== scope) {
-				reset();
+				// Another goal: its policy block says it supersedes the earlier ones, so
+				// nothing is dropped. Its task list is sent again, or marked empty below.
+				switchedGoal = true;
+				session.lastFresh = { ...session.lastFresh, counters: undefined, countersState: undefined };
 			}
 		}
 		// A task list that disappears under the same policy it was sent with
@@ -343,7 +357,9 @@ export class LiveTailRetention {
 		};
 		let changed = changes();
 		const policyBlocks = session.tails.filter(tail => tail.kind === "goal-state").length;
-		if (session.tails.length + Number(changed.policy) + Number(changed.counters) > MAX_RETAINED_LIVE_TAILS
+		const pointers = session.tails.filter(tail => tail.kind === "goal-pointer").length;
+		if (session.tails.length - pointers + Number(changed.policy) + Number(changed.counters) > MAX_RETAINED_LIVE_TAILS
+			|| (changed.policy && pointers >= MAX_RETAINED_POINTERS)
 			|| (changed.policy && policyBlocks >= MAX_RETAINED_POLICY_BLOCKS)
 			|| (changed.counters && counterBytes() + Buffer.byteLength(fresh.counters!) > MAX_RETAINED_COUNTER_BYTES)) {
 			reset();
@@ -356,15 +372,23 @@ export class LiveTailRetention {
 			messages.splice(tail.anchorIndex, 0, makeLiveMessage(tail.content));
 		}
 		const anchorSnapshot = snapshots.at(-1) ?? null;
-		const append = (content: string, kind: LiveTailKind) => {
+		const append = (content: string, kind: LiveTailKind, state?: string) => {
 			messages.push(makeLiveMessage(content));
-			session!.tails.push({ anchorIndex: base.length, anchorSnapshot, content, kind });
+			session!.tails.push({ anchorIndex: base.length, anchorSnapshot, content, kind, ...(state === undefined ? {} : { state }) });
 		};
-		if (changed.policy) append(session.tails.some(tail => tail.kind === "goal-state") ? `${POLICY_SUPERSEDED_NOTE}\n${fresh.state}` : fresh.state, "goal-state");
+		if (changed.policy) {
+			// A policy that returns (pause, then resume) is not sent again: one line points
+			// back to the block already in history. Repeating it would add its full size
+			// every time and hit the block limit after a few cycles, which resets the prefix.
+			const earlier = session.tails.find(tail => tail.kind === "goal-state" && tail.state === fresh.state);
+			if (earlier) append(`[PI GOAL RESTORED] The goal policy above that begins "${fresh.state.split("\n", 1)[0]}" is in force again, unchanged. Follow it; the goal policy blocks after it no longer apply.`, "goal-pointer");
+			else append(session.tails.some(tail => tail.kind !== "goal-counters") ? `${POLICY_SUPERSEDED_NOTE}\n${fresh.state}` : fresh.state, "goal-state", fresh.state);
+		}
 		if (changed.counters) append(fresh.counters!, "goal-counters");
+		else if (switchedGoal && session.tails.some(tail => tail.kind === "goal-counters")) append(TASK_LIST_NONE, "goal-counters");
 		// Request-only text goes last and is never retained. While superseded
 		// policy blocks remain in history, say once per request which one counts.
-		const superseded = session.tails.filter(tail => tail.kind === "goal-state").length > 1;
+		const superseded = session.tails.filter(tail => tail.kind !== "goal-counters").length > 1;
 		const ephemeral = [superseded ? POLICY_RECENCY_NOTE : "", fresh.ephemeral ?? ""].filter(Boolean).join("\n");
 		const stableLength = messages.length;
 		if (ephemeral) messages.push(makeLiveMessage(ephemeral));
@@ -376,6 +400,42 @@ export class LiveTailRetention {
 		session.lastEphemeral = ephemeral || undefined;
 		session.interim = fresh.interim === true;
 		return { messages, stableLength, transientContents: [...new Set([...session.tails.map(tail => tail.content), ...(ephemeral ? [ephemeral] : [])])] };
+	}
+
+	private track(sessionKey: string, session: SessionRetention): void {
+		if (this.sessions.size >= MAX_TRACKED_SESSIONS) {
+			const oldest = this.sessions.keys().next();
+			if (!oldest.done) this.sessions.delete(oldest.value);
+		}
+		this.sessions.set(sessionKey, session);
+	}
+
+	/** Whether anything is retained for the session. */
+	has(sessionKey: string): boolean {
+		return this.sessions.has(sessionKey);
+	}
+
+	/** What is retained, in a form that can be saved and handed back to `adopt`. */
+	exportState(sessionKey: string): RetainedState | undefined {
+		const session = this.sessions.get(sessionKey);
+		if (!session?.lastFresh) return undefined;
+		return {
+			tails: session.tails.map(tail => ({ anchorIndex: tail.anchorIndex, content: tail.content, kind: tail.kind, ...(tail.state === undefined ? {} : { state: tail.state }) })),
+			lastFresh: { ...session.lastFresh },
+			interim: session.interim,
+		};
+	}
+
+	/** Take saved state for history the caller has already checked against `base`. */
+	adopt<T>(sessionKey: string, state: RetainedState, base: readonly T[]): void {
+		const snapshots = base.map(snapshotMessage);
+		this.track(sessionKey, {
+			tails: state.tails.map(tail => ({ ...tail, anchorSnapshot: tail.anchorIndex > 0 ? snapshots[tail.anchorIndex - 1] ?? null : null })),
+			lastFresh: { ...state.lastFresh },
+			lastEphemeral: undefined,
+			baseSnapshots: snapshots,
+			interim: state.interim,
+		});
 	}
 
 	private forget<T>(sessionKey: string, base: readonly T[]): { messages: Array<T | LiveMessage>; transientContents: string[]; stableLength: number } {
@@ -391,7 +451,24 @@ export class LiveTailRetention {
 	}
 
 	clear(sessionKey?: string): void {
-		if (sessionKey === undefined) this.sessions.clear();
+		if (sessionKey === undefined) { this.sessions.clear(); this.saved.clear(); }
 		else this.sessions.delete(sessionKey);
 	}
+}
+
+const SHARED = Symbol.for("pi-goal-x.liveRetention");
+/** Bump when the retained state changes shape, so a reload never reads an older one. */
+const SHARED_VERSION = 1;
+
+/**
+ * One retention for the whole process. Pi loads the extension again on /reload,
+ * which would start with nothing and send the next request without the blocks the
+ * last one carried: a full cache miss for an unchanged conversation. The history
+ * check still catches any real change, so reusing the old state is safe.
+ */
+export function sharedLiveRetention(): LiveTailRetention {
+	const holder = globalThis as unknown as Record<symbol, { version: number; retention: LiveTailRetention } | undefined>;
+	let shared = holder[SHARED];
+	if (!shared || shared.version !== SHARED_VERSION) holder[SHARED] = shared = { version: SHARED_VERSION, retention: new LiveTailRetention() };
+	return shared.retention;
 }

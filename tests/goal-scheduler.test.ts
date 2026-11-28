@@ -825,12 +825,12 @@ test("prompt cache: normal and custom runs preserve history while refreshing all
 	assert.equal(second.filter((m: any) => m.customType === "pi-goal-live-context").length, 2, "usage changes only the request-only line; the policy block is retained, not resent");
 	assert.match(second.at(-1).content, /12345 tokens/);
 	assert.doesNotMatch(second.at(-1).content, /Autonomous runs/, "an unlimited allowance reports no runs line");
-	// An objective edit changes what the goal is about: retention resets once so no
-	// stale objective lingers mid-history, and the fresh pair anchors the new prefix.
+	// An objective edit adds a new policy block at the end. The earlier blocks stay,
+	// so the request still extends the previous one and the cache holds.
 	h.core.state.goal!.objective = "Changed objective";
 	const third = await request();
-	assert.equal(third.filter((m: any) => m.customType === "pi-goal-live-context").length, 2);
-	assert.deepEqual(third.slice(0, 3), history);
+	assert.equal(third.filter((m: any) => m.customType === "pi-goal-live-context").length, 3);
+	assert.deepEqual(third.slice(0, second.length - 1), second.slice(0, -1));
 	assert.match(third.at(-2).content, /Changed objective/);
 	assert.match(third.at(-1).content, /Goal snapshot:/);
 	h.core.scheduler.begin(h.ctx); // Custom-message run bypassing preflight.
@@ -838,7 +838,7 @@ test("prompt cache: normal and custom runs preserve history while refreshing all
 		history.push({role: "custom", customType: "pi-goal-event", content: "legacy full prompt", details: {goalId: h.core.state.goal!.id, kind: "checkpoint"}, timestamp: i + 4});
 		const current = await request();
 		assert.deepEqual(current.slice(0, third.length - 1), third.slice(0, -1));
-		assert.equal(current.filter((m: any) => m.customType === "pi-goal-live-context").length, 2, "retained tails are re-sent in place, never duplicated per request");
+		assert.equal(current.filter((m: any) => m.customType === "pi-goal-live-context").length, 3, "retained tails are re-sent in place, never duplicated per request");
 		const before = current.slice(0, -1);
 		const again = await request();
 		assert.deepEqual(again.slice(0, -1), before);
