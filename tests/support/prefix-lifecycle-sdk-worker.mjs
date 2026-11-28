@@ -40,10 +40,13 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const manager = SessionManager.create(cwd, path.join(cwd, 'sessions'));
 const runtime = await ModelRuntime.create({ authPath: path.join(cwd, 'auth'), modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
 runtime.registerProvider('fixture', { baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: 'openai-completions', apiKey: 'fixture', models: [{ id: 'fixture', name: 'fixture', reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200000, maxTokens: 512 }] });
-const loader = new DefaultResourceLoader({ cwd, agentDir: cwd, noExtensions: true, noSkills: true, noThemes: true, noPromptTemplates: true, noContextFiles: true, extensionFactories: [pi => { goalExtension(pi); piApi = pi; core = pi._goalCore; }] });
-await loader.reload();
-({ session } = await createAgentSession({ cwd, agentDir: cwd, modelRuntime: runtime, model: runtime.getModel('fixture', 'fixture'), resourceLoader: loader, sessionManager: manager, settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: false, keepRecentTokens: 1, reserveTokens: 512 } }) }));
-await session.bindExtensions({});
+async function openSession(sessionManager) {
+	const loader = new DefaultResourceLoader({ cwd, agentDir: cwd, noExtensions: true, noSkills: true, noThemes: true, noPromptTemplates: true, noContextFiles: true, extensionFactories: [pi => { goalExtension(pi); piApi = pi; core = pi._goalCore; }] });
+	await loader.reload();
+	({ session } = await createAgentSession({ cwd, agentDir: cwd, modelRuntime: runtime, model: runtime.getModel('fixture', 'fixture'), resourceLoader: loader, sessionManager, settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: false, keepRecentTokens: 1, reserveTokens: 512 } }) }));
+	await session.bindExtensions({});
+}
+await openSession(manager);
 const steps = ['Please start a persistent goal.', '@wait', '@pause', '@wait', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@pause', 'a question while paused', '@resume', '@settings:{"maxAutonomousRuns":9,"disabled":true}', '@wait', '@compact', '@wait', 'one more question after compaction', '@wait', '@complete', '@wait', 'Thanks, what was in the file?', '@wait', '@new:Second goal.', '@wait'];
 for (const step of steps) {
 	if (step === '@pause') { core.lifecycle.pause(session.extensionRunner.createContext()); continue; }
@@ -64,6 +67,12 @@ for (const step of steps) {
 	await session.prompt(step);
 }
 await delay(1500);
+await delay(1000);
+// A new process: nothing retained in memory, the same session file reopened.
+await session.dispose?.();
+delete globalThis[Symbol.for('pi-goal-x.liveRetention')];
+await openSession(SessionManager.open(manager.getSessionFile()));
+await session.prompt('Back after a restart.');
 await delay(1000);
 const view = r => ({ tools: JSON.stringify(r.tools), system: JSON.stringify(r.messages.filter(m => m.role === 'system')), msgs: r.messages.filter(m => m.role !== 'system').map(m => JSON.stringify(m)) });
 let prev, breaks = 0;

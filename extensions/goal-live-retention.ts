@@ -111,6 +111,13 @@ interface RetainedTail {
 	state?: string;
 }
 
+/** The retained blocks without the copies used for comparing, so they can be saved. */
+export interface RetainedState {
+	tails: Array<{ anchorIndex: number; content: string; kind: LiveTailKind; state?: string }>;
+	lastFresh: { state: string; counters: string | undefined; countersState: string | undefined; scope: string | undefined };
+	interim: boolean;
+}
+
 interface SessionRetention {
 	tails: RetainedTail[];
 	lastFresh: { state: string; counters: string | undefined; countersState: string | undefined; scope: string | undefined } | undefined;
@@ -256,6 +263,8 @@ function makeLiveMessage(content: string): LiveMessage {
 
 export class LiveTailRetention {
 	private readonly sessions = new Map<string, SessionRetention>();
+	/** What was last saved with the session, by key (see goal-live-persist.ts). */
+	readonly saved = new Map<string, string>();
 
 	apply<T>(sessionKey: string, base: readonly T[], fresh: FreshLiveTails | null): { messages: Array<T | LiveMessage>; transientContents: string[]; stableLength: number } {
 		if (fresh === null) {
@@ -267,14 +276,7 @@ export class LiveTailRetention {
 		// Map order is insertion order, so move a session to the end each time it is
 		// used. Otherwise the busiest session is the oldest one and gets evicted first.
 		if (session) { this.sessions.delete(sessionKey); this.sessions.set(sessionKey, session); }
-		if (!session) {
-			session = { tails: [], lastFresh: undefined, lastEphemeral: undefined, baseSnapshots: [], interim: false };
-			if (this.sessions.size >= MAX_TRACKED_SESSIONS) {
-				const oldest = this.sessions.keys().next();
-				if (!oldest.done) this.sessions.delete(oldest.value);
-			}
-			this.sessions.set(sessionKey, session);
-		}
+		if (!session) this.track(sessionKey, session = { tails: [], lastFresh: undefined, lastEphemeral: undefined, baseSnapshots: [], interim: false });
 		const reset = () => {
 			session!.tails = [];
 			session!.lastFresh = undefined;
@@ -392,6 +394,42 @@ export class LiveTailRetention {
 		return { messages, stableLength, transientContents: [...new Set([...session.tails.map(tail => tail.content), ...(ephemeral ? [ephemeral] : [])])] };
 	}
 
+	private track(sessionKey: string, session: SessionRetention): void {
+		if (this.sessions.size >= MAX_TRACKED_SESSIONS) {
+			const oldest = this.sessions.keys().next();
+			if (!oldest.done) this.sessions.delete(oldest.value);
+		}
+		this.sessions.set(sessionKey, session);
+	}
+
+	/** Whether anything is retained for the session. */
+	has(sessionKey: string): boolean {
+		return this.sessions.has(sessionKey);
+	}
+
+	/** What is retained, in a form that can be saved and handed back to `adopt`. */
+	exportState(sessionKey: string): RetainedState | undefined {
+		const session = this.sessions.get(sessionKey);
+		if (!session?.lastFresh) return undefined;
+		return {
+			tails: session.tails.map(tail => ({ anchorIndex: tail.anchorIndex, content: tail.content, kind: tail.kind, ...(tail.state === undefined ? {} : { state: tail.state }) })),
+			lastFresh: { ...session.lastFresh },
+			interim: session.interim,
+		};
+	}
+
+	/** Take saved state for history the caller has already checked against `base`. */
+	adopt<T>(sessionKey: string, state: RetainedState, base: readonly T[]): void {
+		const snapshots = base.map(snapshotMessage);
+		this.track(sessionKey, {
+			tails: state.tails.map(tail => ({ ...tail, anchorSnapshot: tail.anchorIndex > 0 ? snapshots[tail.anchorIndex - 1] ?? null : null })),
+			lastFresh: { ...state.lastFresh },
+			lastEphemeral: undefined,
+			baseSnapshots: snapshots,
+			interim: state.interim,
+		});
+	}
+
 	private forget<T>(sessionKey: string, base: readonly T[]): { messages: Array<T | LiveMessage>; transientContents: string[]; stableLength: number } {
 		this.sessions.delete(sessionKey);
 		return { messages: [...base], transientContents: [], stableLength: base.length };
@@ -405,7 +443,7 @@ export class LiveTailRetention {
 	}
 
 	clear(sessionKey?: string): void {
-		if (sessionKey === undefined) this.sessions.clear();
+		if (sessionKey === undefined) { this.sessions.clear(); this.saved.clear(); }
 		else this.sessions.delete(sessionKey);
 	}
 }

@@ -28,6 +28,7 @@ import { checkpointTriggerPrompt } from "./prompts/goal-prompts.ts";
 import { consumeOracleFollowupMarker, hasPendingOracleAdviceForFocusedGoal } from "./goal-oracle.ts";
 import { sharedLiveRetention } from "./goal-live-retention.ts";
 import { goalContextParts } from "./goal-context-parts.ts";
+import { restoreLiveTails, saveLiveTails } from "./goal-live-persist.ts";
 import { hasActiveDraft, rehydrateDraft } from "./goal-drafting.ts";
 import { syncTerminalInputPause } from "./goal-terminal-input.ts";
 import type { GoalContextCore } from "./goal-context-parts.ts";
@@ -173,6 +174,8 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 	const liveRetention = sharedLiveRetention();
 	const managerNumbers = new WeakMap<object, number>();
 	let managersSeen = 0;
+	/** Conversations already looked up in the session's saved blocks. */
+	const checkedForSaved = new Set<string>();
 	const managerNumber = (manager: object): number => {
 		let number = managerNumbers.get(manager);
 		if (number === undefined) managerNumbers.set(manager, number = ++managersSeen);
@@ -214,18 +217,32 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		if (session) contexts.set(ctx, session);
 		const sessionKey = sessionKeyFor(ctx);
 		if (sessionKey === "unidentified") liveRetention.clear(sessionKey);
+		const identified = sessionKey !== "unidentified";
+		const model = `${ctx.model?.provider}/${ctx.model?.id}`;
+		// First request of a conversation in this process: pick up what the last process saved.
+		if (identified && !checkedForSaved.has(sessionKey)) {
+			checkedForSaved.add(sessionKey);
+			if (!liveRetention.has(sessionKey)) {
+				try { restoreLiveTails(liveRetention, sessionKey, model, ctx.sessionManager.getBranch(), base); } catch { /* start clean */ }
+			}
+		}
+		const done = <R>(result: R): R => {
+			if (identified) {
+				try { saveLiveTails(liveRetention, sessionKey, model, base, (type, data) => pi.appendEntry(type, data)); } catch { /* saving is best effort */ }
+			}
+			return result;
+		};
 		const parts = goalContextParts(core, ctx);
 		if (parts) {
 			// Retain previously sent tails verbatim at their anchors so this
 			// request extends the previous one instead of displacing its tail.
 			// Only genuinely new policy and task-list content is appended; usage
 			// and notes ride at the end of this request only.
-			const { messages: retained } = liveRetention.apply(sessionKey, base, parts);
-			return retained;
+			return done(liveRetention.apply(sessionKey, base, parts).messages);
 		}
 		// A draft or a hidden reminder leaves no goal text: drop what was sent.
 		liveRetention.clear(sessionKey);
-		return messages;
+		return done(messages);
 	});
 
 	pi.on("agent_start", async (_event, ctx) => { core.scheduler.begin(ctx); });
@@ -400,7 +417,7 @@ export function registerGoalEvents(core: GoalEventsCore): void {
 		teardown(ctx);
 		// Only a reload keeps the retained blocks: it is the same conversation, and the
 		// history check drops them if anything changed. Any other start begins clean.
-		if (event.reason !== "reload") liveRetention.clear();
+		if (event.reason !== "reload") { liveRetention.clear(); checkedForSaved.clear(); }
 		try {
 			configureLocale(loadGoalSettings(ctx.cwd).locale);
 			const owner: SessionOwner = {ctx, manager: ctx.sessionManager, storage: goalStorageContext(ctx)};
