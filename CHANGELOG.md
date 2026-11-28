@@ -4,6 +4,13 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Ending a goal no longer makes the next request a full prompt-cache miss. The goal blocks already sent used to be dropped when the goal completed, which moved everything after them. They now stay, and one short block says no goal is active. The same goes for an open goal draft (the goal is put on hold), a stale checkpoint and a pool of unfocused goals. Starting a new goal after one ended no longer resets them either (#187).
+- A message that could not be copied for the history check (a class instance in a tool result, for example) made every request look rewritten and reset the goal blocks each time. It is now compared by a hash of its JSON.
+- A host that gives no session id now gets the same retained blocks as one that does, keyed by its session object. Before, nothing was kept and each request broke the prefix.
+- The busiest session is no longer the first one dropped when many session and model combinations have been seen.
+
 ## [0.35.3] — 2026-11-26
 
 Includes #183 and #185.

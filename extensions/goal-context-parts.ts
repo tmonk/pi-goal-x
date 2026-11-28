@@ -9,6 +9,7 @@ import { modelBudgetLine, budgetRemaining } from "./goal-accounting.ts";
 import type { GoalRecord } from "./goal-record.ts";
 import { otherOpenGoalCount } from "./goal-pool.ts";
 import { hasActiveDraft } from "./goal-drafting.ts";
+import { GOAL_ENDED_STATE } from "./goal-live-retention.ts";
 import type {
 	GoalContinuationControl,
 	GoalFocusedGoalAccess,
@@ -45,8 +46,12 @@ interface GoalContextParts {
 	state: string;
 	counters?: string;
 	ephemeral?: string;
-	/** Which goal this is about. A different scope starts the retained prefix over. */
-	scope: string;
+	/** Which goal this is about. A different scope starts the retained prefix over. Left out when the text stands in for a goal. */
+	scope?: string;
+	/** Stands in for a goal (stale checkpoint, unfocused goals, no goal). The goal that follows needs no reset. */
+	interim?: boolean;
+	/** Say nothing unless goal blocks were already sent. */
+	onlyIfSent?: boolean;
 }
 
 /**
@@ -72,10 +77,15 @@ export function goalContextParts(core: GoalContextCore, ctx: ExtensionContext): 
 	// During a draft the drafting prompt is in charge. The goal block would
 	// ask for update_goal, which is blocked until the draft ends, and the
 	// unfocused reminder would tell the agent to stop.
-	if (hasActiveDraft(core)) return;
+	if (hasActiveDraft(core)) {
+		// Only a draft that follows a finished goal keeps what was sent: the goal
+		// blocks are already over, so nothing in them asks for update_goal.
+		const finished = !core.state.goal ? otherOpenGoalCount(core.state.goalsById, null) === 0 : core.state.goal.status === "complete";
+		return finished ? GOAL_ENDED : undefined;
+	}
 	const checkpoint = core.runtime.getCheckpointGoalId();
 	if (checkpoint !== null && (core.scheduler.isDenied() || !core.isActionableContinuationGoal(checkpoint))) {
-		return { state: staleContinuationPrompt(checkpoint, core.state.goal), scope: `stale:${checkpoint}` };
+		return { state: staleContinuationPrompt(checkpoint, core.state.goal), interim: true };
 	}
 	const goal = core.state.goal;
 	if (!goal) return unfocusedState(core, ctx);
@@ -87,7 +97,7 @@ export function goalContextParts(core: GoalContextCore, ctx: ExtensionContext): 
 	const ledgerEvents = () => promptEvents ??= goalRuntimeEvents(ctx, goal.id);
 
 	switch (goal.status) {
-		case "complete": return;
+		case "complete": return GOAL_ENDED;
 		case "paused": return pausedState(core, goal, ledgerEvents);
 		case "budget_limited": return budgetLimitedState(core, goal);
 		case "blocked": return { state: blockedState(core, goal), scope: goalScope(goal) };
@@ -95,14 +105,17 @@ export function goalContextParts(core: GoalContextCore, ctx: ExtensionContext): 
 	}
 }
 
+/** No goal is in force. Blocks already sent stay, and this says they are over. */
+const GOAL_ENDED: GoalContextParts = { state: GOAL_ENDED_STATE, interim: true, onlyIfSent: true };
+
 function unfocusedState(core: GoalContextCore, ctx: ExtensionContext): GoalContextParts | undefined {
 	// Issue #72: hideUnfocusedPrompt opts out of the model-facing unfocused
 	// reminder only. The stale-checkpoint guard and all focused-goal context are
 	// unaffected.
 	if (loadGoalSettings(ctx.cwd).hideUnfocusedPrompt === true) return;
 	const openCount = otherOpenGoalCount(core.state.goalsById, null);
-	if (openCount === 0) return;
-	return { state: commandInstructions(unfocusedOpenGoalsPrompt(openCount), core.loadedCommands), scope: "unfocused" };
+	if (openCount === 0) return GOAL_ENDED;
+	return { state: commandInstructions(unfocusedOpenGoalsPrompt(openCount), core.loadedCommands), interim: true };
 }
 
 function pausedState(core: GoalContextCore, goal: GoalRecord, ledgerEvents: () => GoalLedgerEvent[]): GoalContextParts {
